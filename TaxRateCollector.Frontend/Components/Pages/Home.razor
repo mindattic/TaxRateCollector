@@ -1,0 +1,134 @@
+@page "/"
+@using Microsoft.EntityFrameworkCore
+@using TaxRateCollector.Core.Enums
+@using TaxRateCollector.Core.Interfaces
+@using TaxRateCollector.Infrastructure.Data
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject IScrapeOrchestrator Orchestrator
+@rendermode InteractiveServer
+
+<PageTitle>Dashboard — TaxHawk</PageTitle>
+
+<h1>Dashboard</h1>
+
+<div class="summary-cards">
+    <div class="card">
+        <div class="card-label">Jurisdictions</div>
+        <div class="card-value">@_jurisdictionCount</div>
+    </div>
+    <div class="card">
+        <div class="card-label">Rates On File</div>
+        <div class="card-value">@_rateCount</div>
+    </div>
+    <div class="card">
+        <div class="card-label">Last Run</div>
+        <div class="card-value">@(_lastRun ?? "Never")</div>
+    </div>
+    <div class="card">
+        <div class="card-label">Unacknowledged Changes</div>
+        <div class="card-value">@_unackChanges</div>
+    </div>
+</div>
+
+<div class="section-row">
+    <button class="btn-primary" @onclick="RunScrapeAsync" disabled="@_scraping">
+        @(_scraping ? "Running…" : "Run Scrape Now")
+    </button>
+    @if (_scrapeMessage is not null)
+    {
+        <span class="scrape-msg">@_scrapeMessage</span>
+    }
+</div>
+
+@if (_scraping)
+{
+    <div class="progress-bar-wrap">
+        <div class="progress-bar-indeterminate"></div>
+    </div>
+}
+
+<h2>Recent Changes</h2>
+@if (_recentChanges.Count == 0)
+{
+    <p class="muted">No changes detected yet.</p>
+}
+else
+{
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Jurisdiction</th>
+                <th>Type</th>
+                <th>Old Rate</th>
+                <th>New Rate</th>
+                <th>Detected</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var c in _recentChanges)
+            {
+                <tr class="change-@c.ChangeType.ToString().ToLower()">
+                    <td>@c.Jurisdiction?.JurisdictionName (@c.Jurisdiction?.StateCode)</td>
+                    <td><span class="badge badge-@c.ChangeType.ToString().ToLower()">@c.ChangeType</span></td>
+                    <td>@(c.OldRate.HasValue ? c.OldRate.Value.ToString("P2") : "—")</td>
+                    <td>@(c.NewRate.HasValue ? c.NewRate.Value.ToString("P2") : "—")</td>
+                    <td>@c.DetectedAt</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private int _jurisdictionCount;
+    private int _rateCount;
+    private string? _lastRun;
+    private int _unackChanges;
+    private bool _scraping;
+    private string? _scrapeMessage;
+    private List<TaxRateCollector.Core.Entities.ChangeLogEntry> _recentChanges = [];
+
+    protected override async Task OnInitializedAsync() => await LoadDataAsync();
+
+    private async Task LoadDataAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _jurisdictionCount = await db.Jurisdictions.CountAsync(j => j.IsActive);
+        _rateCount = await db.TaxRates.CountAsync(t => t.IsCurrent);
+        _unackChanges = await db.ChangeLog.CountAsync(c => !c.Acknowledged);
+
+        var lastRun = await db.ScrapeRuns
+            .OrderByDescending(r => r.StartedAt)
+            .FirstOrDefaultAsync();
+        _lastRun = lastRun?.CompletedAt ?? lastRun?.StartedAt;
+
+        _recentChanges = await db.ChangeLog
+            .Include(c => c.Jurisdiction)
+            .OrderByDescending(c => c.DetectedAt)
+            .Take(10)
+            .ToListAsync();
+    }
+
+    private async Task RunScrapeAsync()
+    {
+        _scraping = true;
+        _scrapeMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var changes = await Orchestrator.RunFullScrapeAsync();
+            _scrapeMessage = $"Completed — {changes} change(s) detected.";
+        }
+        catch (Exception ex)
+        {
+            _scrapeMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            _scraping = false;
+            await LoadDataAsync();
+            StateHasChanged();
+        }
+    }
+}

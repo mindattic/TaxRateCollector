@@ -1,0 +1,124 @@
+@page "/rates"
+@using Microsoft.EntityFrameworkCore
+@using TaxRateCollector.Infrastructure.Data
+@inject IDbContextFactory<AppDbContext> DbFactory
+@rendermode InteractiveServer
+
+<PageTitle>Rates — TaxHawk</PageTitle>
+
+<h1>Rates Browser</h1>
+
+<div class="filter-row">
+    <input class="filter-input" placeholder="Search jurisdiction…" @bind="_search" @bind:event="oninput" />
+    <select class="filter-select" @bind="_stateFilter">
+        <option value="">All States</option>
+        <option value="IL">Illinois</option>
+        <option value="CA">California</option>
+        <option value="TX">Texas</option>
+    </select>
+    <button class="btn-secondary" @onclick="ExportCsv">Export CSV</button>
+</div>
+
+@if (_rates is null)
+{
+    <p class="muted">Loading…</p>
+}
+else if (_rates.Count == 0)
+{
+    <p class="muted">No rates found.</p>
+}
+else
+{
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th @onclick='() => SetSort("name")' class="sortable">Jurisdiction @SortIcon("name")</th>
+                <th @onclick='() => SetSort("state")' class="sortable">State @SortIcon("state")</th>
+                <th @onclick='() => SetSort("type")' class="sortable">Type @SortIcon("type")</th>
+                <th @onclick='() => SetSort("rate")' class="sortable">Rate @SortIcon("rate")</th>
+                <th>Rate Type</th>
+                <th>Effective</th>
+                <th>Scraped</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in Filtered)
+            {
+                <tr>
+                    <td>@r.JurisdictionName</td>
+                    <td>@r.StateCode</td>
+                    <td>@r.JurisdictionType</td>
+                    <td class="rate-cell">@r.Rate.ToString("P4")</td>
+                    <td>@r.RateType</td>
+                    <td>@r.EffectiveDate</td>
+                    <td>@r.ScrapedAt[..10]</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <div class="muted" style="margin-top:8px">Showing @Filtered.Count() of @_rates.Count rates</div>
+}
+
+@code {
+    private List<RateRow>? _rates;
+    private string _search = string.Empty;
+    private string _stateFilter = string.Empty;
+    private string _sortCol = "state";
+    private bool _sortAsc = true;
+
+    private record RateRow(string JurisdictionName, string StateCode, string JurisdictionType,
+        decimal Rate, string RateType, string EffectiveDate, string ScrapedAt);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _rates = await db.TaxRates
+            .Include(t => t.Jurisdiction)
+            .Where(t => t.IsCurrent)
+            .Select(t => new RateRow(
+                t.Jurisdiction.JurisdictionName,
+                t.Jurisdiction.StateCode,
+                t.Jurisdiction.JurisdictionType.ToString(),
+                t.Rate,
+                t.RateType,
+                t.EffectiveDate,
+                t.ScrapedAt))
+            .ToListAsync();
+    }
+
+    private IEnumerable<RateRow> Filtered
+    {
+        get
+        {
+            var q = _rates?.AsEnumerable() ?? Enumerable.Empty<RateRow>();
+            if (!string.IsNullOrWhiteSpace(_search))
+                q = q.Where(r => r.JurisdictionName.Contains(_search, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(_stateFilter))
+                q = q.Where(r => r.StateCode == _stateFilter);
+
+            q = _sortCol switch
+            {
+                "name" => _sortAsc ? q.OrderBy(r => r.JurisdictionName) : q.OrderByDescending(r => r.JurisdictionName),
+                "state" => _sortAsc ? q.OrderBy(r => r.StateCode) : q.OrderByDescending(r => r.StateCode),
+                "type" => _sortAsc ? q.OrderBy(r => r.JurisdictionType) : q.OrderByDescending(r => r.JurisdictionType),
+                "rate" => _sortAsc ? q.OrderBy(r => r.Rate) : q.OrderByDescending(r => r.Rate),
+                _ => q
+            };
+            return q;
+        }
+    }
+
+    private void SetSort(string col)
+    {
+        if (_sortCol == col) _sortAsc = !_sortAsc;
+        else { _sortCol = col; _sortAsc = true; }
+    }
+
+    private string SortIcon(string col) =>
+        _sortCol != col ? "" : _sortAsc ? " ▲" : " ▼";
+
+    private void ExportCsv()
+    {
+        // CSV export via JS interop would go here — placeholder for PoC
+    }
+}

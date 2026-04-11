@@ -1,0 +1,110 @@
+@page "/runs"
+@using Microsoft.EntityFrameworkCore
+@using TaxRateCollector.Core.Enums
+@using TaxRateCollector.Infrastructure.Data
+@inject IDbContextFactory<AppDbContext> DbFactory
+@rendermode InteractiveServer
+
+<PageTitle>Scrape Runs — TaxHawk</PageTitle>
+
+<h1>Scrape Runs</h1>
+
+@if (_runs is null)
+{
+    <p class="muted">Loading…</p>
+}
+else if (_runs.Count == 0)
+{
+    <p class="muted">No scrape runs yet. Use the Dashboard to trigger one.</p>
+}
+else
+{
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Started</th>
+                <th>Completed</th>
+                <th>Status</th>
+                <th>Scraped</th>
+                <th>Changes</th>
+                <th>Errors</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in _runs)
+            {
+                <tr>
+                    <td>#@r.Id</td>
+                    <td>@r.StartedAt</td>
+                    <td>@(r.CompletedAt ?? "—")</td>
+                    <td><span class="badge badge-@r.Status.ToString().ToLower()">@r.Status</span></td>
+                    <td>@r.TotalScraped</td>
+                    <td>@r.ChangesDetected</td>
+                    <td>@r.ErrorCount</td>
+                    <td>
+                        <button class="btn-tiny" @onclick="() => ToggleDetail(r.Id)">
+                            @(_expanded == r.Id ? "Hide" : "Details")
+                        </button>
+                    </td>
+                </tr>
+                @if (_expanded == r.Id)
+                {
+                    <tr>
+                        <td colspan="8">
+                            <div class="run-detail">
+                                <strong>Rates recorded in this run:</strong>
+                                @if (_runRates.Count == 0)
+                                {
+                                    <span class="muted"> None</span>
+                                }
+                                else
+                                {
+                                    <ul>
+                                        @foreach (var tr in _runRates)
+                                        {
+                                            <li>@tr.JurisdictionName — @tr.Rate.ToString("P4") (@tr.RateType)</li>
+                                        }
+                                    </ul>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<TaxRateCollector.Core.Entities.ScrapeRun>? _runs;
+    private int? _expanded;
+    private List<(string JurisdictionName, decimal Rate, string RateType)> _runRates = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _runs = await db.ScrapeRuns
+            .OrderByDescending(r => r.StartedAt)
+            .ToListAsync();
+    }
+
+    private async Task ToggleDetail(int runId)
+    {
+        if (_expanded == runId)
+        {
+            _expanded = null;
+            _runRates = [];
+            return;
+        }
+
+        _expanded = runId;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _runRates = await db.TaxRates
+            .Include(t => t.Jurisdiction)
+            .Where(t => t.ScrapeRunId == runId)
+            .Select(t => ValueTuple.Create(t.Jurisdiction.JurisdictionName, t.Rate, t.RateType))
+            .ToListAsync();
+    }
+}

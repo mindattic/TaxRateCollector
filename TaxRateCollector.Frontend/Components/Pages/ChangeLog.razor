@@ -1,0 +1,105 @@
+@page "/changes"
+@using Microsoft.EntityFrameworkCore
+@using TaxRateCollector.Core.Enums
+@using TaxRateCollector.Infrastructure.Data
+@using TaxRateCollector.Infrastructure.Services
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject AlertService Alerts
+@rendermode InteractiveServer
+
+<PageTitle>Change Log — TaxHawk</PageTitle>
+
+<h1>Change Log</h1>
+
+<div class="filter-row">
+    <select class="filter-select" @bind="_typeFilter">
+        <option value="">All Types</option>
+        <option value="RateChanged">Rate Changed</option>
+        <option value="NewJurisdiction">New Jurisdiction</option>
+        <option value="Removed">Removed</option>
+    </select>
+    <label class="filter-check">
+        <input type="checkbox" @bind="_unackOnly" /> Unacknowledged only
+    </label>
+    <button class="btn-secondary" @onclick="AcknowledgeAllAsync">Acknowledge All</button>
+</div>
+
+@if (_entries is null)
+{
+    <p class="muted">Loading…</p>
+}
+else if (!Filtered.Any())
+{
+    <p class="muted">No changes found.</p>
+}
+else
+{
+    <div class="timeline">
+        @foreach (var e in Filtered)
+        {
+            <div class="timeline-item change-@e.ChangeType.ToString().ToLower()">
+                <div class="timeline-dot"></div>
+                <div class="timeline-body">
+                    <div class="timeline-header">
+                        <span class="badge badge-@e.ChangeType.ToString().ToLower()">@e.ChangeType</span>
+                        <strong>@e.Jurisdiction?.JurisdictionName (@e.Jurisdiction?.StateCode)</strong>
+                        <span class="muted">@e.DetectedAt</span>
+                        @if (!e.Acknowledged)
+                        {
+                            <button class="btn-tiny" @onclick="() => AcknowledgeAsync(e.Id)">Dismiss</button>
+                        }
+                        else
+                        {
+                            <span class="badge badge-ack">Acknowledged</span>
+                        }
+                    </div>
+                    <div class="timeline-detail">
+                        @if (e.OldRate.HasValue) { <span>Was: <strong>@e.OldRate.Value.ToString("P4")</strong></span> }
+                        @if (e.NewRate.HasValue) { <span>Now: <strong>@e.NewRate.Value.ToString("P4")</strong></span> }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<TaxRateCollector.Core.Entities.ChangeLogEntry>? _entries;
+    private string _typeFilter = string.Empty;
+    private bool _unackOnly;
+
+    private IEnumerable<TaxRateCollector.Core.Entities.ChangeLogEntry> Filtered
+    {
+        get
+        {
+            var q = _entries?.AsEnumerable() ?? Enumerable.Empty<TaxRateCollector.Core.Entities.ChangeLogEntry>();
+            if (!string.IsNullOrEmpty(_typeFilter) && Enum.TryParse<ChangeType>(_typeFilter, out var ct))
+                q = q.Where(e => e.ChangeType == ct);
+            if (_unackOnly) q = q.Where(e => !e.Acknowledged);
+            return q;
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _entries = await db.ChangeLog
+            .Include(c => c.Jurisdiction)
+            .OrderByDescending(c => c.DetectedAt)
+            .ToListAsync();
+    }
+
+    private async Task AcknowledgeAsync(int id)
+    {
+        await Alerts.AcknowledgeAsync(id);
+        await LoadAsync();
+    }
+
+    private async Task AcknowledgeAllAsync()
+    {
+        await Alerts.AcknowledgeAllAsync();
+        await LoadAsync();
+    }
+}

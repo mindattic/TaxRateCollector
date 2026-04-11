@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="TaxRateCollector.Core/TaxRateCollector.Core.csproj" />
+  <Project Path="TaxRateCollector.Infrastructure/TaxRateCollector.Infrastructure.csproj" />
+  <Project Path="TaxRateCollector.UnitTests/TaxRateCollector.UnitTests.csproj" />
+  <Project Path="TaxRateCollector.Frontend/TaxRateCollector.Frontend.csproj" />
+</Solution>

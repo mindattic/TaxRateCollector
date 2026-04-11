@@ -1,0 +1,147 @@
+@page "/calc"
+@using Microsoft.EntityFrameworkCore
+@using TaxRateCollector.Core.Interfaces
+@using TaxRateCollector.Infrastructure.Data
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject ITaxCalculator Calculator
+@rendermode InteractiveServer
+
+<PageTitle>Tax Calculator — TaxHawk</PageTitle>
+
+<h1>Tax Calculator</h1>
+
+<div class="calc-form">
+    <div class="form-group">
+        <label>Jurisdiction</label>
+        <input class="filter-input" placeholder="Type to search…" value="@_searchText" @oninput="OnSearchInput" />
+        @if (_suggestions.Count > 0 && !_jurisdictionSelected)
+        {
+            <div class="suggestions">
+                @foreach (var j in _suggestions)
+                {
+                    <div class="suggestion-item" @onclick="() => SelectJurisdiction(j)">
+                        @j.Name (@j.StateCode) — @j.Type
+                    </div>
+                }
+            </div>
+        }
+        @if (_jurisdictionSelected)
+        {
+            <div class="selected-tag">
+                @_selectedName
+                <button class="btn-tiny" @onclick="ClearJurisdiction">✕</button>
+            </div>
+        }
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label>Price ($)</label>
+            <input class="filter-input" type="number" min="0" step="0.01" @bind="_price" />
+        </div>
+        <div class="form-group">
+            <label>Quantity</label>
+            <input class="filter-input" type="number" min="1" @bind="_quantity" />
+        </div>
+    </div>
+
+    <button class="btn-primary" @onclick="CalculateAsync" disabled="@(!CanCalculate)">Calculate</button>
+</div>
+
+@if (_result is not null)
+{
+    <div class="calc-result">
+        <div class="result-label">Tax Amount</div>
+        <div class="result-value">@_result.TaxAmount.ToString("C")</div>
+        <div class="result-detail">
+            <span>Jurisdiction: <strong>@_result.JurisdictionName</strong></span>
+            <span>Rate: <strong>@_result.Rate.ToString("P4")</strong> (@_result.RateType)</span>
+            <span>Effective: <strong>@_result.EffectiveDate</strong></span>
+            <span>Subtotal: <strong>@((_price * _quantity).ToString("C"))</strong></span>
+        </div>
+    </div>
+}
+@if (_noRate)
+{
+    <p class="muted">No current rate found for the selected jurisdiction.</p>
+}
+
+@code {
+    private string _searchText = string.Empty;
+    private bool _jurisdictionSelected;
+    private int _selectedId;
+    private string _selectedName = string.Empty;
+    private decimal _price = 100m;
+    private int _quantity = 1;
+    private TaxCalcResult? _result;
+    private bool _noRate;
+
+    private record JurisdictionOption(int Id, string Name, string StateCode, string Type);
+    private List<JurisdictionOption> _allJurisdictions = [];
+    private List<JurisdictionOption> _suggestions = [];
+
+    private bool CanCalculate => _jurisdictionSelected && _price > 0 && _quantity > 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _allJurisdictions = await db.Jurisdictions
+            .Where(j => j.IsActive || true) // show all for calc
+            .Select(j => new JurisdictionOption(j.Id, j.JurisdictionName, j.StateCode, j.JurisdictionType.ToString()))
+            .ToListAsync();
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _searchText = e.Value?.ToString() ?? string.Empty;
+        FilterJurisdictions();
+    }
+
+    private void FilterJurisdictions()
+    {
+        _jurisdictionSelected = false;
+        _result = null;
+        _noRate = false;
+
+        if (string.IsNullOrWhiteSpace(_searchText))
+        {
+            _suggestions = [];
+            return;
+        }
+
+        _suggestions = _allJurisdictions
+            .Where(j => j.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
+                     || j.StateCode.Contains(_searchText, StringComparison.OrdinalIgnoreCase))
+            .Take(8)
+            .ToList();
+    }
+
+    private void SelectJurisdiction(JurisdictionOption j)
+    {
+        _selectedId = j.Id;
+        _selectedName = $"{j.Name} ({j.StateCode})";
+        _searchText = _selectedName;
+        _jurisdictionSelected = true;
+        _suggestions = [];
+    }
+
+    private void ClearJurisdiction()
+    {
+        _selectedId = 0;
+        _selectedName = string.Empty;
+        _searchText = string.Empty;
+        _jurisdictionSelected = false;
+        _result = null;
+        _noRate = false;
+        _suggestions = [];
+    }
+
+    private async Task CalculateAsync()
+    {
+        _result = null;
+        _noRate = false;
+        var r = await Calculator.CalculateAsync(_selectedId, _price, _quantity);
+        if (r is null) _noRate = true;
+        else _result = r;
+    }
+}
