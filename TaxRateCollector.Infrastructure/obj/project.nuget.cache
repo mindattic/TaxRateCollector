@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "Ig4IG63I89Y=",
+  "dgSpecHash": "lgJU4YFfVBs=",
   "success": true,
-  "projectFilePath": "C:\\Projects\\MindAttic\\TaxHawk\\TaxRateCollector.Infrastructure\\TaxRateCollector.Infrastructure.csproj",
+  "projectFilePath": "C:\\Projects\\MindAttic\\TaxRateCollector\\TaxRateCollector.Infrastructure\\TaxRateCollector.Infrastructure.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\ohleo\\.nuget\\packages\\closedxml\\0.105.0\\closedxml.0.105.0.nupkg.sha512",
     "C:\\Users\\ohleo\\.nuget\\packages\\closedxml.parser\\2.0.0\\closedxml.parser.2.0.0.nupkg.sha512",
