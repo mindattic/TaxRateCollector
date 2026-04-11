@@ -1,0 +1,10 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vs
+/TaxRateCollector.Frontend/bin/Debug/net10.0
+/TaxRateCollector.Frontend/obj
+/TaxRateCollector.Infrastructure/bin/Debug/net10.0
+/TaxRateCollector.UnitTests/bin/Debug/net10.0
+/TaxRateCollector.UnitTests/obj
