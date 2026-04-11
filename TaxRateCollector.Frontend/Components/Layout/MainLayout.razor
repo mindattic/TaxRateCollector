@@ -1,18 +1,38 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
-
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+<div class="app-shell">
+    <header class="app-header">
+        <div class="brand">
+            <span class="brand-icon">◈</span>
+            <span class="brand-name">TaxHawk</span>
         </div>
+    </header>
 
-        <article class="content px-4">
-            @Body
-        </article>
+    <nav class="tab-bar">
+        <NavLink class="tab" href="" Match="NavLinkMatch.All">
+            <span class="tab-icon">◻</span>
+            <span class="tab-label">Dashboard</span>
+        </NavLink>
+        <NavLink class="tab" href="rates">
+            <span class="tab-icon">⊞</span>
+            <span class="tab-label">Rates</span>
+        </NavLink>
+        <NavLink class="tab" href="changes">
+            <span class="tab-icon">△</span>
+            <span class="tab-label">Change Log</span>
+        </NavLink>
+        <NavLink class="tab" href="runs">
+            <span class="tab-icon">⟁</span>
+            <span class="tab-label">Scrape Runs</span>
+        </NavLink>
+        <NavLink class="tab" href="calc">
+            <span class="tab-icon">∑</span>
+            <span class="tab-label">Calculator</span>
+        </NavLink>
+    </nav>
+
+    <main class="tab-content">
+        @Body
     </main>
 </div>
 
