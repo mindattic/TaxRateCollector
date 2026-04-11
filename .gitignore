@@ -1,10 +1,53 @@
-﻿################################################################################
-# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
-################################################################################
+## Build results
+/bin/
+[Bb]in/
+/obj/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+build/
+publish/
 
-/.vs
-/TaxRateCollector.Frontend/bin/Debug/net10.0
-/TaxRateCollector.Frontend/obj
-/TaxRateCollector.Infrastructure/bin/Debug/net10.0
-/TaxRateCollector.UnitTests/bin/Debug/net10.0
-/TaxRateCollector.UnitTests/obj
+## NuGet
+**/packages/
+*.nupkg
+**/project.lock.json
+**/project.fragment.lock.json
+
+## Visual Studio
+/.vs/
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+*.csproj.user
+*.dbmdl
+*.jfm
+
+## Rider / JetBrains
+.idea/
+*.sln.iml
+
+## User-specific
+*.DotSettings.user
+
+## Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.trx
+*.coverage
+*.coveragexml
+
+## OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+## Environment / secrets
+.env
+*.env
