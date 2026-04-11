@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("TaxRateCollector.Core")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+aa6aee9c5ed7e533f33fa7c00edfac9a709d7198")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+08c8a3270131efe3b45f724da297b9627efea10e")]
 [assembly: System.Reflection.AssemblyProductAttribute("TaxRateCollector.Core")]
 [assembly: System.Reflection.AssemblyTitleAttribute("TaxRateCollector.Core")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

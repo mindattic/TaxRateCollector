@@ -34,3 +34,15 @@ C:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\obj\Debug\net10.0\T
 C:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\obj\Debug\net10.0\refint\TaxRateCollector.Core.dll
 C:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\obj\Debug\net10.0\TaxRateCollector.Core.pdb
 C:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\obj\Debug\net10.0\ref\TaxRateCollector.Core.dll
+D:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\bin\Debug\net10.0\TaxRateCollector.Core.deps.json
+D:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\bin\Debug\net10.0\TaxRateCollector.Core.dll
+D:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\bin\Debug\net10.0\TaxRateCollector.Core.pdb
+D:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\obj\Debug\net10.0\TaxRateCollector.Core.GeneratedMSBuildEditorConfig.editorconfig
+D:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\obj\Debug\net10.0\TaxRateCollector.Core.AssemblyInfoInputs.cache
+D:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\obj\Debug\net10.0\TaxRateCollector.Core.AssemblyInfo.cs
+D:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\obj\Debug\net10.0\TaxRateCollector.Core.csproj.CoreCompileInputs.cache
+D:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\obj\Debug\net10.0\TaxRateCollector.Core.sourcelink.json
+D:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\obj\Debug\net10.0\TaxRateCollector.Core.dll
+D:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\obj\Debug\net10.0\refint\TaxRateCollector.Core.dll
+D:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\obj\Debug\net10.0\TaxRateCollector.Core.pdb
+D:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Core\obj\Debug\net10.0\ref\TaxRateCollector.Core.dll

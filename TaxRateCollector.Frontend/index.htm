@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TaxRateCollector — Implementation Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&family=Libre+Franklin:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#FAFAF7;
+  --surface:#FFFFFF;
+  --surface-raised:#F3F1EC;
+  --surface-hover:#EBE8E2;
+  --border:#DDD9D0;
+  --border-light:#EDEAE4;
+  --text:#2C2A25;
+  --text-mid:#5C5750;
+  --text-dim:#918A7E;
+  --hawk:#B8632B;
+  --hawk-glow:rgba(184,99,43,0.10);
+  --hawk-dim:rgba(184,99,43,0.05);
+  --green:#2E8B57;
+  --blue:#3A71A0;
+  --purple:#7B4F9E;
+  --red:#B94A3A;
+  --yellow:#A08520;
+  --serif:'Playfair Display',Georgia,serif;
+  --sans:'Libre Franklin','Segoe UI',sans-serif;
+  --mono:'JetBrains Mono','Fira Code',monospace;
+}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+/* Grain overlay */
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+  background-repeat:repeat;
+}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#C5C0B6;border-radius:3px}
+
+/* ── HEADER ── */
+.header{
+  padding:48px 48px 40px;
+  border-bottom:1px solid var(--border);
+  position:relative;
+  overflow:hidden;
+}
+.header::before{
+  content:'';position:absolute;top:-80px;right:-40px;width:320px;height:320px;
+  background:radial-gradient(circle,rgba(184,99,43,0.06) 0%,transparent 70%);
+  pointer-events:none;
+}
+.brand{
+  display:flex;align-items:center;gap:14px;margin-bottom:20px;
+}
+.brand-icon{
+  width:44px;height:44px;border-radius:10px;
+  background:linear-gradient(135deg,var(--hawk),#9A5520);
+  display:flex;align-items:center;justify-content:center;
+  font-size:22px;color:#fff;font-weight:700;
+  box-shadow:0 4px 16px rgba(184,99,43,0.20);
+}
+.brand-name{
+  font-family:var(--serif);font-size:28px;font-weight:700;letter-spacing:-0.02em;
+  color:var(--text);
+}
+.brand-name span{color:var(--hawk)}
+.header-sub{
+  font-size:11px;text-transform:uppercase;letter-spacing:0.14em;
+  color:var(--text-dim);font-weight:600;margin-bottom:10px;
+}
+.header h1{
+  font-family:var(--serif);font-size:38px;font-weight:400;line-height:1.15;
+  letter-spacing:-0.01em;max-width:600px;
+}
+.header h1 em{font-style:italic;color:var(--hawk)}
+.header-desc{
+  margin-top:14px;font-size:14px;color:var(--text-dim);
+  max-width:520px;line-height:1.6;
+}
+.tech-badges{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+.tech-badge{
+  font-family:var(--mono);font-size:11px;
+  padding:4px 12px;border-radius:4px;
+  background:var(--surface-raised);border:1px solid var(--border);
+  color:var(--text-mid);
+}
+
+/* ── TABS ── */
+.tabs{
+  display:flex;gap:0;border-bottom:1px solid var(--border);
+  overflow-x:auto;padding:0 40px;
+  scrollbar-width:none;
+}
+.tabs::-webkit-scrollbar{display:none}
+.tab{
+  padding:16px 20px 14px;border:none;background:none;cursor:pointer;
+  font-family:var(--sans);font-size:13px;font-weight:500;
+  color:var(--text-dim);white-space:nowrap;
+  border-bottom:2px solid transparent;
+  transition:all 0.2s ease;display:flex;align-items:center;gap:7px;
+}
+.tab:hover{color:var(--text-mid);background:var(--hawk-dim)}
+.tab.active{
+  color:var(--hawk);font-weight:700;
+  border-bottom-color:var(--hawk);
+  background:var(--hawk-dim);
+}
+.tab-icon{font-size:15px;opacity:0.7}
+.tab.active .tab-icon{opacity:1}
+
+/* ── CONTENT AREA ── */
+.content{padding:32px 48px 80px;max-width:960px}
+.section{display:none;animation:fadeUp 0.3s ease}
+.section.active{display:block}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+.section-summary{
+  font-size:15px;line-height:1.7;color:var(--text-mid);
+  margin-bottom:28px;max-width:720px;
+}
+
+/* ── CARDS ── */
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;padding:20px 24px;margin-bottom:14px;
+  transition:border-color 0.2s;
+}
+.card:hover{border-color:rgba(184,99,43,0.35)}
+.card-title{
+  font-family:var(--sans);font-weight:700;font-size:14px;
+  margin-bottom:10px;display:flex;align-items:center;gap:8px;
+}
+.card-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.card-label{
+  font-size:10px;text-transform:uppercase;letter-spacing:0.08em;
+  color:var(--text-dim);font-weight:600;margin-bottom:4px;
+}
+.card-text{font-size:13px;line-height:1.55;color:var(--text)}
+.card-text.dim{color:var(--text-dim)}
+.color-dot{
+  width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0;
+}
+
+/* ── SCHEMA TABLE ── */
+.schema-title{
+  font-family:var(--mono);font-size:13px;font-weight:700;
+  color:var(--green);margin-bottom:8px;letter-spacing:0.02em;
+}
+.schema-table{
+  width:100%;border-collapse:collapse;margin-bottom:24px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;overflow:hidden;
+}
+.schema-table th{
+  text-align:left;font-size:10px;text-transform:uppercase;
+  letter-spacing:0.07em;color:var(--text-dim);font-weight:600;
+  padding:8px 14px;border-bottom:1px solid var(--border);
+  background:var(--surface-raised);
+}
+.schema-table td{
+  font-family:var(--mono);font-size:12px;padding:6px 14px;
+  border-bottom:1px solid var(--border-light);color:var(--text);
+}
+.schema-table td:nth-child(2){color:var(--text-dim)}
+.schema-table td:nth-child(3){
+  font-family:var(--sans);font-size:11.5px;color:var(--text-dim);
+}
+.schema-table tr:last-child td{border-bottom:none}
+
+/* ── CODE BLOCK ── */
+.code-title{
+  font-family:var(--mono);font-size:12px;font-weight:700;
+  margin-bottom:8px;
+}
+.code-block{
+  background:#F7F5F0;border:1px solid #DDD9D0;border-radius:8px;
+  padding:18px 20px;font-family:var(--mono);font-size:11.5px;
+  line-height:1.6;color:#2C2A25;overflow-x:auto;margin-bottom:22px;
+  white-space:pre;
+}
+.code-block .kw{color:#7B4F9E}
+.code-block .tp{color:#1A7F7A}
+.code-block .str{color:#2E8B57}
+.code-block .cm{color:#918A7E;font-style:italic}
+.code-block .fn{color:#A07020}
+
+/* ── PROJECT TREE ── */
+.tree-block{
+  background:#F7F5F0;border:1px solid #DDD9D0;border-radius:8px;
+  padding:24px 28px;font-family:var(--mono);font-size:12px;
+  line-height:1.65;color:#2C2A25;overflow-x:auto;white-space:pre;
+}
+.tree-block .folder{color:var(--hawk)}
+.tree-block .file{color:#3A71A0}
+.tree-block .comment{color:#918A7E}
+
+/* ── PAGE CARDS ── */
+.page-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;padding:18px 22px;margin-bottom:12px;
+}
+.page-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.page-name{font-weight:700;font-size:14px}
+.page-route{
+  font-family:var(--mono);font-size:11px;color:var(--text-dim);
+  background:var(--surface-raised);border:1px solid var(--border);
+  border-radius:4px;padding:2px 10px;
+}
+.page-feature{
+  font-size:13px;line-height:1.55;padding:4px 0 4px 16px;
+  border-left:2px solid rgba(184,99,43,0.25);margin-bottom:5px;
+  color:var(--text);
+}
+
+/* ── SPRINT CARDS ── */
+.sprint-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;padding:22px 26px;margin-bottom:16px;
+}
+.sprint-header{
+  display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;
+}
+.sprint-name{font-weight:700;font-size:15px}
+.sprint-week{
+  font-family:var(--mono);font-size:11px;color:var(--text-dim);
+  background:var(--surface-raised);border:1px solid var(--border);
+  border-radius:4px;padding:3px 12px;
+}
+.sprint-task{
+  font-size:13px;line-height:1.55;padding:5px 0 5px 16px;
+  border-left:2px solid rgba(46,139,87,0.30);margin-bottom:4px;
+}
+.sprint-deliverable{
+  margin-top:14px;padding:10px 16px;border-radius:6px;
+  background:rgba(46,139,87,0.07);border:1px solid rgba(46,139,87,0.18);
+  font-size:12px;font-weight:600;color:var(--green);
+}
+.pkg-grid{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.pkg-tag{
+  font-family:var(--mono);font-size:11px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:5px;padding:5px 13px;color:var(--text-mid);
+}
+
+/* ── PIPELINE STEPS ── */
+.pipeline{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;padding:20px 24px;
+}
+.pipeline-step{
+  font-family:var(--mono);font-size:12px;line-height:1.75;
+  color:var(--text);padding-left:4px;
+}
+.pipeline-step .num{color:var(--hawk);font-weight:700}
+
+/* ── STRATEGY CARD ── */
+.strat-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;padding:16px 20px;margin-bottom:10px;
+}
+.strat-name{font-weight:700;font-size:13px;margin-bottom:4px}
+.strat-source{color:var(--text-dim);font-size:12px;font-weight:400}
+.strat-detail{font-size:13px;line-height:1.55;margin-top:4px}
+.strat-detail strong{color:var(--text-mid);font-weight:600}
+
+.section-label{
+  font-weight:700;font-size:14px;margin:28px 0 12px;
+}
+
+/* ── RESPONSIVE ── */
+@media(max-width:768px){
+  .header{padding:32px 24px 28px}
+  .header h1{font-size:28px}
+  .content{padding:24px 24px 60px}
+  .tabs{padding:0 16px}
+  .tab{padding:12px 14px 10px;font-size:12px}
+  .card-grid{grid-template-columns:1fr}
+  .brand-name{font-size:22px}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════ HEADER ═══════ -->
+<div class="header">
+  <div class="brand">
+    <div class="brand-icon">⟐</div>
+    <div class="brand-name">Tax<span>Hawk</span></div>
+  </div>
+  <div class="header-sub">Implementation Plan — Proof of Concept</div>
+  <h1>US Sales &amp; Use Tax<br><em>Rate Collection System</em></h1>
+  <p class="header-desc">Scrape, sanitize, store, diff, and calculate tax rates across US jurisdictions — from a single Blazor Server app backed by SQLite.</p>
+  <div class="tech-badges">
+    <span class="tech-badge">C# / .NET 8</span>
+    <span class="tech-badge">Blazor Server</span>
+    <span class="tech-badge">SQLite + EF Core</span>
+    <span class="tech-badge">HtmlAgilityPack</span>
+    <span class="tech-badge">CsvHelper</span>
+  </div>
+</div>
+
+<!-- ═══════ TABS ═══════ -->
+<div class="tabs" id="tabs">
+  <button class="tab active" data-tab="arch"><span class="tab-icon">◈</span> Architecture</button>
+  <button class="tab" data-tab="db"><span class="tab-icon">⊞</span> Database Schema</button>
+  <button class="tab" data-tab="scraper"><span class="tab-icon">⟁</span> Scraper Design</button>
+  <button class="tab" data-tab="project"><span class="tab-icon">⧉</span> Project Structure</button>
+  <button class="tab" data-tab="interfaces"><span class="tab-icon">⟐</span> Key Interfaces</button>
+  <button class="tab" data-tab="ui"><span class="tab-icon">◻</span> Blazor UI Pages</button>
+  <button class="tab" data-tab="milestones"><span class="tab-icon">▸</span> Sprint Plan</button>
+</div>
+
+<!-- ═══════ CONTENT ═══════ -->
+<div class="content">
+
+<!-- ── ARCHITECTURE ── -->
+<div class="section active" id="arch">
+  <p class="section-summary">The system is a 6-layer pipeline: Schedule → Scrape → Store → Diff → Alert/Update → Calculate. For the PoC we collapse this into a Blazor Server app with SQLite, a background scraper service, and a Razor-based UI.</p>
+
+  <div class="card">
+    <div class="card-title"><span class="color-dot" style="background:var(--hawk)"></span> Scheduler</div>
+    <div class="card-grid">
+      <div><div class="card-label">PoC Approach</div><div class="card-text">IHostedService with a Timer (BackgroundService) — runs on configurable interval, default daily.</div></div>
+      <div><div class="card-label">Production Path</div><div class="card-text dim">Hangfire / Quartz.NET / Azure Functions Timer Trigger</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="color-dot" style="background:var(--blue)"></span> Scraper</div>
+    <div class="card-grid">
+      <div><div class="card-label">PoC Approach</div><div class="card-text">HttpClient + HtmlAgilityPack targeting 3–5 sample state tax sites. Each jurisdiction gets its own IScrapeStrategy implementation.</div></div>
+      <div><div class="card-label">Production Path</div><div class="card-text dim">Playwright/Puppeteer for JS-rendered pages, queue-based fan-out across 14k jurisdictions</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="color-dot" style="background:var(--green)"></span> Storage</div>
+    <div class="card-grid">
+      <div><div class="card-label">PoC Approach</div><div class="card-text">SQLite via EF Core — two logical snapshots: "current" and "previous" rate rows with an EffectiveDate column.</div></div>
+      <div><div class="card-label">Production Path</div><div class="card-text dim">PostgreSQL / SQL Server with partitioned history tables</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="color-dot" style="background:var(--yellow)"></span> Diff Engine</div>
+    <div class="card-grid">
+      <div><div class="card-label">PoC Approach</div><div class="card-text">LINQ comparison of today's scraped set vs latest stored set. Flags inserts, deletes, and value changes.</div></div>
+      <div><div class="card-label">Production Path</div><div class="card-text dim">Temporal tables or CDC (Change Data Capture)</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="color-dot" style="background:var(--red)"></span> Alert / Update</div>
+    <div class="card-grid">
+      <div><div class="card-label">PoC Approach</div><div class="card-text">In-app toast notifications + a ChangeLog table the UI reads. Optional email via SmtpClient.</div></div>
+      <div><div class="card-label">Production Path</div><div class="card-text dim">SNS / Slack webhook / SendGrid integration</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="color-dot" style="background:var(--purple)"></span> Tax Calculator</div>
+    <div class="card-grid">
+      <div><div class="card-label">PoC Approach</div><div class="card-text">Simple endpoint: TaxAmount = price × quantity × tax_rate. Rate fetched by jurisdiction key from SQLite.</div></div>
+      <div><div class="card-label">Production Path</div><div class="card-text dim">Dedicated microservice with caching layer</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── DATABASE SCHEMA ── -->
+<div class="section" id="db">
+  <p class="section-summary">SQLite with EF Core. Four tables cover the full pipeline: jurisdictions, rate snapshots, a change log, and scrape run metadata.</p>
+
+  <div class="schema-title">Jurisdictions</div>
+  <table class="schema-table">
+    <thead><tr><th>Column</th><th>Type</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td>Id</td><td>INTEGER PK</td><td>Auto-increment</td></tr>
+      <tr><td>StateCode</td><td>TEXT</td><td>e.g. 'IL'</td></tr>
+      <tr><td>JurisdictionName</td><td>TEXT</td><td>e.g. 'Cook County'</td></tr>
+      <tr><td>JurisdictionType</td><td>TEXT</td><td>State | County | City | District</td></tr>
+      <tr><td>FipsCode</td><td>TEXT</td><td>Federal code — unique key</td></tr>
+      <tr><td>SourceUrl</td><td>TEXT</td><td>URL to scrape</td></tr>
+      <tr><td>IsActive</td><td>BOOLEAN</td><td>Soft-delete flag</td></tr>
+    </tbody>
+  </table>
+
+  <div class="schema-title">TaxRates</div>
+  <table class="schema-table">
+    <thead><tr><th>Column</th><th>Type</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td>Id</td><td>INTEGER PK</td><td></td></tr>
+      <tr><td>JurisdictionId</td><td>INTEGER FK</td><td>→ Jurisdictions</td></tr>
+      <tr><td>Rate</td><td>REAL</td><td>e.g. 0.0625 for 6.25%</td></tr>
+      <tr><td>RateType</td><td>TEXT</td><td>General | Food | Clothing | Digital</td></tr>
+      <tr><td>EffectiveDate</td><td>TEXT (ISO)</td><td>When rate became active</td></tr>
+      <tr><td>ScrapedAt</td><td>TEXT (ISO)</td><td>Timestamp of scrape</td></tr>
+      <tr><td>ScrapeRunId</td><td>INTEGER FK</td><td>→ ScrapeRuns</td></tr>
+      <tr><td>RawValue</td><td>TEXT</td><td>Original text before sanitization</td></tr>
+      <tr><td>IsCurrent</td><td>BOOLEAN</td><td>True for latest snapshot</td></tr>
+    </tbody>
+  </table>
+
+  <div class="schema-title">ChangeLog</div>
+  <table class="schema-table">
+    <thead><tr><th>Column</th><th>Type</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td>Id</td><td>INTEGER PK</td><td></td></tr>
+      <tr><td>JurisdictionId</td><td>INTEGER FK</td><td>→ Jurisdictions</td></tr>
+      <tr><td>ChangeType</td><td>TEXT</td><td>RateChanged | NewJurisdiction | Removed</td></tr>
+      <tr><td>OldRate</td><td>REAL</td><td>null for new entries</td></tr>
+      <tr><td>NewRate</td><td>REAL</td><td>null for removals</td></tr>
+      <tr><td>DetectedAt</td><td>TEXT (ISO)</td><td></td></tr>
+      <tr><td>Acknowledged</td><td>BOOLEAN</td><td>UI dismiss flag</td></tr>
+    </tbody>
+  </table>
+
+  <div class="schema-title">ScrapeRuns</div>
+  <table class="schema-table">
+    <thead><tr><th>Column</th><th>Type</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td>Id</td><td>INTEGER PK</td><td></td></tr>
+      <tr><td>StartedAt</td><td>TEXT (ISO)</td><td></td></tr>
+      <tr><td>CompletedAt</td><td>TEXT (ISO)</td><td>null if still running</td></tr>
+      <tr><td>Status</td><td>TEXT</td><td>Running | Completed | Failed</td></tr>
+      <tr><td>TotalScraped</td><td>INTEGER</td><td>Count of jurisdictions hit</td></tr>
+      <tr><td>ChangesDetected</td><td>INTEGER</td><td>Count of diffs found</td></tr>
+      <tr><td>ErrorCount</td><td>INTEGER</td><td></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── SCRAPER DESIGN ── -->
+<div class="section" id="scraper">
+  <p class="section-summary">Strategy pattern — one class per source format. A ScrapeOrchestrator loops through active jurisdictions, invokes the matching strategy, sanitizes results, and persists them.</p>
+
+  <div class="section-label" style="color:var(--blue)">Target Strategies (PoC)</div>
+
+  <div class="strat-card">
+    <div class="strat-name">Illinois DOR <span class="strat-source">— tax.illinois.gov</span></div>
+    <div class="strat-detail"><strong>Technique:</strong> HTML table parse via HtmlAgilityPack — rates listed in a &lt;table&gt; by county.</div>
+    <div class="strat-detail"><strong>Sanitize:</strong> Strip '%' suffix, parse to decimal, validate 0 &lt; rate &lt; 0.20</div>
+  </div>
+
+  <div class="strat-card">
+    <div class="strat-name">California CDTFA <span class="strat-source">— cdtfa.ca.gov</span></div>
+    <div class="strat-detail"><strong>Technique:</strong> CSV download link — fetch file, parse with CsvHelper.</div>
+    <div class="strat-detail"><strong>Sanitize:</strong> Map city names to FIPS codes, normalize rate format</div>
+  </div>
+
+  <div class="strat-card">
+    <div class="strat-name">Texas Comptroller <span class="strat-source">— comptroller.texas.gov</span></div>
+    <div class="strat-detail"><strong>Technique:</strong> PDF/Excel file download — parse with ClosedXML or iTextSharp.</div>
+    <div class="strat-detail"><strong>Sanitize:</strong> Merge combined city+county rows, split into individual rate records</div>
+  </div>
+
+  <div class="section-label" style="color:var(--blue)">Pipeline Steps</div>
+  <div class="pipeline">
+    <div class="pipeline-step"><span class="num">1.</span> ScrapeOrchestrator pulls all active Jurisdictions from DB</div>
+    <div class="pipeline-step"><span class="num">2.</span> Groups by scraper strategy (based on StateCode or SourceUrl pattern)</div>
+    <div class="pipeline-step"><span class="num">3.</span> Calls IScrapeStrategy.ScrapeAsync(jurisdiction) for each</div>
+    <div class="pipeline-step"><span class="num">4.</span> Strategy returns RawScrapeResult { RawValue, ParsedRate, Confidence }</div>
+    <div class="pipeline-step"><span class="num">5.</span> Sanitizer validates: rate range, format, duplicate detection</div>
+    <div class="pipeline-step"><span class="num">6.</span> Persisted to TaxRates with IsCurrent = true (previous rows flipped to false)</div>
+    <div class="pipeline-step"><span class="num">7.</span> DiffEngine compares new vs old, writes to ChangeLog</div>
+  </div>
+</div>
+
+<!-- ── PROJECT STRUCTURE ── -->
+<div class="section" id="project">
+  <p class="section-summary">Single Blazor Server solution with clear vertical slices. The solution separates concerns without over-engineering — no microservices for the PoC.</p>
+  <div class="tree-block"><span class="folder">TaxRateCollector/</span>
+├── TaxRateCollector.sln
+├── <span class="folder">src/</span>
+│   ├── <span class="folder">TaxRateCollector.Web/</span>                     <span class="comment">← Blazor Server host</span>
+│   │   ├── <span class="file">Program.cs</span>                    <span class="comment">← DI, EF, hosted service registration</span>
+│   │   ├── <span class="folder">Components/</span>
+│   │   │   ├── <span class="folder">Layout/</span>
+│   │   │   │   ├── <span class="file">MainLayout.razor</span>
+│   │   │   │   └── <span class="file">NavMenu.razor</span>
+│   │   │   └── <span class="folder">Pages/</span>
+│   │   │       ├── <span class="file">Dashboard.razor</span>        <span class="comment">← Overview + run trigger</span>
+│   │   │       ├── <span class="file">Rates.razor</span>            <span class="comment">← Browse / search rates</span>
+│   │   │       ├── <span class="file">ChangeLog.razor</span>        <span class="comment">← Diff results + alerts</span>
+│   │   │       ├── <span class="file">ScrapeRuns.razor</span>       <span class="comment">← History of runs</span>
+│   │   │       └── <span class="file">TaxCalc.razor</span>          <span class="comment">← price × qty × rate tool</span>
+│   │   ├── <span class="folder">wwwroot/</span>
+│   │   └── <span class="file">appsettings.json</span>
+│   │
+│   ├── <span class="folder">TaxRateCollector.Core/</span>                    <span class="comment">← Domain + interfaces</span>
+│   │   ├── <span class="folder">Entities/</span>
+│   │   │   ├── <span class="file">Jurisdiction.cs</span>
+│   │   │   ├── <span class="file">TaxRate.cs</span>
+│   │   │   ├── <span class="file">ChangeLogEntry.cs</span>
+│   │   │   └── <span class="file">ScrapeRun.cs</span>
+│   │   ├── <span class="folder">Interfaces/</span>
+│   │   │   ├── <span class="file">IScrapeStrategy.cs</span>
+│   │   │   ├── <span class="file">IScrapeOrchestrator.cs</span>
+│   │   │   ├── <span class="file">IDiffEngine.cs</span>
+│   │   │   └── <span class="file">ITaxCalculator.cs</span>
+│   │   └── <span class="folder">Enums/</span>
+│   │       ├── <span class="file">JurisdictionType.cs</span>
+│   │       ├── <span class="file">ChangeType.cs</span>
+│   │       └── <span class="file">ScrapeStatus.cs</span>
+│   │
+│   ├── <span class="folder">TaxRateCollector.Infrastructure/</span>          <span class="comment">← EF, scrapers, services</span>
+│   │   ├── <span class="folder">Data/</span>
+│   │   │   ├── <span class="file">AppDbContext.cs</span>
+│   │   │   └── <span class="folder">Migrations/</span>
+│   │   ├── <span class="folder">Scrapers/</span>
+│   │   │   ├── <span class="file">ScrapeOrchestrator.cs</span>
+│   │   │   ├── <span class="folder">Strategies/</span>
+│   │   │   │   ├── <span class="file">IllinoisTableScraper.cs</span>
+│   │   │   │   ├── <span class="file">CaliforniaCsvScraper.cs</span>
+│   │   │   │   └── <span class="file">TexasExcelScraper.cs</span>
+│   │   │   └── <span class="file">Sanitizer.cs</span>
+│   │   ├── <span class="folder">Services/</span>
+│   │   │   ├── <span class="file">DiffEngine.cs</span>
+│   │   │   ├── <span class="file">TaxCalculator.cs</span>
+│   │   │   ├── <span class="file">AlertService.cs</span>
+│   │   │   └── <span class="file">ScrapeSchedulerService.cs</span>  <span class="comment">← BackgroundService</span>
+│   │   └── <span class="folder">Seeding/</span>
+│   │       └── <span class="file">JurisdictionSeeder.cs</span>
+│   │
+│   └── <span class="folder">TaxRateCollector.Tests/</span>
+│       ├── <span class="folder">ScraperTests/</span>
+│       ├── <span class="folder">DiffEngineTests/</span>
+│       ├── <span class="folder">SanitizerTests/</span>
+│       └── <span class="folder">TaxCalcTests/</span>
+└── <span class="file">README.md</span></div>
+</div>
+
+<!-- ── KEY INTERFACES ── -->
+<div class="section" id="interfaces">
+  <p class="section-summary">Core contracts that drive the system. These are the interfaces you build against — implementations live in Infrastructure.</p>
+
+  <div class="code-title" style="color:var(--purple)">IScrapeStrategy.cs</div>
+  <div class="code-block"><span class="kw">public interface</span> <span class="tp">IScrapeStrategy</span>
+{
+    <span class="tp">string</span> StrategyKey { <span class="kw">get</span>; } <span class="cm">// e.g. "IL-TABLE", "CA-CSV"</span>
+    <span class="tp">bool</span> <span class="fn">CanHandle</span>(<span class="tp">Jurisdiction</span> jurisdiction);
+    <span class="tp">Task</span>&lt;<span class="tp">IReadOnlyList</span>&lt;<span class="tp">RawScrapeResult</span>&gt;&gt; <span class="fn">ScrapeAsync</span>(
+        <span class="tp">Jurisdiction</span> jurisdiction,
+        <span class="tp">CancellationToken</span> ct = <span class="kw">default</span>);
+}
+
+<span class="kw">public record</span> <span class="tp">RawScrapeResult</span>(
+    <span class="tp">string</span>   RawValue,          <span class="cm">// "6.25%"</span>
+    <span class="tp">decimal?</span> ParsedRate,        <span class="cm">// 0.0625</span>
+    <span class="tp">string?</span>  RateType,          <span class="cm">// "General"</span>
+    <span class="tp">string?</span>  JurisdictionHint,  <span class="cm">// county/city name from source</span>
+    <span class="tp">float</span>    Confidence);       <span class="cm">// 0.0–1.0</span></div>
+
+  <div class="code-title" style="color:var(--purple)">IDiffEngine.cs</div>
+  <div class="code-block"><span class="kw">public interface</span> <span class="tp">IDiffEngine</span>
+{
+    <span class="tp">Task</span>&lt;<span class="tp">DiffReport</span>&gt; <span class="fn">DetectChangesAsync</span>(
+        <span class="tp">int</span> scrapeRunId,
+        <span class="tp">CancellationToken</span> ct = <span class="kw">default</span>);
+}
+
+<span class="kw">public record</span> <span class="tp">DiffReport</span>(
+    <span class="tp">int</span> TotalCompared,
+    <span class="tp">IReadOnlyList</span>&lt;<span class="tp">RateChange</span>&gt; Changes);
+
+<span class="kw">public record</span> <span class="tp">RateChange</span>(
+    <span class="tp">int</span>        JurisdictionId,
+    <span class="tp">ChangeType</span> Type,
+    <span class="tp">decimal?</span>   OldRate,
+    <span class="tp">decimal?</span>   NewRate);</div>
+
+  <div class="code-title" style="color:var(--purple)">Sanitizer.cs — core logic</div>
+  <div class="code-block"><span class="kw">public static class</span> <span class="tp">RateSanitizer</span>
+{
+    <span class="kw">public static</span> <span class="tp">decimal?</span> <span class="fn">Parse</span>(<span class="tp">string</span> raw)
+    {
+        <span class="kw">if</span> (<span class="tp">string</span>.<span class="fn">IsNullOrWhiteSpace</span>(raw)) <span class="kw">return null</span>;
+
+        <span class="cm">// Strip %, whitespace, commas</span>
+        <span class="kw">var</span> cleaned = raw.<span class="fn">Trim</span>().<span class="fn">TrimEnd</span>(<span class="str">'%'</span>).<span class="fn">Trim</span>();
+
+        <span class="kw">if</span> (!<span class="tp">decimal</span>.<span class="fn">TryParse</span>(cleaned, <span class="kw">out var</span> value))
+            <span class="kw">return null</span>;
+
+        <span class="cm">// If > 1, assume percentage (6.25 → 0.0625)</span>
+        <span class="kw">if</span> (value > 1m) value /= 100m;
+
+        <span class="cm">// Validate realistic tax range</span>
+        <span class="kw">return</span> value <span class="kw">is</span> > 0m <span class="kw">and</span> &lt; 0.20m ? value : <span class="kw">null</span>;
+    }
+}</div>
+
+  <div class="code-title" style="color:var(--purple)">ScrapeSchedulerService.cs</div>
+  <div class="code-block"><span class="kw">public class</span> <span class="tp">ScrapeSchedulerService</span> : <span class="tp">BackgroundService</span>
+{
+    <span class="kw">private readonly</span> <span class="tp">IServiceScopeFactory</span> _scopeFactory;
+    <span class="kw">private readonly</span> <span class="tp">ILogger</span>&lt;<span class="tp">ScrapeSchedulerService</span>&gt; _logger;
+    <span class="kw">private readonly</span> <span class="tp">TimeSpan</span> _interval = <span class="tp">TimeSpan</span>.<span class="fn">FromHours</span>(24);
+
+    <span class="kw">protected override async</span> <span class="tp">Task</span> <span class="fn">ExecuteAsync</span>(
+        <span class="tp">CancellationToken</span> stoppingToken)
+    {
+        <span class="kw">while</span> (!stoppingToken.IsCancellationRequested)
+        {
+            <span class="kw">using var</span> scope = _scopeFactory.<span class="fn">CreateScope</span>();
+            <span class="kw">var</span> orchestrator = scope.ServiceProvider
+                .<span class="fn">GetRequiredService</span>&lt;<span class="tp">IScrapeOrchestrator</span>&gt;();
+
+            <span class="kw">try</span>
+            {
+                <span class="kw">await</span> orchestrator.<span class="fn">RunFullScrapeAsync</span>(stoppingToken);
+            }
+            <span class="kw">catch</span> (<span class="tp">Exception</span> ex)
+            {
+                _logger.<span class="fn">LogError</span>(ex, <span class="str">"Scrape cycle failed"</span>);
+            }
+
+            <span class="kw">await</span> <span class="tp">Task</span>.<span class="fn">Delay</span>(_interval, stoppingToken);
+        }
+    }
+}</div>
+</div>
+
+<!-- ── BLAZOR UI PAGES ── -->
+<div class="section" id="ui">
+  <p class="section-summary">Five pages cover the full workflow. Blazor Server's SignalR connection enables real-time scrape progress without polling.</p>
+
+  <div class="page-card">
+    <div class="page-header"><span class="page-name">Dashboard</span><span class="page-route">/</span></div>
+    <div class="page-feature">Summary cards: total jurisdictions, last run time, changes detected, error count</div>
+    <div class="page-feature">"Run Now" button triggers ScrapeOrchestrator via injected service</div>
+    <div class="page-feature">Live progress bar during scrape (update via InvokeAsync + StateHasChanged)</div>
+    <div class="page-feature">Recent changes feed (last 10 from ChangeLog)</div>
+  </div>
+
+  <div class="page-card">
+    <div class="page-header"><span class="page-name">Rates Browser</span><span class="page-route">/rates</span></div>
+    <div class="page-feature">Searchable, sortable table of all current rates</div>
+    <div class="page-feature">Filter by state, jurisdiction type, rate range</div>
+    <div class="page-feature">Click row to see full history for that jurisdiction</div>
+    <div class="page-feature">Export to CSV button</div>
+  </div>
+
+  <div class="page-card">
+    <div class="page-header"><span class="page-name">Change Log</span><span class="page-route">/changes</span></div>
+    <div class="page-feature">Timeline view of all detected changes</div>
+    <div class="page-feature">Color-coded: green (new), yellow (changed), red (removed)</div>
+    <div class="page-feature">Acknowledge / dismiss individual changes</div>
+    <div class="page-feature">Filter by date range and change type</div>
+  </div>
+
+  <div class="page-card">
+    <div class="page-header"><span class="page-name">Scrape Runs</span><span class="page-route">/runs</span></div>
+    <div class="page-feature">History table of all scrape executions</div>
+    <div class="page-feature">Status badges: Running, Completed, Failed</div>
+    <div class="page-feature">Drill into per-jurisdiction results for any run</div>
+    <div class="page-feature">Error details expandable per failed jurisdiction</div>
+  </div>
+
+  <div class="page-card">
+    <div class="page-header"><span class="page-name">Tax Calculator</span><span class="page-route">/calc</span></div>
+    <div class="page-feature">Input fields: Jurisdiction (autocomplete), Price, Quantity</div>
+    <div class="page-feature">Real-time result: Tax Amount = price × qty × rate</div>
+    <div class="page-feature">Shows which rate is being used and its effective date</div>
+    <div class="page-feature">Handles combined rates (state + county + city + district)</div>
+  </div>
+</div>
+
+<!-- ── SPRINT PLAN ── -->
+<div class="section" id="milestones">
+  <p class="section-summary">Three 1-week sprints take you from empty repo to working PoC. Week 4 is buffer / polish.</p>
+
+  <div class="sprint-card">
+    <div class="sprint-header">
+      <span class="sprint-name">Sprint 1 — Foundation</span>
+      <span class="sprint-week">Week 1</span>
+    </div>
+    <div class="sprint-task">dotnet new blazorserver, add project references, NuGet packages</div>
+    <div class="sprint-task">Define all entities + enums in TaxRateCollector.Core</div>
+    <div class="sprint-task">AppDbContext + SQLite connection string + initial migration</div>
+    <div class="sprint-task">JurisdictionSeeder — seed 15–20 jurisdictions across 3 states</div>
+    <div class="sprint-task">Basic MainLayout + NavMenu with all 5 page stubs</div>
+    <div class="sprint-task">Dashboard page showing seeded jurisdiction count</div>
+    <div class="sprint-deliverable">✓ Deliverable: App runs, DB seeds, navigation works</div>
+  </div>
+
+  <div class="sprint-card">
+    <div class="sprint-header">
+      <span class="sprint-name">Sprint 2 — Scraper Pipeline</span>
+      <span class="sprint-week">Week 2</span>
+    </div>
+    <div class="sprint-task">Implement IScrapeStrategy for Illinois (HTML table)</div>
+    <div class="sprint-task">Implement IScrapeStrategy for California (CSV download)</div>
+    <div class="sprint-task">RateSanitizer with unit tests (edge cases: '6.25%', '0.0625', 'N/A', '')</div>
+    <div class="sprint-task">ScrapeOrchestrator — loop, invoke strategy, persist</div>
+    <div class="sprint-task">DiffEngine — compare current vs previous, write ChangeLog</div>
+    <div class="sprint-task">ScrapeSchedulerService — BackgroundService with manual trigger</div>
+    <div class="sprint-task">Dashboard "Run Now" button wired to orchestrator</div>
+    <div class="sprint-deliverable">✓ Deliverable: End-to-end scrape → store → diff working</div>
+  </div>
+
+  <div class="sprint-card">
+    <div class="sprint-header">
+      <span class="sprint-name">Sprint 3 — UI &amp; Calculator</span>
+      <span class="sprint-week">Week 3</span>
+    </div>
+    <div class="sprint-task">Rates Browser page with search/filter/sort</div>
+    <div class="sprint-task">Change Log page with timeline and color coding</div>
+    <div class="sprint-task">Scrape Runs page with drill-down</div>
+    <div class="sprint-task">Tax Calculator page with jurisdiction autocomplete</div>
+    <div class="sprint-task">Live progress feedback during scrape on Dashboard</div>
+    <div class="sprint-task">Error handling + logging polish</div>
+    <div class="sprint-task">README with setup instructions</div>
+    <div class="sprint-deliverable">✓ Deliverable: Full PoC demo-ready</div>
+  </div>
+
+  <div class="section-label" style="color:var(--blue)">NuGet Packages</div>
+  <div class="pkg-grid">
+    <span class="pkg-tag">Microsoft.EntityFrameworkCore.Sqlite</span>
+    <span class="pkg-tag">Microsoft.EntityFrameworkCore.Design</span>
+    <span class="pkg-tag">HtmlAgilityPack</span>
+    <span class="pkg-tag">CsvHelper</span>
+    <span class="pkg-tag">ClosedXML</span>
+    <span class="pkg-tag">Serilog.AspNetCore</span>
+    <span class="pkg-tag">Blazored.Toast</span>
+  </div>
+</div>
+
+</div><!-- /content -->
+
+<script>
+(function(){
+  const tabs = document.querySelectorAll('.tab');
+  const sections = document.querySelectorAll('.section');
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.getAttribute('data-tab');
+
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+
+      sections.forEach(s => {
+        s.classList.remove('active');
+        if (s.id === target) s.classList.add('active');
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>

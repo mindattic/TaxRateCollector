@@ -8,23 +8,23 @@
     "net10.0": []
   },
   "packageFolders": {
-    "C:\\Users\\ohleo\\.nuget\\packages\\": {},
+    "C:\\Users\\ryand\\.nuget\\packages\\": {},
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Projects\\MindAttic\\TaxRateCollector\\TaxRateCollector.Core\\TaxRateCollector.Core.csproj",
+      "projectUniqueName": "D:\\Projects\\MindAttic\\TaxRateCollector\\TaxRateCollector.Core\\TaxRateCollector.Core.csproj",
       "projectName": "TaxRateCollector.Core",
-      "projectPath": "C:\\Projects\\MindAttic\\TaxRateCollector\\TaxRateCollector.Core\\TaxRateCollector.Core.csproj",
-      "packagesPath": "C:\\Users\\ohleo\\.nuget\\packages\\",
-      "outputPath": "C:\\Projects\\MindAttic\\TaxRateCollector\\TaxRateCollector.Core\\obj\\",
+      "projectPath": "D:\\Projects\\MindAttic\\TaxRateCollector\\TaxRateCollector.Core\\TaxRateCollector.Core.csproj",
+      "packagesPath": "C:\\Users\\ryand\\.nuget\\packages\\",
+      "outputPath": "D:\\Projects\\MindAttic\\TaxRateCollector\\TaxRateCollector.Core\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
       ],
       "configFilePaths": [
-        "C:\\Users\\ohleo\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Users\\ryand\\AppData\\Roaming\\NuGet\\NuGet.Config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
