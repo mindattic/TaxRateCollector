@@ -1,0 +1,331 @@
+@page "/subscribe"
+@attribute [Authorize]
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Identity
+@using TaxRateCollector.Core.Entities
+@using TaxRateCollector.Core.Enums
+@using TaxRateCollector.Core.Interfaces
+@using TaxRateCollector.Infrastructure.Data
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject IPayPalService PayPal
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>Subscribe — TaxRateCollector</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Subscribe by State</h1>
+    <p class="page-sub">Select the states your business operates in. Pay only for what you need.</p>
+</div>
+
+@if (_loading)
+{
+    <div class="loading-state">Loading…</div>
+}
+else if (_step == 3)
+{
+    <!-- Success -->
+    <div class="auth-card" style="max-width:520px">
+        <div style="font-size:2.5rem;margin-bottom:.5rem">✓</div>
+        <h2 class="auth-title" style="color:var(--green)">Payment Complete!</h2>
+        <p>You now have access to tax rates and evidence for <strong>@_selectedStates.Count state(s)</strong>.</p>
+        @if (_lastBillingRecord is not null)
+        {
+            <div class="billing-summary">
+                <div class="billing-row"><span>States</span><span>@_lastBillingRecord.StateCount</span></div>
+                <div class="billing-row"><span>Subtotal</span><span>@_lastBillingRecord.Subtotal.ToString("C")/mo</span></div>
+                <div class="billing-row"><span>Tax (@(_lastBillingRecord.BillingStateCode) @((_lastBillingRecord.TaxRate * 100).ToString("F3"))%)</span><span>@_lastBillingRecord.TaxAmount.ToString("C")/mo</span></div>
+                <div class="billing-row billing-total"><span>Total</span><span>@_lastBillingRecord.Total.ToString("C")/mo</span></div>
+                <div class="billing-row muted small"><span>Order ID</span><span>@_lastBillingRecord.PayPalOrderId</span></div>
+            </div>
+        }
+        <a href="/" class="btn-primary auth-btn" style="display:block;text-align:center;margin-top:1rem;text-decoration:none">
+            Browse Tax Rates →
+        </a>
+    </div>
+}
+else
+{
+    <div class="subscribe-layout">
+
+        <!-- ── Left: State selector ── -->
+        <div class="subscribe-states">
+            <div class="subscribe-section-title">
+                Select States
+                <span class="muted small">@_selectedStates.Count selected · @PricePerMonth.ToString("C")/mo subtotal</span>
+            </div>
+            <div class="states-grid">
+                @foreach (var state in _availableStates)
+                {
+                    var sc = state.StateCode;
+                    var active = _selectedStates.Contains(sc);
+                    <button class="state-tile @(active ? "state-tile-active" : "")" @onclick="() => ToggleState(sc)">
+                        <span class="state-tile-code">@sc</span>
+                        <span class="state-tile-name">@state.Name</span>
+                        @if (active) { <span class="state-tile-check">✓</span> }
+                    </button>
+                }
+            </div>
+            <div class="states-actions">
+                <button class="btn-tiny" @onclick="SelectAll">Select All</button>
+                <button class="btn-tiny" @onclick="ClearAll">Clear</button>
+            </div>
+        </div>
+
+        <!-- ── Right: Billing address + order summary ── -->
+        <div class="subscribe-checkout">
+            <div class="subscribe-section-title">Billing Address</div>
+            <p class="muted small" style="margin-bottom:.8rem">Used to calculate sales tax on your subscription using our own jurisdiction data.</p>
+
+            <div class="auth-field">
+                <label>Full Name</label>
+                <input class="setting-input" placeholder="Jane Smith" @bind="_fullName" @bind:event="oninput" />
+            </div>
+            <div class="auth-field">
+                <label>Address</label>
+                <input class="setting-input" placeholder="123 Main St" @bind="_address" @bind:event="oninput" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 80px;gap:.6rem">
+                <div class="auth-field">
+                    <label>City</label>
+                    <input class="setting-input" placeholder="Springfield" @bind="_city" @bind:event="oninput" />
+                </div>
+                <div class="auth-field">
+                    <label>ZIP</label>
+                    <input class="setting-input" placeholder="62701" @bind="_zip" @bind:event="oninput" />
+                </div>
+            </div>
+            <div class="auth-field">
+                <label>State</label>
+                <select class="setting-input" @bind="_billingState" @bind:after="OnBillingStateChange">
+                    <option value="">— Select state —</option>
+                    @foreach (var s in _availableStates)
+                    {
+                        <option value="@s.StateCode">@s.Name (@s.StateCode)</option>
+                    }
+                </select>
+            </div>
+
+            <!-- Order summary -->
+            <div class="order-summary">
+                <div class="subscribe-section-title" style="margin-bottom:.6rem">Order Summary</div>
+                <div class="billing-row"><span>Price per state</span><span>@_pricing.PricePerState.ToString("C") / month</span></div>
+                <div class="billing-row"><span>States selected</span><span>@_selectedStates.Count</span></div>
+                <div class="billing-row"><span>Subtotal</span><span>@PricePerMonth.ToString("C") / month</span></div>
+                @if (!string.IsNullOrEmpty(_billingState) && _billingTaxRate > 0)
+                {
+                    <div class="billing-row"><span>Sales tax (@_billingState @((_billingTaxRate * 100).ToString("F3"))%)</span><span>@TaxAmount.ToString("C") / month</span></div>
+                }
+                else if (!string.IsNullOrEmpty(_billingState))
+                {
+                    <div class="billing-row muted"><span>Sales tax (@_billingState)</span><span>No tax on SaaS</span></div>
+                }
+                <div class="billing-row billing-total"><span>Total</span><span>@Total.ToString("C") / month</span></div>
+            </div>
+
+            @if (_error is not null)
+            {
+                <div class="auth-error">@_error</div>
+            }
+
+            @if (!_isMock)
+            {
+                <!-- Real PayPal: show the standard button text -->
+                <button class="btn-paypal" @onclick="Checkout" disabled="@(!CanCheckout || _processing)">
+                    @(_processing ? "Processing…" : "Pay with PayPal")
+                </button>
+            }
+            else
+            {
+                <button class="btn-paypal btn-paypal-mock" @onclick="Checkout" disabled="@(!CanCheckout || _processing)">
+                    @(_processing ? "Processing…" : "Mock Payment — No charge")
+                </button>
+                <p class="muted small" style="text-align:center;margin-top:.4rem">
+                    Credentials not configured — enter PayPal API keys in Settings → Admin → PayPal to accept real payments.
+                </p>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private int _step = 1;
+    private bool _processing;
+    private string? _error;
+    private bool _isMock = true;
+
+    private PricingConfig _pricing = new();
+    private List<(string StateCode, string Name)> _availableStates = [];
+    private HashSet<string> _selectedStates = [];
+
+    // Billing form
+    private string _fullName = "";
+    private string _address = "";
+    private string _city = "";
+    private string _zip = "";
+    private string _billingState = "";
+    private decimal _billingTaxRate;
+
+    private BillingRecord? _lastBillingRecord;
+
+    private decimal PricePerMonth => _selectedStates.Count * _pricing.PricePerState;
+    private decimal TaxAmount => PricePerMonth * _billingTaxRate;
+    private decimal Total => PricePerMonth + TaxAmount;
+
+    private bool CanCheckout =>
+        _selectedStates.Count > 0 &&
+        !string.IsNullOrWhiteSpace(_fullName) &&
+        !string.IsNullOrWhiteSpace(_address) &&
+        !string.IsNullOrWhiteSpace(_city) &&
+        !string.IsNullOrWhiteSpace(_zip) &&
+        !string.IsNullOrWhiteSpace(_billingState);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        _pricing = await db.PricingConfigs.FirstOrDefaultAsync() ?? new PricingConfig();
+
+        _availableStates = await db.Jurisdictions
+            .Where(j => j.JurisdictionType == JurisdictionType.State && j.IsActive)
+            .OrderBy(j => j.JurisdictionName)
+            .Select(j => new { j.StateCode, j.JurisdictionName })
+            .ToListAsync()
+            .ContinueWith(t => t.Result.Select(x => (x.StateCode, x.JurisdictionName)).ToList());
+
+        _isMock = !await PayPal.IsConfiguredAsync();
+        _loading = false;
+    }
+
+    private void ToggleState(string code)
+    {
+        if (!_selectedStates.Remove(code)) _selectedStates.Add(code);
+    }
+    private void SelectAll() => _selectedStates = _availableStates.Select(s => s.StateCode).ToHashSet();
+    private void ClearAll() => _selectedStates.Clear();
+
+    private async Task OnBillingStateChange()
+    {
+        _billingTaxRate = 0;
+        if (string.IsNullOrEmpty(_billingState)) return;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var jurisdiction = await db.Jurisdictions
+            .Where(j => j.StateCode == _billingState && j.JurisdictionType == JurisdictionType.State)
+            .FirstOrDefaultAsync();
+        if (jurisdiction is null) return;
+
+        var rate = await db.TaxRates
+            .Where(r => r.JurisdictionId == jurisdiction.Id && r.IsCurrent)
+            .Select(r => r.Rate)
+            .FirstOrDefaultAsync();
+
+        _billingTaxRate = rate;
+    }
+
+    private async Task Checkout()
+    {
+        _error = null;
+        _processing = true;
+        StateHasChanged();
+
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (userId is null) { _error = "Session expired. Please log in again."; return; }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            // Get or create subscriber profile
+            var subscriber = await db.Subscribers.FirstOrDefaultAsync(s => s.UserId == userId)
+                ?? new Subscriber
+                {
+                    UserId = userId,
+                    CreatedAt = DateTime.UtcNow.ToString("o")
+                };
+
+            subscriber.FullName = _fullName;
+            subscriber.AddressLine1 = _address;
+            subscriber.City = _city;
+            subscriber.StateCode = _billingState;
+            subscriber.ZipCode = _zip;
+            subscriber.IsActive = true;
+
+            if (subscriber.Id == 0) db.Subscribers.Add(subscriber);
+            await db.SaveChangesAsync();
+
+            // Create billing record
+            var billing = new BillingRecord
+            {
+                SubscriberId = subscriber.Id,
+                StateCount = _selectedStates.Count,
+                PricePerState = _pricing.PricePerState,
+                Subtotal = PricePerMonth,
+                BillingStateCode = _billingState,
+                TaxRate = _billingTaxRate,
+                TaxAmount = TaxAmount,
+                Total = Total,
+                Currency = _pricing.Currency,
+                Status = BillingStatus.Pending,
+                CreatedAt = DateTime.UtcNow.ToString("o")
+            };
+            db.BillingRecords.Add(billing);
+            await db.SaveChangesAsync();
+
+            // PayPal order
+            var description = $"TaxRateCollector — {_selectedStates.Count} state(s)/month";
+            var orderResult = await PayPal.CreateOrderAsync(Total, _pricing.Currency, description);
+
+            if (!orderResult.Success)
+            {
+                billing.Status = BillingStatus.Failed;
+                await db.SaveChangesAsync();
+                _error = $"PayPal error: {orderResult.Error}";
+                return;
+            }
+
+            billing.PayPalOrderId = orderResult.OrderId;
+            await db.SaveChangesAsync();
+
+            // Capture
+            var captured = await PayPal.CaptureOrderAsync(orderResult.OrderId);
+            billing.Status = captured ? BillingStatus.Completed : BillingStatus.Failed;
+            await db.SaveChangesAsync();
+
+            if (!captured) { _error = "Payment capture failed. Please try again."; return; }
+
+            // Activate subscribed states (soft-add — deactivate states no longer subscribed)
+            var existing = await db.SubscribedStates
+                .Where(ss => ss.SubscriberId == subscriber.Id)
+                .ToListAsync();
+
+            foreach (var ss in existing) ss.IsActive = false;
+
+            foreach (var code in _selectedStates)
+            {
+                var name = _availableStates.FirstOrDefault(s => s.StateCode == code).Name ?? code;
+                var existing2 = existing.FirstOrDefault(ss => ss.StateCode == code);
+                if (existing2 is not null)
+                    existing2.IsActive = true;
+                else
+                    db.SubscribedStates.Add(new SubscribedState
+                    {
+                        SubscriberId = subscriber.Id,
+                        StateCode = code,
+                        StateName = name,
+                        IsActive = true,
+                        StartDate = DateTime.UtcNow.ToString("o")
+                    });
+            }
+            await db.SaveChangesAsync();
+
+            _lastBillingRecord = billing;
+            _step = 3;
+        }
+        catch (Exception ex) { _error = $"Unexpected error: {ex.Message}"; }
+        finally { _processing = false; StateHasChanged(); }
+    }
+}

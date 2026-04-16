@@ -1,0 +1,74 @@
+@page "/login"
+@using Microsoft.AspNetCore.Identity
+@inject SignInManager<IdentityUser> SignIn
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>Log In — TaxRateCollector</PageTitle>
+
+<div class="auth-shell">
+    <div class="auth-card">
+        <div class="auth-logo">◈ TaxRateCollector</div>
+        <h2 class="auth-title">Log in to your account</h2>
+
+        @if (_error is not null)
+        {
+            <div class="auth-error">@_error</div>
+        }
+
+        <div class="auth-field">
+            <label>Email</label>
+            <input type="email" class="setting-input" placeholder="you@example.com"
+                   @bind="_email" @bind:event="oninput" @onkeydown="OnKey" />
+        </div>
+        <div class="auth-field">
+            <label>Password</label>
+            <input type="password" class="setting-input" placeholder="••••••••"
+                   @bind="_password" @bind:event="oninput" @onkeydown="OnKey" />
+        </div>
+
+        <button class="btn-primary auth-btn" @onclick="Submit" disabled="@_busy">
+            @(_busy ? "Logging in…" : "Log In")
+        </button>
+
+        <div class="auth-links">
+            <span class="muted">Don't have an account?</span>
+            <a href="/register">Create one</a>
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    private string _email = "";
+    private string _password = "";
+    private string? _error;
+    private bool _busy;
+
+    private async Task OnKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Submit();
+    }
+
+    private async Task Submit()
+    {
+        _error = null;
+        _busy = true;
+        StateHasChanged();
+
+        var result = await SignIn.PasswordSignInAsync(_email, _password, isPersistent: true, lockoutOnFailure: true);
+
+        if (result.Succeeded)
+        {
+            var target = !string.IsNullOrWhiteSpace(ReturnUrl) ? ReturnUrl : "/";
+            Nav.NavigateTo(target, forceLoad: true);
+        }
+        else if (result.IsLockedOut)
+            _error = "Account locked. Try again later.";
+        else
+            _error = "Invalid email or password.";
+
+        _busy = false;
+    }
+}

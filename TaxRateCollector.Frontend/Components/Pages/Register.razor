@@ -1,0 +1,79 @@
+@page "/register"
+@using Microsoft.AspNetCore.Identity
+@inject UserManager<IdentityUser> UserMgr
+@inject SignInManager<IdentityUser> SignIn
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>Create Account — TaxRateCollector</PageTitle>
+
+<div class="auth-shell">
+    <div class="auth-card">
+        <div class="auth-logo">◈ TaxRateCollector</div>
+        <h2 class="auth-title">Create your account</h2>
+        <p class="auth-sub muted">Browse the full jurisdiction hierarchy. Subscribe by state to unlock rates and evidence.</p>
+
+        @if (_errors.Count > 0)
+        {
+            <div class="auth-error">
+                @foreach (var e in _errors) { <div>@e</div> }
+            </div>
+        }
+
+        <div class="auth-field">
+            <label>Email</label>
+            <input type="email" class="setting-input" placeholder="you@example.com"
+                   @bind="_email" @bind:event="oninput" />
+        </div>
+        <div class="auth-field">
+            <label>Password <span class="muted">(min 8 chars, at least one digit)</span></label>
+            <input type="password" class="setting-input" placeholder="••••••••"
+                   @bind="_password" @bind:event="oninput" />
+        </div>
+        <div class="auth-field">
+            <label>Confirm password</label>
+            <input type="password" class="setting-input" placeholder="••••••••"
+                   @bind="_confirm" @bind:event="oninput" />
+        </div>
+
+        <button class="btn-primary auth-btn" @onclick="Submit" disabled="@_busy">
+            @(_busy ? "Creating account…" : "Create Account")
+        </button>
+
+        <div class="auth-links">
+            <span class="muted">Already have an account?</span>
+            <a href="/login">Log in</a>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _email = "";
+    private string _password = "";
+    private string _confirm = "";
+    private List<string> _errors = [];
+    private bool _busy;
+
+    private async Task Submit()
+    {
+        _errors.Clear();
+        if (_password != _confirm) { _errors.Add("Passwords do not match."); return; }
+
+        _busy = true;
+        StateHasChanged();
+
+        var user = new IdentityUser { UserName = _email, Email = _email };
+        var result = await UserMgr.CreateAsync(user, _password);
+
+        if (result.Succeeded)
+        {
+            await SignIn.SignInAsync(user, isPersistent: false);
+            Nav.NavigateTo("/subscribe", forceLoad: true);
+        }
+        else
+        {
+            _errors = result.Errors.Select(e => e.Description).ToList();
+            _busy = false;
+        }
+    }
+}

@@ -1,0 +1,210 @@
+@page "/logs"
+@attribute [Authorize]
+@using Microsoft.EntityFrameworkCore
+@using TaxRateCollector.Core.Entities
+@using TaxRateCollector.Infrastructure.Data
+@inject IDbContextFactory<AppDbContext> DbFactory
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Logs — TaxRateCollector</PageTitle>
+
+<div class="page-header">
+    <div class="page-header-row">
+        <div>
+            <h1 class="page-title">Application Logs</h1>
+            <p class="page-sub">@_totalCount records · auto-refreshes every 10 s</p>
+        </div>
+        <div class="header-actions">
+            <button class="btn-tiny" @onclick="ClearOld" disabled="@_busy">Clear &gt;7 days</button>
+        </div>
+    </div>
+</div>
+
+<!-- Filter bar -->
+<div class="log-filter-bar">
+    <div class="log-level-pills">
+        @foreach (var lvl in _levels)
+        {
+            <button class="log-level-pill log-pill-@lvl.ToLower() @(_levelFilter == lvl ? "log-pill-active" : "")"
+                    @onclick="() => SetLevel(lvl)">@lvl</button>
+        }
+    </div>
+    <input class="setting-input log-search" placeholder="Search message or context…"
+           @bind="_search" @bind:event="oninput" @bind:after="OnSearchInput" />
+</div>
+
+@if (_loading)
+{
+    <div class="loading-state">Loading…</div>
+}
+else if (_entries.Count == 0)
+{
+    <div class="muted" style="padding:2rem;text-align:center">No log entries found.</div>
+}
+else
+{
+    <div class="log-table-wrap">
+        <table class="data-table log-table">
+            <thead>
+                <tr>
+                    <th style="width:160px">Timestamp</th>
+                    <th style="width:90px">Level</th>
+                    <th>Message</th>
+                    <th style="width:220px">Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var e in _entries)
+                {
+                    <tr class="log-row @(e.Exception is not null ? "log-row-expandable" : "")"
+                        @onclick="() => ToggleExpand(e.Id)">
+                        <td class="mono" style="font-size:.73rem">@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td><span class="log-badge log-badge-@e.Level.ToLower()">@e.Level</span></td>
+                        <td class="log-message">
+                            @e.Message
+                            @if (_expanded.Contains(e.Id) && e.Exception is not null)
+                            {
+                                <pre class="log-exception">@e.Exception</pre>
+                            }
+                        </td>
+                        <td class="mono muted" style="font-size:.70rem">@TrimSource(e.SourceContext)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="log-pagination">
+        <button class="btn-tiny" @onclick="PrevPage" disabled="@(_page == 0)">← Prev</button>
+        <span class="muted small">Page @(_page + 1) of @TotalPages · @_totalCount entries</span>
+        <button class="btn-tiny" @onclick="NextPage" disabled="@(_page >= TotalPages - 1)">Next →</button>
+    </div>
+}
+
+@if (_status is not null)
+{
+    <div class="auth-error" style="max-width:480px;margin-top:.5rem">@_status</div>
+}
+
+@code {
+    private static readonly string[] _levels = ["All", "Information", "Warning", "Error", "Fatal"];
+    private const int PageSize = 50;
+
+    private bool _loading = true;
+    private bool _busy;
+    private string? _status;
+
+    private string _levelFilter = "All";
+    private string _search = "";
+    private int _page;
+    private int _totalCount;
+    private List<LogEntry> _entries = [];
+    private HashSet<long> _expanded = [];
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(_totalCount / (double)PageSize));
+
+    private Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Reload();
+        _timer = new Timer(async _ =>
+        {
+            await Reload();
+            await InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
+    }
+
+    private async Task Reload()
+    {
+        _loading = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            var q = db.LogEntries.AsQueryable();
+
+            if (_levelFilter != "All")
+                q = q.Where(l => l.Level == _levelFilter);
+
+            if (!string.IsNullOrWhiteSpace(_search))
+            {
+                var s = _search.Trim();
+                q = q.Where(l => (l.Message != null && l.Message.Contains(s)) ||
+                                  (l.SourceContext != null && l.SourceContext.Contains(s)));
+            }
+
+            _totalCount = await q.CountAsync();
+
+            _entries = await q
+                .OrderByDescending(l => l.Timestamp)
+                .Skip(_page * PageSize)
+                .Take(PageSize)
+                .ToListAsync();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SetLevel(string lvl)
+    {
+        _levelFilter = lvl;
+        _page = 0;
+        await Reload();
+    }
+
+    private async Task OnSearchInput()
+    {
+        _page = 0;
+        await Reload();
+        StateHasChanged();
+    }
+
+    private async Task PrevPage()
+    {
+        if (_page > 0) { _page--; await Reload(); }
+    }
+
+    private async Task NextPage()
+    {
+        if (_page < TotalPages - 1) { _page++; await Reload(); }
+    }
+
+    private void ToggleExpand(long id)
+    {
+        if (!_expanded.Remove(id)) _expanded.Add(id);
+    }
+
+    private async Task ClearOld()
+    {
+        _busy = true;
+        _status = null;
+        try
+        {
+            var cutoff = DateTime.UtcNow.AddDays(-7);
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var deleted = await db.LogEntries
+                .Where(l => l.Timestamp < cutoff)
+                .ExecuteDeleteAsync();
+            _status = $"Deleted {deleted} entries older than 7 days.";
+            _page = 0;
+            await Reload();
+        }
+        catch (Exception ex) { _status = $"Error: {ex.Message}"; }
+        finally { _busy = false; }
+    }
+
+    private static string? TrimSource(string? src)
+    {
+        if (src is null) return null;
+        // Show only the last two namespace segments for brevity
+        var parts = src.Split('.');
+        return parts.Length <= 2 ? src : string.Join(".", parts[^2..]);
+    }
+
+    public void Dispose() => _timer?.Dispose();
+}

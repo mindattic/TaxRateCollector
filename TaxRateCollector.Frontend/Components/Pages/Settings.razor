@@ -1,0 +1,301 @@
+@page "/settings"
+@attribute [Authorize]
+@using Microsoft.EntityFrameworkCore
+@using TaxRateCollector.Core.Entities
+@using TaxRateCollector.Infrastructure.Data
+@using TaxRateCollector.Infrastructure.Services
+@inject SettingsService _settings
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>Settings — TaxRateCollector</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Settings</h1>
+</div>
+
+<div class="settings-grid">
+
+    <!-- ── Appearance ─────────────────────────────────────────────────────── -->
+    <section class="settings-section">
+        <h2>Appearance</h2>
+        <div class="setting-row">
+            <label class="setting-label">Theme</label>
+            <div class="theme-toggle" style="flex-wrap:wrap;gap:.35rem">
+                <button class="theme-btn @(_settings.Current.Theme == "light"  ? "theme-active" : "")" @onclick='() => SetTheme("light")'>☀ Light</button>
+                <button class="theme-btn @(_settings.Current.Theme == "dark"   ? "theme-active" : "")" @onclick='() => SetTheme("dark")'>☾ Dark</button>
+                <button class="theme-btn @(_settings.Current.Theme == "spring" ? "theme-active" : "")" @onclick='() => SetTheme("spring")'>🌸 Spring</button>
+                <button class="theme-btn @(_settings.Current.Theme == "summer" ? "theme-active" : "")" @onclick='() => SetTheme("summer")'>☀ Summer</button>
+                <button class="theme-btn @(_settings.Current.Theme == "autumn" ? "theme-active" : "")" @onclick='() => SetTheme("autumn")'>🍂 Autumn</button>
+                <button class="theme-btn @(_settings.Current.Theme == "winter" ? "theme-active" : "")" @onclick='() => SetTheme("winter")'>❄ Winter</button>
+                <button class="theme-btn @(_settings.Current.Theme == "tutor"  ? "theme-active" : "")" @onclick='() => SetTheme("tutor")'>📘 Tutor</button>
+                <button class="theme-btn @(_settings.Current.Theme == "llm"    ? "theme-active" : "")" @onclick='() => SetTheme("llm")'>🤖 LLM</button>
+                <button class="theme-btn @(_settings.Current.Theme == "samurai"? "theme-active" : "")" @onclick='() => SetTheme("samurai")'>⚔ Samurai</button>
+            </div>
+        </div>
+        <div class="setting-row">
+            <label class="setting-label">Font</label>
+            <select class="setting-input" style="max-width:220px"
+                    value="@_settings.Current.Font"
+                    @onchange="e => SetFont(e.Value?.ToString() ?? _settings.Current.Font)">
+                <option value="outfit">Outfit (Outline)</option>
+                <option value="roboto">Roboto</option>
+                <option value="lato">Lato</option>
+                <option value="calibri">Calibri</option>
+                <option value="arial">Arial</option>
+                <option value="times">Times New Roman</option>
+            </select>
+        </div>
+        <div class="setting-row">
+            <label class="setting-label">Font size</label>
+            <select class="setting-input" style="max-width:100px"
+                    value="@_settings.Current.FontSize"
+                    @onchange="e => SetFontSize(int.TryParse(e.Value?.ToString(), out var sz) ? sz : _settings.Current.FontSize)">
+                <option value="12">12 px</option>
+                <option value="13">13 px</option>
+                <option value="14">14 px</option>
+                <option value="15">15 px</option>
+                <option value="16">16 px</option>
+                <option value="18">18 px</option>
+            </select>
+        </div>
+    </section>
+
+    <!-- ── USPS ──────────────────────────────────────────────────────────── -->
+    <section class="settings-section">
+        <h2>USPS Address Validation</h2>
+        <p class="section-note">
+            Validates that every jurisdiction corresponds to a real USPS-recognized location.
+            Get a key at <a href="https://www.usps.com/business/web-tools-apis/" target="_blank">usps.com</a>.
+        </p>
+        <div class="setting-row">
+            <label class="setting-label">API Key</label>
+            <input class="setting-input" type="password" placeholder="USPS Web Tools API Key"
+                   @bind="_settings.Current.UspsApiKey" />
+        </div>
+    </section>
+
+    <!-- ── Scraping ──────────────────────────────────────────────────────── -->
+    <section class="settings-section">
+        <h2>Scraping & Updates</h2>
+        <div class="setting-row">
+            <label class="setting-label">Default update frequency (days)</label>
+            <input class="setting-input setting-input-sm" type="number" min="1" max="365"
+                   @bind="_settings.Current.DefaultUpdateFrequencyDays" />
+        </div>
+        <div class="setting-row">
+            <label class="setting-label">Auto-fetch evidence when scraping</label>
+            <input type="checkbox" @bind="_settings.Current.EvidenceAutoFetch" />
+        </div>
+        <div class="setting-row">
+            <label class="setting-label">Fall back to Wayback Machine for unavailable pages</label>
+            <input type="checkbox" @bind="_settings.Current.WaybackMachineFallback" />
+        </div>
+    </section>
+
+    <!-- ── Census data source URLs ────────────────────────────────────────── -->
+    <section class="settings-section">
+        <h2>Census Data Source URLs</h2>
+        <p class="section-note">
+            Update these when the Census Bureau moves files to a new year or path.
+            Changes take effect on the next import run (clear cache first to force re-download).
+        </p>
+        <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem">
+            <label class="setting-label">County Gazetteer (ZIP)</label>
+            <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
+                   @bind="_settings.Current.CensusCountyGazUrl" />
+        </div>
+        <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
+            <label class="setting-label">Place Gazetteer (ZIP)</label>
+            <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
+                   @bind="_settings.Current.CensusPlaceGazUrl" />
+        </div>
+        <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
+            <label class="setting-label">ZCTA → County crosswalk (TXT)</label>
+            <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
+                   @bind="_settings.Current.CensusZctaCountyUrl" />
+        </div>
+        <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
+            <label class="setting-label">ZCTA → Place crosswalk (TXT)</label>
+            <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
+                   @bind="_settings.Current.CensusZctaPlaceUrl" />
+        </div>
+    </section>
+
+    <!-- ── Save app settings ─────────────────────────────────────────────── -->
+    <div class="settings-actions">
+        <button class="btn-primary" @onclick="Save">Save Settings</button>
+        @if (_saved) { <span class="save-confirm">✓ Saved</span> }
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div class="admin-divider">
+        <span>Admin Configuration</span>
+    </div>
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+
+    <!-- ── Pricing ───────────────────────────────────────────────────────── -->
+    <section class="settings-section">
+        <h2>Subscription Pricing</h2>
+        <p class="section-note">
+            These values are stored in the database and applied to all new subscription checkouts.
+            Changes take effect immediately — existing subscriptions are not retroactively changed.
+        </p>
+        @if (_pricing is not null)
+        {
+            <div class="setting-row">
+                <label class="setting-label">Price per state / month</label>
+                <div style="display:flex;align-items:center;gap:.5rem">
+                    <span class="muted">$</span>
+                    <input class="setting-input setting-input-sm" type="number" step="0.001" min="0.001"
+                           @bind="_pricing.PricePerState" />
+                    <span class="muted">USD · 50 states = @((_pricing.PricePerState * 50).ToString("C"))/mo full access</span>
+                </div>
+            </div>
+            <div class="setting-row">
+                <label class="setting-label">Currency</label>
+                <input class="setting-input" style="max-width:80px" @bind="_pricing.Currency" />
+            </div>
+            <div class="settings-actions" style="margin-top:.8rem">
+                <button class="btn-primary" @onclick="SavePricing" disabled="@_adminBusy">Save Pricing</button>
+                @if (_adminStatus is not null) { <span class="save-confirm">@_adminStatus</span> }
+            </div>
+        }
+        else
+        {
+            <div class="loading-state">Loading…</div>
+        }
+    </section>
+
+    <!-- ── PayPal ─────────────────────────────────────────────────────────── -->
+    <section class="settings-section">
+        <h2>PayPal Integration</h2>
+        <p class="section-note">
+            Leave blank to run in <strong>mock mode</strong> — payments are simulated, no real charges.
+            Get credentials at <a href="https://developer.paypal.com/dashboard/" target="_blank">developer.paypal.com</a> →
+            Apps &amp; Credentials.
+        </p>
+        @if (_paypal is not null)
+        {
+            <div class="setting-row">
+                <label class="setting-label">Mode</label>
+                <div class="theme-toggle">
+                    <button class="theme-btn @(_paypal.Mode == "sandbox" ? "theme-active" : "")"
+                            @onclick='() => _paypal.Mode = "sandbox"'>Sandbox</button>
+                    <button class="theme-btn @(_paypal.Mode == "live" ? "theme-active" : "")"
+                            @onclick='() => _paypal.Mode = "live"'>Live</button>
+                </div>
+            </div>
+            <div class="setting-row">
+                <label class="setting-label">Client ID</label>
+                <input class="setting-input" placeholder="AXxx… (from PayPal dashboard)"
+                       @bind="_paypal.ClientId" />
+            </div>
+            <div class="setting-row">
+                <label class="setting-label">Client Secret</label>
+                <input class="setting-input" type="password" placeholder="EXxx… (keep secret)"
+                       @bind="_paypal.ClientSecret" />
+            </div>
+            <div class="setting-row">
+                <label class="setting-label">Webhook ID <span class="muted">(optional)</span></label>
+                <input class="setting-input" placeholder="For signature verification"
+                       @bind="_paypal.WebhookId" />
+            </div>
+            <div class="settings-actions" style="margin-top:.8rem">
+                <button class="btn-primary" @onclick="SavePayPal" disabled="@_adminBusy">Save PayPal Config</button>
+                @if (_adminStatus is not null) { <span class="save-confirm">@_adminStatus</span> }
+            </div>
+        }
+        else
+        {
+            <div class="loading-state">Loading…</div>
+        }
+    </section>
+
+</div>
+
+@code {
+    private bool _saved;
+    private bool _adminBusy;
+    private string? _adminStatus;
+    private PricingConfig? _pricing;
+    private PayPalConfig? _paypal;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _pricing = await db.PricingConfigs.FirstOrDefaultAsync();
+        _paypal  = await db.PayPalConfigs.FirstOrDefaultAsync();
+    }
+
+    private async Task SetTheme(string theme)
+    {
+        _settings.SetTheme(theme);
+        await JS.InvokeVoidAsync("applyTheme", theme);
+        StateHasChanged();
+    }
+
+    private async Task SetFont(string font)
+    {
+        _settings.Current.Font = font;
+        await JS.InvokeVoidAsync("applyFont", font, _settings.Current.FontSize);
+        StateHasChanged();
+    }
+
+    private async Task SetFontSize(int size)
+    {
+        _settings.Current.FontSize = size;
+        await JS.InvokeVoidAsync("applyFont", _settings.Current.Font, size);
+        StateHasChanged();
+    }
+
+    private async Task Save()
+    {
+        _settings.Save();
+        _saved = true;
+        StateHasChanged();
+        await Task.Delay(2000);
+        _saved = false;
+        StateHasChanged();
+    }
+
+    private async Task SavePricing()
+    {
+        if (_pricing is null) return;
+        _adminBusy = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _pricing.UpdatedAt = DateTime.UtcNow.ToString("o");
+            db.PricingConfigs.Update(_pricing);
+            await db.SaveChangesAsync();
+            SetAdminStatus("✓ Pricing saved");
+        }
+        catch (Exception ex) { SetAdminStatus($"✗ {ex.Message}"); }
+        finally { _adminBusy = false; }
+    }
+
+    private async Task SavePayPal()
+    {
+        if (_paypal is null) return;
+        _adminBusy = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _paypal.UpdatedAt = DateTime.UtcNow.ToString("o");
+            db.PayPalConfigs.Update(_paypal);
+            await db.SaveChangesAsync();
+            SetAdminStatus("✓ PayPal config saved");
+        }
+        catch (Exception ex) { SetAdminStatus($"✗ {ex.Message}"); }
+        finally { _adminBusy = false; }
+    }
+
+    private void SetAdminStatus(string msg)
+    {
+        _adminStatus = msg;
+        StateHasChanged();
+        _ = Task.Delay(3000).ContinueWith(_ => { _adminStatus = null; InvokeAsync(StateHasChanged); });
+    }
+}

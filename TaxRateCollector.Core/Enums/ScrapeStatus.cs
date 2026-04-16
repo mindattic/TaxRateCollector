@@ -4,5 +4,7 @@ public enum ScrapeStatus
 {
     Running,
     Completed,
-    Failed
+    Failed,
+    /// <summary>Rate was entered manually through the UI, not via a scrape job.</summary>
+    Manual
 }

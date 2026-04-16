@@ -1,4 +1,7 @@
 @inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Identity
+@inject SignInManager<IdentityUser> SignIn
+@inject NavigationManager Nav
 
 <div class="app-shell">
     <header class="app-header">
@@ -6,28 +9,42 @@
             <span class="brand-icon">◈</span>
             <span class="brand-name">TaxRateCollector</span>
         </div>
+        <div class="user-nav">
+            <AuthorizeView>
+                <Authorized>
+                    <a href="/account" class="user-nav-link" title="My Account">
+                        👤 @context.User.Identity?.Name
+                    </a>
+                    <button class="btn-tiny" @onclick="Logout">Log Out</button>
+                </Authorized>
+                <NotAuthorized>
+                    <a href="/login" class="user-nav-link">Log In</a>
+                    <a href="/register" class="btn-subscribe-sm">Sign Up</a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
     </header>
 
     <nav class="tab-bar">
         <NavLink class="tab" href="" Match="NavLinkMatch.All">
-            <span class="tab-icon">◻</span>
-            <span class="tab-label">Dashboard</span>
+            <span class="tab-icon">◈</span>
+            <span class="tab-label">Jurisdictions</span>
         </NavLink>
-        <NavLink class="tab" href="rates">
-            <span class="tab-icon">⊞</span>
-            <span class="tab-label">Rates</span>
+        <NavLink class="tab" href="logs">
+            <span class="tab-icon">◎</span>
+            <span class="tab-label">Logs</span>
         </NavLink>
-        <NavLink class="tab" href="changes">
-            <span class="tab-icon">△</span>
-            <span class="tab-label">Change Log</span>
+        <NavLink class="tab" href="discovery">
+            <span class="tab-icon">⌕</span>
+            <span class="tab-label">Discovery</span>
         </NavLink>
-        <NavLink class="tab" href="runs">
-            <span class="tab-icon">⟁</span>
-            <span class="tab-label">Scrape Runs</span>
+        <NavLink class="tab" href="zip-codes">
+            <span class="tab-icon">✉</span>
+            <span class="tab-label">ZIP Codes</span>
         </NavLink>
-        <NavLink class="tab" href="calc">
-            <span class="tab-icon">∑</span>
-            <span class="tab-label">Calculator</span>
+        <NavLink class="tab" href="settings">
+            <span class="tab-icon">⚙</span>
+            <span class="tab-label">Settings</span>
         </NavLink>
     </nav>
 
@@ -41,3 +58,11 @@
     <a href="." class="reload">Reload</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@code {
+    private async Task Logout()
+    {
+        await SignIn.SignOutAsync();
+        Nav.NavigateTo("/", forceLoad: true);
+    }
+}

@@ -1,14 +1,15 @@
 ## Build results
-/bin/
-[Bb]in/
-/obj/
-[Oo]bj/
-[Dd]ebug/
-[Rr]elease/
+**/bin/
+**/obj/
+**/Debug/
+**/Release/
 x64/
 x86/
 build/
 publish/
+
+## Visual Studio solution cache
+.vs/
 
 ## NuGet
 **/packages/
@@ -17,8 +18,6 @@ publish/
 **/project.fragment.lock.json
 
 ## Visual Studio
-/.vs/
-.vs/
 *.suo
 *.user
 *.userosscache
@@ -47,6 +46,20 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 .DS_Store
+
+## SQLite databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+## App data / cache (user-specific runtime files)
+**/MindAttic/TaxRateCollector/
+
+## Logs
+*.log
+logs/
 
 ## Environment / secrets
 .env

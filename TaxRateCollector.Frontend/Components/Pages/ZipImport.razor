@@ -1,0 +1,456 @@
+@page "/zip-codes"
+@attribute [Authorize]
+@using TaxRateCollector.Core.Interfaces
+@using TaxRateCollector.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@inject IZipImportService _zipSvc
+@inject ICensusJurisdictionImportService _censusSvc
+@inject IDbContextFactory<AppDbContext> DbFactory
+@rendermode InteractiveServer
+
+<PageTitle>ZIP Codes — TaxRateCollector</PageTitle>
+
+<div class="page-header">
+    <div class="page-header-row">
+        <div>
+            <h1 class="page-title">ZIP Codes</h1>
+            <p class="page-sub">
+                Maps every US ZIP code to its State, County, and City jurisdiction for destination-based sales tax calculation.
+                Data sourced from the US Census Bureau ZCTA crosswalk files, optionally enriched via USPS CityStateLookup.
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- ── Step 1: County & City Coverage ──────────────────────────────────────── -->
+<div class="settings-section">
+    <div class="step-header">
+        <span class="step-badge">Step 1</span>
+        <div>
+            <h2 style="margin:0">Import Counties &amp; Cities</h2>
+            <p class="section-note" style="margin:.25rem 0 0">
+                Downloads all US counties (~3,143) and incorporated places (~30,000+) from the Census Bureau
+                Gazetteer files and creates Jurisdiction rows at 0% rate. <strong>Run this before importing ZIP codes</strong>
+                so that each ZIP immediately resolves to a real county and city.
+            </p>
+        </div>
+    </div>
+
+    <div class="discovery-stats" style="margin-bottom:1rem">
+        <span class="disc-stat disc-stat-total"><strong>@_seededCounties.ToString("N0")</strong> counties seeded</span>
+        <span class="disc-stat disc-stat-found"><strong>@_seededCities.ToString("N0")</strong> cities seeded</span>
+        <span class="disc-stat disc-stat-skipped"><strong>@_linkedZips.ToString("N0")</strong> ZIPs linked to county</span>
+    </div>
+
+    <div class="header-actions" style="margin-bottom:1rem">
+        @if (!_censusRunning)
+        {
+            @if (_seededCounties == 0)
+            {
+                <button class="btn-primary" @onclick="StartCensusImport">▶ Import All Counties &amp; Cities</button>
+            }
+            else
+            {
+                <span class="step-complete-badge">✓ Complete</span>
+                <button class="btn-secondary" @onclick="async () => { _censusSvc.ClearCache(); await StartCensusImport(); }">↺ Re-download &amp; Import</button>
+            }
+        }
+        else
+        {
+            <button class="btn-secondary" @onclick="StopCensusImport">■ Stop</button>
+        }
+    </div>
+
+    @if (_censusRunning || _censusResult != null)
+    {
+        <div class="discovery-progress-wrap">
+            @if (_censusRunning && _censusProgress.Total > 0)
+            {
+                var pct = (int)Math.Round(_censusProgress.Processed * 100.0 / _censusProgress.Total);
+                <div class="discovery-progress-bar" style="width:@pct%"></div>
+            }
+            else if (_censusRunning)
+            {
+                <div class="progress-bar-indeterminate"></div>
+            }
+            else
+            {
+                <div class="discovery-progress-bar" style="width:100%"></div>
+            }
+        </div>
+
+        <div class="discovery-stats" style="margin-top:.5rem">
+            <span class="disc-stat muted"><strong>@_censusProgress.Stage</strong></span>
+            <span class="disc-stat disc-stat-found"><strong>@_censusProgress.Created.ToString("N0")</strong> created</span>
+            <span class="disc-stat disc-stat-skipped"><strong>@_censusProgress.Skipped.ToString("N0")</strong> skipped</span>
+            @if (_censusProgress.Errors > 0)
+            {
+                <span class="disc-stat disc-stat-error"><strong>@_censusProgress.Errors</strong> errors</span>
+            }
+            @if (!string.IsNullOrEmpty(_censusProgress.Current))
+            {
+                <span class="disc-stat muted">@_censusProgress.Current</span>
+            }
+            @if (_censusResult != null && !_censusRunning)
+            {
+                <span class="disc-stat">Done in @_censusResult.Elapsed.ToString(@"m\:ss")</span>
+            }
+        </div>
+    }
+
+    @if (_censusResult != null && !_censusRunning)
+    {
+        <div class="zip-result-card" style="margin-top:1rem">
+            <div class="zip-result-stat">
+                <div class="zip-result-num">@_censusResult.CountiesCreated.ToString("N0")</div>
+                <div class="zip-result-label">counties created</div>
+            </div>
+            <div class="zip-result-stat">
+                <div class="zip-result-num">@_censusResult.CitiesCreated.ToString("N0")</div>
+                <div class="zip-result-label">cities created</div>
+            </div>
+            <div class="zip-result-stat">
+                <div class="zip-result-num">@_censusResult.ZipsRelinked.ToString("N0")</div>
+                <div class="zip-result-label">ZIP codes re-linked</div>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- ── Step 2: ZIP Code Import ─────────────────────────────────────────────── -->
+<div class="settings-section" style="margin-top:2rem">
+    <div class="step-header">
+        <span class="step-badge @(_seededCounties == 0 ? "step-badge-blocked" : "")">Step 2</span>
+        <div>
+            <h2 style="margin:0">Import ZIP Codes</h2>
+            <p class="section-note" style="margin:.25rem 0 0">
+                Downloads the Census Bureau ZCTA crosswalk files and maps ~33,000 ZIP codes to their
+                State, County, and City jurisdictions.
+                @if (_seededCounties == 0)
+                {
+                    <strong class="step-blocked-note"> Complete Step 1 first so ZIPs can link to real county and city rows.</strong>
+                }
+            </p>
+        </div>
+    </div>
+
+    @if (_importedCount > 0 && !_running && _result == null)
+    {
+        <div class="zip-status-banner">
+            <span class="zip-status-icon">✓</span>
+            <strong>@_importedCount.ToString("N0")</strong> ZIP codes imported and linked to jurisdiction hierarchy.
+        </div>
+    }
+
+    @if (!_running && _result == null && _importedCount == 0 && _seededCounties > 0)
+    {
+        <div class="zip-info-card">
+            <h3>How ZIP-based tax resolution works</h3>
+            <div class="zip-info-grid">
+                <div class="zip-info-item">
+                    <span class="zip-info-num">1</span>
+                    <div>
+                        <strong>ZIP → State</strong><br/>
+                        Every ZIP belongs to exactly one state. The state's general sales tax rate applies.
+                    </div>
+                </div>
+                <div class="zip-info-item">
+                    <span class="zip-info-num">2</span>
+                    <div>
+                        <strong>ZIP → County</strong><br/>
+                        Each ZIP is assigned its primary county (by land-area intersection per Census data).
+                        County add-on rates apply.
+                    </div>
+                </div>
+                <div class="zip-info-item">
+                    <span class="zip-info-num">3</span>
+                    <div>
+                        <strong>ZIP → City</strong><br/>
+                        The USPS preferred city name (or Census primary place) identifies municipal rates.
+                    </div>
+                </div>
+                <div class="zip-info-item">
+                    <span class="zip-info-num">4</span>
+                    <div>
+                        <strong>Product Category</strong><br/>
+                        Exemptions and reduced rates (e.g., groceries, prescription drugs) are applied
+                        per category × jurisdiction rule.
+                    </div>
+                </div>
+            </div>
+            <p class="zip-info-note">
+                <strong>Data sources:</strong>
+                Census Bureau 2020 ZCTA relationship files (free, no auth required) +
+                optional USPS Web Tools CityStateLookup API (configure key in Settings).
+                ~33,000 ZIP codes expected. Import takes 30–60 seconds (Census only) or
+                10–20 minutes with USPS validation enabled.
+            </p>
+        </div>
+    }
+
+    <div class="header-actions" style="margin:1rem 0">
+        @if (!_running)
+        {
+            <button class="btn-primary" @onclick="StartImport"
+                    disabled="@(_alreadyComplete || _seededCounties == 0 || _censusRunning)">
+                @if (_alreadyComplete)
+                {
+                    <span>✓ Import Complete</span>
+                }
+                else if (_seededCounties == 0)
+                {
+                    <span>▶ Import ZIP Codes (complete Step 1 first)</span>
+                }
+                else
+                {
+                    <span>▶ Import ZIP Codes</span>
+                }
+            </button>
+            @if (_importedCount > 0)
+            {
+                <button class="btn-secondary" @onclick="ReImport" disabled="@_censusRunning">↺ Re-import</button>
+            }
+        }
+        else
+        {
+            <button class="btn-secondary" @onclick="StopImport">■ Stop</button>
+        }
+    </div>
+
+    @if (_running || _result != null)
+    {
+        <div class="discovery-progress-wrap">
+            @if (_running && _progress.Total > 0)
+            {
+                var pct = (int)Math.Round(_progress.Processed * 100.0 / _progress.Total);
+                <div class="discovery-progress-bar" style="width:@pct%"></div>
+            }
+            else if (_running)
+            {
+                <div class="progress-bar-indeterminate"></div>
+            }
+            else
+            {
+                <div class="discovery-progress-bar" style="width:100%"></div>
+            }
+        </div>
+
+        <div class="discovery-stats">
+            @if (_running)
+            {
+                <span class="disc-stat disc-stat-total">
+                    <strong>@_progress.Processed.ToString("N0")</strong> / @(_progress.Total > 0 ? _progress.Total.ToString("N0") : "…") processed
+                </span>
+            }
+            <span class="disc-stat disc-stat-found"><strong>@_progress.Imported.ToString("N0")</strong> imported</span>
+            <span class="disc-stat disc-stat-skipped"><strong>@_progress.Skipped.ToString("N0")</strong> skipped</span>
+            @if (_progress.Errors > 0)
+            {
+                <span class="disc-stat disc-stat-error"><strong>@_progress.Errors</strong> errors</span>
+            }
+            @if (!string.IsNullOrEmpty(_progress.CurrentZip))
+            {
+                <span class="disc-stat muted">processing @_progress.CurrentZip</span>
+            }
+            @if (_result != null)
+            {
+                <span class="disc-stat">Done in @_result.Elapsed.ToString(@"m\:ss")</span>
+            }
+        </div>
+    }
+
+    @if (_result != null)
+    {
+        <div class="zip-result-card" style="margin-top:1rem">
+            <div class="zip-result-stat">
+                <div class="zip-result-num">@_result.Imported.ToString("N0")</div>
+                <div class="zip-result-label">ZIP codes imported</div>
+            </div>
+            <div class="zip-result-stat">
+                <div class="zip-result-num">@_linkedState.ToString("N0")</div>
+                <div class="zip-result-label">linked to state</div>
+            </div>
+            <div class="zip-result-stat">
+                <div class="zip-result-num">@_linkedCounty.ToString("N0")</div>
+                <div class="zip-result-label">linked to county</div>
+            </div>
+            <div class="zip-result-stat">
+                <div class="zip-result-num">@_linkedCity.ToString("N0")</div>
+                <div class="zip-result-label">linked to city</div>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- ── State breakdown table ───────────────────────────────────────────────── -->
+@if (_stateCounts.Count > 0)
+{
+    <div class="zip-table-wrap" style="margin-top:2rem">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>State</th>
+                    <th style="text-align:right">ZIP Codes</th>
+                    <th style="text-align:right">Linked County</th>
+                    <th style="text-align:right">Linked City</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _stateCounts.OrderBy(r => r.StateCode))
+                {
+                    <tr>
+                        <td class="mono">@row.StateCode</td>
+                        <td class="mono" style="text-align:right">@row.Total.ToString("N0")</td>
+                        <td class="mono" style="text-align:right">@row.CountyLinked.ToString("N0")</td>
+                        <td class="mono" style="text-align:right">@row.CityLinked.ToString("N0")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private bool _running;
+    private CancellationTokenSource? _cts;
+    private int _importedCount;
+    private bool _alreadyComplete;
+    private ZipImportProgress _progress = new(0, 0, 0, 0, 0);
+    private ZipImportResult? _result;
+    private int _linkedState, _linkedCounty, _linkedCity;
+
+    // ── Census import state ───────────────────────────────────────────────────
+    private bool _censusRunning;
+    private CancellationTokenSource? _censusCts;
+    private CensusImportProgress _censusProgress = new("", 0, 0, 0, 0, 0);
+    private CensusImportResult? _censusResult;
+    private int _seededCounties, _seededCities, _linkedZips;
+
+    private record StateRow(string StateCode, int Total, int CountyLinked, int CityLinked);
+    private List<StateRow> _stateCounts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _importedCount = await _zipSvc.GetImportedCountAsync();
+        _alreadyComplete = _importedCount > 0;
+        var coverage = await _censusSvc.GetCoverageAsync();
+        _seededCounties = coverage.SeededCounties;
+        _seededCities   = coverage.SeededCities;
+        _linkedZips     = coverage.LinkedZips;
+        if (_importedCount > 0) await LoadStateCountsAsync();
+    }
+
+    private async Task StartImport()
+    {
+        _running = true;
+        _result  = null;
+        _progress = new(0, 0, 0, 0, 0);
+        _cts = new CancellationTokenSource();
+        StateHasChanged();
+
+        var p = new Progress<ZipImportProgress>(snap =>
+        {
+            _progress = snap;
+            InvokeAsync(StateHasChanged);
+        });
+
+        try
+        {
+            _result = await _zipSvc.ImportAsync(p, _cts.Token);
+            _importedCount = await _zipSvc.GetImportedCountAsync();
+            _alreadyComplete = _importedCount > 0;
+            await LoadLinkStatsAsync();
+            await LoadStateCountsAsync();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _progress = _progress with { CurrentZip = $"Error: {ex.Message}" };
+        }
+        finally
+        {
+            _running = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ReImport()
+    {
+        _zipSvc.ClearCache();
+        _alreadyComplete = false;
+        _importedCount = 0;
+        _stateCounts.Clear();
+        _result = null;
+        // Note: does not delete existing DB records — re-import only adds new ZIPs
+        await StartImport();
+    }
+
+    private void StopImport() => _cts?.Cancel();
+
+    // ── Census import ─────────────────────────────────────────────────────────
+
+    private async Task StartCensusImport()
+    {
+        _censusRunning = true;
+        _censusResult  = null;
+        _censusProgress = new("Starting…", 0, 0, 0, 0, 0);
+        _censusCts = new CancellationTokenSource();
+        StateHasChanged();
+
+        var p = new Progress<CensusImportProgress>(snap =>
+        {
+            _censusProgress = snap;
+            InvokeAsync(StateHasChanged);
+        });
+
+        try
+        {
+            _censusResult = await _censusSvc.ImportAsync(p, _censusCts.Token);
+            var coverage  = await _censusSvc.GetCoverageAsync();
+            _seededCounties = coverage.SeededCounties;
+            _seededCities   = coverage.SeededCities;
+            _linkedZips     = coverage.LinkedZips;
+            await LoadStateCountsAsync();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _censusProgress = _censusProgress with { Current = $"Error: {ex.Message}" };
+        }
+        finally
+        {
+            _censusRunning = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void StopCensusImport() => _censusCts?.Cancel();
+
+    private async Task LoadLinkStatsAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _linkedState  = await db.ZipCodes.CountAsync(z => z.StateJurisdictionId  != null);
+        _linkedCounty = await db.ZipCodes.CountAsync(z => z.CountyJurisdictionId != null);
+        _linkedCity   = await db.ZipCodes.CountAsync(z => z.CityJurisdictionId   != null);
+    }
+
+    private async Task LoadStateCountsAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _stateCounts = await db.ZipCodes
+            .GroupBy(z => z.StateCode)
+            .Select(g => new StateRow(
+                g.Key,
+                g.Count(),
+                g.Count(z => z.CountyJurisdictionId != null),
+                g.Count(z => z.CityJurisdictionId   != null)))
+            .ToListAsync();
+
+        if (_linkedState == 0 && _stateCounts.Count > 0)
+        {
+            _linkedState  = await db.ZipCodes.CountAsync(z => z.StateJurisdictionId  != null);
+            _linkedCounty = await db.ZipCodes.CountAsync(z => z.CountyJurisdictionId != null);
+            _linkedCity   = await db.ZipCodes.CountAsync(z => z.CityJurisdictionId   != null);
+        }
+    }
+}

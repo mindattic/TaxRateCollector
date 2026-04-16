@@ -1,13 +1,39 @@
 @page "/runs"
 @using Microsoft.EntityFrameworkCore
+@using TaxRateCollector.Core.Entities
 @using TaxRateCollector.Core.Enums
+@using TaxRateCollector.Core.Interfaces
 @using TaxRateCollector.Infrastructure.Data
 @inject IDbContextFactory<AppDbContext> DbFactory
+@inject IScrapeOrchestrator Orchestrator
 @rendermode InteractiveServer
 
 <PageTitle>Scrape Runs — TaxRateCollector</PageTitle>
 
-<h1>Scrape Runs</h1>
+<div class="page-header">
+    <div class="page-header-row">
+        <div>
+            <h1 class="page-title">Scrape Runs</h1>
+            <p class="page-sub">Manually trigger a full scrape across all jurisdictions that have a registered strategy.</p>
+        </div>
+        <div class="scrape-actions">
+            <button class="btn-primary" @onclick="RunScrape" disabled="@_running">
+                @if (_running)
+                {
+                    <span>⟳ Running…</span>
+                }
+                else
+                {
+                    <span>▶ Run Scrape Now</span>
+                }
+            </button>
+            @if (_lastResult is not null)
+            {
+                <span class="save-confirm">@_lastResult</span>
+            }
+        </div>
+    </div>
+</div>
 
 @if (_runs is null)
 {
@@ -15,7 +41,7 @@
 }
 else if (_runs.Count == 0)
 {
-    <p class="muted">No scrape runs yet. Use the Dashboard to trigger one.</p>
+    <p class="muted">No scrape runs yet.</p>
 }
 else
 {
@@ -78,16 +104,43 @@ else
 }
 
 @code {
-    private List<TaxRateCollector.Core.Entities.ScrapeRun>? _runs;
+    private List<ScrapeRun>? _runs;
     private int? _expanded;
     private List<(string JurisdictionName, decimal Rate, string RateType)> _runRates = [];
+    private bool _running;
+    private string? _lastResult;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync() => await LoadRuns();
+
+    private async Task LoadRuns()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         _runs = await db.ScrapeRuns
             .OrderByDescending(r => r.StartedAt)
             .ToListAsync();
+    }
+
+    private async Task RunScrape()
+    {
+        _running = true;
+        _lastResult = null;
+        StateHasChanged();
+
+        try
+        {
+            var changed = await Orchestrator.RunFullScrapeAsync();
+            _lastResult = $"✓ Done — {changed} change(s) detected";
+        }
+        catch (Exception ex)
+        {
+            _lastResult = $"✗ {ex.Message}";
+        }
+        finally
+        {
+            _running = false;
+            await LoadRuns();
+            StateHasChanged();
+        }
     }
 
     private async Task ToggleDetail(int runId)
