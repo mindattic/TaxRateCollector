@@ -192,6 +192,21 @@ dotnet ef database drop \
 
 ## Data Model
 
+### FIPS codes
+
+FIPS codes (Federal Information Processing Standards) are the US government's official numeric identifiers for geographic areas. Every `Jurisdiction` row stores a `FipsCode` that uniquely identifies it:
+
+| Tier | Format | Example |
+|---|---|---|
+| Country | 2-letter ISO | `US` |
+| State | 2-digit numeric | `06` = California |
+| County | 5-digit (state 2 + county 3) | `06037` = Los Angeles County, CA |
+| City / Place | 7-digit (state 2 + place 5) | `0644000` = Los Angeles city, CA |
+
+The first two digits of a county or city code always match the parent state's FIPS — so `06037` immediately tells you state `06` (CA) + county `037` (LA County). This makes FIPS codes safe as join keys across datasets (two cities can share a name in different states, but FIPS codes are always unique).
+
+`FipsCode` has a unique index in the database and is used by the Census Bureau importer, the ZIP-code crosswalk linker, and the USPS validator to match external records to internal `Jurisdiction` rows.
+
 ### Jurisdiction hierarchy
 
 ```
@@ -204,6 +219,43 @@ Country (US, FipsCode="US")
 Each `Jurisdiction` row has a nullable `ParentId` foreign key pointing to its parent. The root Country node has `ParentId = null`. The self-referential FK uses `DeleteBehavior.Restrict` to prevent accidental cascade-deletes of an entire subtree.
 
 **Combined rate** for a purchase = sum of `TaxRate.Rate` for the city + its county + its state. The Country-level rate is always 0 (the US has no federal sales tax). The `TaxCalculator` service and the Master Table page both walk the `ParentId` chain to compute this sum.
+
+### How the hierarchy and ZIP codes relate
+
+The UI is organized as State → County → City — this is where **tax rates live**. Each node carries its own rate (e.g., California = 7.25%, Los Angeles County = +1%, Beverly Hills = +0%). Rates are managed and updated at each of these levels.
+
+The ZIP code table is a **lookup index** — it answers "for ZIP 90210, which State, County, and City do I combine?" It stores no rates itself; it just points to the three jurisdiction rows whose rates need to be summed.
+
+**Tax calculation flow:**
+
+```
+Customer enters ZIP 90210
+    ↓
+ZipCodeRecord lookup → CA (State) + 06037 (LA County) + Beverly Hills (City)
+    ↓
+Query TaxRates for those 3 jurisdiction IDs
+    ↓
+Sum: 7.25% + 1% + 0% = 8.25%
+    ↓
+Apply ProductCategory modifier (e.g., Groceries in CA → exempt → 0%)
+    ↓
+Final tax = ItemPrice × 0%   (CA exempts unprepared food)
+```
+
+This is the same pattern Avalara and TaxJar use — **rates are jurisdiction-level, queries are ZIP-level**. The hierarchy page is where data is maintained; ZIP is the end-user-facing lookup key.
+
+### County and city coverage
+
+The seeder ships with a representative sample (~178 counties, ~450 cities). Full coverage — so that every ZIP code resolves to a real county and city row — requires importing all ~3,143 US counties and ~30,000 incorporated places. The data comes entirely from free Census Bureau sources (no API key needed):
+
+| Source | Contents | Format |
+|---|---|---|
+| Census Gazetteer — counties | 3,143 county names + FIPS codes | ZIP → pipe-delimited TXT |
+| Census Gazetteer — places | ~30,000 city/place names + FIPS | ZIP → pipe-delimited TXT |
+| Census ZCTA → county crosswalk | Maps each ZIP to its primary county | Pipe-delimited TXT |
+| Census ZCTA → place crosswalk | Maps each ZIP to its primary city | Pipe-delimited TXT |
+
+These are downloaded and imported via **ZIP Codes → Step 1: Import Counties & Cities** in the UI. After Step 1 completes, running **Step 2: Import ZIP Codes** links all ~33,000 ZIPs to the newly created county and city rows. The source URLs for all four files are admin-configurable in Settings → Census Data Source URLs.
 
 ### Key entities
 

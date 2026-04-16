@@ -7,88 +7,152 @@
 @using TaxRateCollector.Infrastructure.Data
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject IDiscoveryService DiscoveryService
+@inject IScrapeOrchestrator Orchestrator
 @rendermode InteractiveServer
 
-<PageTitle>Discovery — TaxRateCollector</PageTitle>
+<PageTitle>Data Collection — TaxRateCollector</PageTitle>
 
 <div class="page-header">
-    <div class="page-header-row">
-        <div>
-            <h1 class="page-title">Discovery</h1>
-            <p class="page-sub">
-                Recursively scans every jurisdiction for available tax rate sources.
-                Phase 2 will scrape web pages, parse PDFs, call APIs, and read news articles.
-            </p>
-        </div>
-        <div class="header-actions">
-            @if (!_running)
-            {
-                <button class="btn-primary" @onclick="StartDiscovery">▶ Run Discovery</button>
-            }
-            else
-            {
-                <button class="btn-secondary" @onclick="StopDiscovery">■ Stop</button>
-            }
-            @if (_results.Count > 0 && !_running)
-            {
-                <button class="btn-secondary" @onclick="ClearResults">✕ Clear</button>
-            }
-        </div>
-    </div>
+    <h1 class="page-title">Data Collection</h1>
+    <p class="page-sub">
+        Two-phase pipeline: <strong>Scrape</strong> fetches and stores current tax rates;
+        <strong>Discovery</strong> maps every jurisdiction to its best available source.
+    </p>
 </div>
 
-<!-- ── Progress bar ────────────────────────────────────────────────────────── -->
-@if (_running || _processed > 0)
-{
-    <div class="discovery-progress-wrap">
-        @if (_running && _total > 0)
+<!-- ── Phase panels ────────────────────────────────────────────────────────── -->
+<div class="pipeline-grid">
+
+    <!-- ── Scrape ───────────────────────────────────────────────────────────── -->
+    <div class="pipeline-card">
+        <div class="pipeline-card-header">
+            <div class="pipeline-card-body">
+                <h2 class="pipeline-card-title">
+                    Scrape
+                    <span class="phase-badge phase-badge-active">Phase 1 · Operational</span>
+                </h2>
+                <p class="pipeline-card-desc">
+                    Iterates every active jurisdiction and routes it to a registered
+                    <code>IScrapeStrategy</code>. Each strategy fetches the current tax rate
+                    using the method best suited to that jurisdiction's tier — a direct URL fetch,
+                    a structured API call, or PDF extraction. Successfully parsed rates are written
+                    as new <code>TaxRate</code> records and the prior current rate for that
+                    jurisdiction is retired. After all jurisdictions are processed, a diff engine
+                    compares the new run to the previous one and records what changed. The full
+                    run is logged in the <strong>Scrape Runs</strong> tab.
+                </p>
+            </div>
+            <div class="pipeline-card-actions">
+                @if (!scrapeRunning)
+                {
+                    <button class="btn-primary" @onclick="StartScrape">▶ Run Scrape</button>
+                }
+                else
+                {
+                    <button class="btn-secondary" @onclick="StopScrape">■ Stop</button>
+                }
+            </div>
+        </div>
+        @if (scrapeRunning || scrapeStatus is not null)
         {
-            var pct = (int)Math.Round(_processed * 100.0 / _total);
-            <div class="discovery-progress-bar" style="width:@pct%"></div>
-        }
-        else if (_running)
-        {
-            <div class="progress-bar-indeterminate"></div>
+            <div class="pipeline-status">
+                @if (scrapeRunning)
+                {
+                    <span class="pipeline-running-dot"></span>
+                    <span class="muted">Running…</span>
+                }
+                else
+                {
+                    <span class="@(scrapeStatus!.StartsWith("✗") ? "text-error" : "text-ok")">@scrapeStatus</span>
+                }
+            </div>
         }
     </div>
 
-    <div class="discovery-stats">
-        <span class="disc-stat disc-stat-total">
-            <strong>@_processed</strong> / @(_total > 0 ? _total.ToString() : "…") processed
-        </span>
-        <span class="disc-stat disc-stat-found">
-            <strong>@_found</strong> found
-        </span>
-        <span class="disc-stat disc-stat-missing">
-            <strong>@_notFound</strong> not found
-        </span>
-        <span class="disc-stat disc-stat-skipped">
-            <strong>@_skipped</strong> skipped
-        </span>
-        @if (_errors > 0)
+    <!-- ── Discovery ────────────────────────────────────────────────────────── -->
+    <div class="pipeline-card">
+        <div class="pipeline-card-header">
+            <div class="pipeline-card-body">
+                <h2 class="pipeline-card-title">
+                    Discovery
+                    <span class="phase-badge phase-badge-stub">Phase 2 · Stub</span>
+                </h2>
+                <p class="pipeline-card-desc">
+                    Recursively traverses the full jurisdiction tree — State → County → City —
+                    and attempts to locate a reliable tax rate source for each jurisdiction.
+                    For every non-country node the discovery service probes in sequence:
+                    a known government API endpoint, an official web page, a linked PDF, and
+                    recent news articles. Results are logged below as
+                    <strong>Found</strong>, <strong>Not Found</strong>, <strong>Skipped</strong>,
+                    or <strong>Error</strong> — but no rates are written to the database.
+                    Sources catalogued here are intended to inform and update the scrape
+                    strategies used in Phase 1.
+                    <em class="muted">Live probing is planned; currently returns stub results.</em>
+                </p>
+            </div>
+            <div class="pipeline-card-actions">
+                @if (!running)
+                {
+                    <button class="btn-primary" @onclick="StartDiscovery">▶ Run Discovery</button>
+                }
+                else
+                {
+                    <button class="btn-secondary" @onclick="StopDiscovery">■ Stop</button>
+                }
+                @if (results.Count > 0 && !running)
+                {
+                    <button class="btn-secondary" @onclick="ClearResults">✕ Clear</button>
+                }
+            </div>
+        </div>
+
+        @if (running || processed > 0)
         {
-            <span class="disc-stat disc-stat-error"><strong>@_errors</strong> errors</span>
-        }
-        @if (!_running && _processed > 0)
-        {
-            <span class="disc-stat">Done @_completedAt?.ToString("HH:mm:ss")</span>
+            <div class="discovery-progress-wrap" style="margin-top:.75rem">
+                @if (running && total > 0)
+                {
+                    var pct = (int)Math.Round(processed * 100.0 / total);
+                    <div class="discovery-progress-bar" style="width:@pct%"></div>
+                }
+                else if (running)
+                {
+                    <div class="progress-bar-indeterminate"></div>
+                }
+            </div>
+            <div class="discovery-stats">
+                <span class="disc-stat">
+                    <strong>@processed</strong> / @(total > 0 ? total.ToString() : "…") processed
+                </span>
+                <span class="disc-stat disc-stat-found"><strong>@found</strong> found</span>
+                <span class="disc-stat disc-stat-missing"><strong>@notFound</strong> not found</span>
+                <span class="disc-stat disc-stat-skipped"><strong>@skipped</strong> skipped</span>
+                @if (errors > 0)
+                {
+                    <span class="disc-stat disc-stat-error"><strong>@errors</strong> errors</span>
+                }
+                @if (!running && processed > 0)
+                {
+                    <span class="disc-stat muted">Done @completedAt?.ToString("HH:mm:ss")</span>
+                }
+            </div>
         }
     </div>
-}
 
-<!-- ── Results log ─────────────────────────────────────────────────────────── -->
-@if (_results.Count > 0)
+</div>
+
+<!-- ── Discovery results log ───────────────────────────────────────────────── -->
+@if (results.Count > 0)
 {
     <div class="disc-filter-bar">
         <div class="log-level-pills">
             @foreach (var f in new[] { "All", "Found", "NotFound", "Skipped", "Error" })
             {
-                <button class="log-level-pill disc-filter-pill @(f == "All" ? "disc-pill-all" : $"disc-pill-{f.ToLower()}") @(_filter == f ? "log-pill-active" : "")"
-                        @onclick="() => _filter = f">@f</button>
+                <button class="log-level-pill disc-filter-pill @(f == "All" ? "disc-pill-all" : $"disc-pill-{f.ToLower()}") @(filter == f ? "log-pill-active" : "")"
+                        @onclick="() => filter = f">@f</button>
             }
         </div>
         <input class="setting-input log-search" placeholder="Search name or state…"
-               @bind="_search" @bind:event="oninput" />
+               @bind="search" @bind:event="oninput" />
     </div>
 
     <div class="disc-table-wrap">
@@ -121,15 +185,17 @@
                 }
                 @if (FilteredResults.Count() > 500)
                 {
-                    <tr><td colspan="8" class="muted" style="text-align:center;padding:.75rem">
-                        Showing first 500 of @FilteredResults.Count() results
-                    </td></tr>
+                    <tr>
+                        <td colspan="8" class="muted" style="text-align:center;padding:.75rem">
+                            Showing first 500 of @FilteredResults.Count() results
+                        </td>
+                    </tr>
                 }
             </tbody>
         </table>
     </div>
 }
-else if (!_running)
+else if (!running)
 {
     <div class="empty-state">
         Press <strong>▶ Run Discovery</strong> to scan all jurisdictions for tax rate sources.
@@ -137,58 +203,81 @@ else if (!_running)
 }
 
 @code {
-    private bool _running;
-    private CancellationTokenSource? _cts;
-    private int _total, _processed, _found, _notFound, _skipped, _errors;
-    private DateTime? _completedAt;
-    private string _filter = "All";
-    private string _search = "";
+    // ── Discovery state ───────────────────────────────────────────────────────
+    private bool running;
+    private CancellationTokenSource? cts;
+    private int total, processed, found, notFound, skipped, errors;
+    private DateTime? completedAt;
+    private string filter = "All";
+    private string search = "";
+    private readonly List<DiscoveryResult> results = new();
 
-    private readonly List<DiscoveryResult> _results = new();
+    // ── Scrape state ──────────────────────────────────────────────────────────
+    private bool scrapeRunning;
+    private CancellationTokenSource? scrapeCts;
+    private string? scrapeStatus;
 
     private IEnumerable<DiscoveryResult> FilteredResults =>
-        _results
-            .Where(r => _filter == "All" || r.Status == _filter)
-            .Where(r => string.IsNullOrEmpty(_search) ||
-                        r.JurisdictionName.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
-                        r.StateCode.Contains(_search, StringComparison.OrdinalIgnoreCase));
+        results
+            .Where(r => filter == "All" || r.Status == filter)
+            .Where(r => string.IsNullOrEmpty(search) ||
+                        r.JurisdictionName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                        r.StateCode.Contains(search, StringComparison.OrdinalIgnoreCase));
 
+    // ── Scrape ────────────────────────────────────────────────────────────────
+    private async Task StartScrape()
+    {
+        scrapeRunning = true;
+        scrapeStatus = null;
+        scrapeCts = new CancellationTokenSource();
+        StateHasChanged();
+        try
+        {
+            var changed = await Orchestrator.RunFullScrapeAsync(scrapeCts.Token);
+            scrapeStatus = $"✓ Done — {changed} change(s) detected";
+        }
+        catch (OperationCanceledException) { scrapeStatus = "Stopped."; }
+        catch (Exception ex) { scrapeStatus = $"✗ {ex.Message}"; }
+        finally { scrapeRunning = false; StateHasChanged(); }
+    }
+
+    private void StopScrape() => scrapeCts?.Cancel();
+
+    // ── Discovery ─────────────────────────────────────────────────────────────
     private async Task StartDiscovery()
     {
-        _running   = true;
-        _cts       = new CancellationTokenSource();
-        _total     = 0;
-        _processed = 0;
-        _found     = 0;
-        _notFound  = 0;
-        _skipped   = 0;
-        _errors    = 0;
-        _completedAt = null;
-        _results.Clear();
+        running   = true;
+        cts       = new CancellationTokenSource();
+        total     = 0;
+        processed = 0;
+        found     = 0;
+        notFound  = 0;
+        skipped   = 0;
+        errors    = 0;
+        completedAt = null;
+        results.Clear();
         StateHasChanged();
 
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
 
-            // Pre-count non-Country active jurisdictions for progress display
-            _total = await db.Jurisdictions
-                .CountAsync(j => j.IsActive && j.JurisdictionType != JurisdictionType.Country, _cts.Token);
+            total = await db.Jurisdictions
+                .CountAsync(j => j.IsActive && j.JurisdictionType != JurisdictionType.Country, cts.Token);
             await InvokeAsync(StateHasChanged);
 
-            // Traverse the full tree starting from Countries
             var countries = await db.Jurisdictions
                 .Where(j => j.JurisdictionType == JurisdictionType.Country && j.IsActive)
                 .OrderBy(j => j.JurisdictionName)
-                .ToListAsync(_cts.Token);
+                .ToListAsync(cts.Token);
 
             foreach (var country in countries)
-                await ProcessRecursiveAsync(country, db, _cts.Token);
+                await ProcessRecursiveAsync(country, db, cts.Token);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            _results.Insert(0, new DiscoveryResult
+            results.Insert(0, new DiscoveryResult
             {
                 JurisdictionName = "Discovery run",
                 Status = "Error",
@@ -198,8 +287,8 @@ else if (!_running)
         }
         finally
         {
-            _running     = false;
-            _completedAt = DateTime.UtcNow;
+            running     = false;
+            completedAt = DateTime.UtcNow;
             await InvokeAsync(StateHasChanged);
         }
     }
@@ -208,7 +297,6 @@ else if (!_running)
     {
         ct.ThrowIfCancellationRequested();
 
-        // Discover for every tier except Country (which is just a grouping node)
         if (jurisdiction.JurisdictionType != JurisdictionType.Country)
         {
             DiscoveryResult result;
@@ -231,22 +319,20 @@ else if (!_running)
                 };
             }
 
-            _results.Insert(0, result);
-            _processed++;
+            results.Insert(0, result);
+            processed++;
             switch (result.Status)
             {
-                case "Found":    _found++;    break;
-                case "NotFound": _notFound++; break;
-                case "Skipped":  _skipped++;  break;
-                case "Error":    _errors++;   break;
+                case "Found":    found++;    break;
+                case "NotFound": notFound++; break;
+                case "Skipped":  skipped++;  break;
+                case "Error":    errors++;   break;
             }
 
-            // Throttle UI updates — every 10 results or on error
-            if (_processed % 10 == 0 || result.Status == "Error" || result.Status == "Found")
+            if (processed % 10 == 0 || result.Status == "Error" || result.Status == "Found")
                 await InvokeAsync(StateHasChanged);
         }
 
-        // Load and process children
         var children = await db.Jurisdictions
             .Where(j => j.ParentId == jurisdiction.Id && j.IsActive)
             .OrderBy(j => j.JurisdictionName)
@@ -256,16 +342,13 @@ else if (!_running)
             await ProcessRecursiveAsync(child, db, ct);
     }
 
-    private void StopDiscovery()
-    {
-        _cts?.Cancel();
-    }
+    private void StopDiscovery() => cts?.Cancel();
 
     private void ClearResults()
     {
-        _results.Clear();
-        _total = _processed = _found = _notFound = _skipped = _errors = 0;
-        _completedAt = null;
+        results.Clear();
+        total = processed = found = notFound = skipped = errors = 0;
+        completedAt = null;
     }
 
     private static string TierClass(JurisdictionType tier) => tier switch

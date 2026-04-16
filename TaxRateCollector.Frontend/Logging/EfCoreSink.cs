@@ -13,18 +13,18 @@ namespace TaxRateCollector.Frontend.Logging;
 /// </summary>
 public sealed class EfCoreSink : ILogEventSink
 {
-    private readonly Func<IServiceProvider?> _providerFactory;
-    private readonly IFormatProvider? _formatProvider;
+    private readonly Func<IServiceProvider?> providerFactory;
+    private readonly IFormatProvider? formatProvider;
 
     public EfCoreSink(Func<IServiceProvider?> providerFactory, IFormatProvider? formatProvider = null)
     {
-        _providerFactory = providerFactory;
-        _formatProvider = formatProvider;
+        this.providerFactory = providerFactory;
+        this.formatProvider = formatProvider;
     }
 
     public void Emit(LogEvent logEvent)
     {
-        var provider = _providerFactory();
+        var provider = providerFactory();
         if (provider is null) return;
 
         try
@@ -41,7 +41,7 @@ public sealed class EfCoreSink : ILogEventSink
             {
                 Timestamp = logEvent.Timestamp.UtcDateTime,
                 Level = logEvent.Level.ToString(),
-                Message = logEvent.RenderMessage(_formatProvider),
+                Message = logEvent.RenderMessage(formatProvider),
                 Exception = logEvent.Exception?.ToString(),
                 SourceContext = sourceCtx?.ToString()?.Trim('"'),
                 Properties = logEvent.Properties.Count > 0

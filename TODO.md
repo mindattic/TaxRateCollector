@@ -87,6 +87,9 @@ Mark items `[x]` when complete. Tackle in priority order within each section.
 - [ ] Scraper result diffing: highlight changed rates in yellow in the tree
 - [ ] Screenshot capture: Playwright or similar to capture .gov page as PNG for evidence archive
 
+### Database
+- [ ] SQLite backup on startup — timestamped file copy of `taxrates.db` → `backups/taxrates_<timestamp>.db`, keep last N (e.g. 10), delete older ones automatically
+
 ### Azure Deployment
 - [ ] Containerize with Dockerfile (ASP.NET Core + SQLite or migrate to Azure SQL)
 - [ ] Azure App Service deployment

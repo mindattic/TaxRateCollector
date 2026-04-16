@@ -14,21 +14,21 @@ public class JurisdictionDbTests
     private const string DbPath =
         @"D:\Projects\MindAttic\TaxRateCollector\TaxRateCollector.Frontend\taxrates.db";
 
-    private SqliteConnection? _conn;
+    private SqliteConnection? conn;
 
     [OneTimeSetUp]
     public void OpenDb()
     {
-        _conn = new SqliteConnection($"Data Source={DbPath}");
-        _conn.Open();
+        conn = new SqliteConnection($"Data Source={DbPath}");
+        conn.Open();
     }
 
     [OneTimeTearDown]
-    public void CloseDb() => _conn?.Close();
+    public void CloseDb() => conn?.Close();
 
     private long Scalar(string sql)
     {
-        using var cmd = _conn!.CreateCommand();
+        using var cmd = conn!.CreateCommand();
         cmd.CommandText = sql;
         return (long)(cmd.ExecuteScalar() ?? 0L);
     }
@@ -43,7 +43,7 @@ public class JurisdictionDbTests
     [Test]
     public void Db_CountryIsUnitedStates()
     {
-        using var cmd = _conn!.CreateCommand();
+        using var cmd = conn!.CreateCommand();
         cmd.CommandText = "SELECT FipsCode FROM Jurisdictions WHERE JurisdictionType='Country' LIMIT 1";
         var fips = cmd.ExecuteScalar()?.ToString();
         Assert.That(fips, Is.EqualTo("US"), "The single Country must be US");
@@ -59,7 +59,7 @@ public class JurisdictionDbTests
     [Test]
     public void Db_StatesAllHaveValidFipsCodes()
     {
-        using var cmd = _conn!.CreateCommand();
+        using var cmd = conn!.CreateCommand();
         cmd.CommandText = @"
             SELECT COUNT(*) FROM Jurisdictions
             WHERE JurisdictionType='State'

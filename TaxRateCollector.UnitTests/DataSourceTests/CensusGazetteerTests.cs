@@ -22,14 +22,14 @@ public class CensusGazetteerTests
     // Shared client — one download per file across all tests in this fixture.
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(3) };
 
-    private static byte[]? _countyZipBytes;
-    private static byte[]? _placeZipBytes;
+    private static byte[]? countyZipBytes;
+    private static byte[]? placeZipBytes;
 
     [OneTimeSetUp]
     public async Task DownloadFiles()
     {
-        _countyZipBytes = await Http.GetByteArrayAsync(CountyZipUrl);
-        _placeZipBytes  = await Http.GetByteArrayAsync(PlaceZipUrl);
+        countyZipBytes = await Http.GetByteArrayAsync(CountyZipUrl);
+        placeZipBytes  = await Http.GetByteArrayAsync(PlaceZipUrl);
     }
 
     // ── County file ────────────────────────────────────────────────────────────
@@ -37,21 +37,21 @@ public class CensusGazetteerTests
     [Test]
     public void County_ZipIsNotEmpty()
     {
-        Assert.That(_countyZipBytes, Is.Not.Null.And.Not.Empty,
+        Assert.That(countyZipBytes, Is.Not.Null.And.Not.Empty,
             "County ZIP download returned no bytes");
     }
 
     [Test]
     public void County_ZipContainsTxtEntry()
     {
-        var entry = GetFirstTxtEntry(_countyZipBytes!);
+        var entry = GetFirstTxtEntry(countyZipBytes!);
         Assert.That(entry, Is.Not.Null, "County ZIP must contain at least one .txt file");
     }
 
     [Test]
     public void County_HeaderContainsRequiredColumns()
     {
-        var header = ReadFirstLine(_countyZipBytes!);
+        var header = ReadFirstLine(countyZipBytes!);
         Assert.Multiple(() =>
         {
             Assert.That(header, Does.Contain("GEOID"), "Missing GEOID column");
@@ -63,7 +63,7 @@ public class CensusGazetteerTests
     [Test]
     public void County_DelimiterIsDetectable()
     {
-        var header = ReadFirstLine(_countyZipBytes!);
+        var header = ReadFirstLine(countyZipBytes!);
         var delim  = header.Contains('|') ? '|' : '\t';
         var cols   = header.Split(delim);
         Assert.That(cols.Length, Is.GreaterThanOrEqualTo(5),
@@ -73,7 +73,7 @@ public class CensusGazetteerTests
     [Test]
     public void County_DataRowCountIsAtLeast3100()
     {
-        var lines = ReadAllLines(_countyZipBytes!);
+        var lines = ReadAllLines(countyZipBytes!);
         // First line is header; remainder are data rows.
         Assert.That(lines.Length - 1, Is.GreaterThanOrEqualTo(3100),
             $"Expected ≥3,100 county rows; got {lines.Length - 1}");
@@ -82,7 +82,7 @@ public class CensusGazetteerTests
     [Test]
     public void County_FirstRowFipsIs5Digits()
     {
-        var lines  = ReadAllLines(_countyZipBytes!);
+        var lines  = ReadAllLines(countyZipBytes!);
         Assert.That(lines.Length, Is.GreaterThan(1), "File has no data rows");
         var header = lines[0];
         var delim  = header.Contains('|') ? '|' : '\t';
@@ -102,21 +102,21 @@ public class CensusGazetteerTests
     [Test]
     public void Places_ZipIsNotEmpty()
     {
-        Assert.That(_placeZipBytes, Is.Not.Null.And.Not.Empty,
+        Assert.That(placeZipBytes, Is.Not.Null.And.Not.Empty,
             "Places ZIP download returned no bytes");
     }
 
     [Test]
     public void Places_ZipContainsTxtEntry()
     {
-        var entry = GetFirstTxtEntry(_placeZipBytes!);
+        var entry = GetFirstTxtEntry(placeZipBytes!);
         Assert.That(entry, Is.Not.Null, "Places ZIP must contain at least one .txt file");
     }
 
     [Test]
     public void Places_HeaderContainsRequiredColumns()
     {
-        var header = ReadFirstLine(_placeZipBytes!);
+        var header = ReadFirstLine(placeZipBytes!);
         Assert.Multiple(() =>
         {
             Assert.That(header, Does.Contain("GEOID"), "Missing GEOID column");
@@ -128,7 +128,7 @@ public class CensusGazetteerTests
     [Test]
     public void Places_DataRowCountIsAtLeast25000()
     {
-        var lines = ReadAllLines(_placeZipBytes!);
+        var lines = ReadAllLines(placeZipBytes!);
         Assert.That(lines.Length - 1, Is.GreaterThanOrEqualTo(25_000),
             $"Expected ≥25,000 place rows; got {lines.Length - 1}");
     }
@@ -136,7 +136,7 @@ public class CensusGazetteerTests
     [Test]
     public void Places_FirstRowFipsIs7Digits()
     {
-        var lines  = ReadAllLines(_placeZipBytes!);
+        var lines  = ReadAllLines(placeZipBytes!);
         Assert.That(lines.Length, Is.GreaterThan(1), "File has no data rows");
         var header = lines[0];
         var delim  = header.Contains('|') ? '|' : '\t';

@@ -12,19 +12,19 @@
 <h1>Change Log</h1>
 
 <div class="filter-row">
-    <select class="filter-select" @bind="_typeFilter">
+    <select class="filter-select" @bind="typeFilter">
         <option value="">All Types</option>
         <option value="RateChanged">Rate Changed</option>
         <option value="NewJurisdiction">New Jurisdiction</option>
         <option value="Removed">Removed</option>
     </select>
     <label class="filter-check">
-        <input type="checkbox" @bind="_unackOnly" /> Unacknowledged only
+        <input type="checkbox" @bind="unackOnly" /> Unacknowledged only
     </label>
     <button class="btn-secondary" @onclick="AcknowledgeAllAsync">Acknowledge All</button>
 </div>
 
-@if (_entries is null)
+@if (entries is null)
 {
     <p class="muted">Loading…</p>
 }
@@ -64,18 +64,18 @@ else
 }
 
 @code {
-    private List<TaxRateCollector.Core.Entities.ChangeLogEntry>? _entries;
-    private string _typeFilter = string.Empty;
-    private bool _unackOnly;
+    private List<TaxRateCollector.Core.Entities.ChangeLogEntry>? entries;
+    private string typeFilter = string.Empty;
+    private bool unackOnly;
 
     private IEnumerable<TaxRateCollector.Core.Entities.ChangeLogEntry> Filtered
     {
         get
         {
-            var q = _entries?.AsEnumerable() ?? Enumerable.Empty<TaxRateCollector.Core.Entities.ChangeLogEntry>();
-            if (!string.IsNullOrEmpty(_typeFilter) && Enum.TryParse<ChangeType>(_typeFilter, out var ct))
+            var q = entries?.AsEnumerable() ?? Enumerable.Empty<TaxRateCollector.Core.Entities.ChangeLogEntry>();
+            if (!string.IsNullOrEmpty(typeFilter) && Enum.TryParse<ChangeType>(typeFilter, out var ct))
                 q = q.Where(e => e.ChangeType == ct);
-            if (_unackOnly) q = q.Where(e => !e.Acknowledged);
+            if (unackOnly) q = q.Where(e => !e.Acknowledged);
             return q;
         }
     }
@@ -85,7 +85,7 @@ else
     private async Task LoadAsync()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
-        _entries = await db.ChangeLog
+        entries = await db.ChangeLog
             .Include(c => c.Jurisdiction)
             .OrderByDescending(c => c.DetectedAt)
             .ToListAsync();

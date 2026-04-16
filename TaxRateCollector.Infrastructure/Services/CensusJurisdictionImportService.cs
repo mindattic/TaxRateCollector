@@ -32,8 +32,11 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "MindAttic", "TaxRateCollector", "cache");
 
-    private static readonly string CountyCache = Path.Combine(CacheDir, "census_counties.txt");
-    private static readonly string PlaceCache  = Path.Combine(CacheDir, "census_places.txt");
+    private static readonly string CountyCache      = Path.Combine(CacheDir, "census_counties.txt");
+    private static readonly string PlaceCache       = Path.Combine(CacheDir, "census_places.txt");
+    // Shared with ZipImportService — read from cache if ZIPs were already imported, or download fresh
+    private static readonly string ZctaCountyCache  = Path.Combine(CacheDir, "census_zcta_county.txt");
+    private static readonly string ZctaPlaceCache   = Path.Combine(CacheDir, "census_zcta_place.txt");
 
     // ── State FIPS → 2-letter abbreviation ───────────────────────────────────
     private static readonly Dictionary<string, string> FipsToStateCode = new(StringComparer.Ordinal)
@@ -51,18 +54,18 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
         ["56"]="WY",["60"]="AS",["66"]="GU",["69"]="MP",["72"]="PR",["78"]="VI"
     };
 
-    private readonly IDbContextFactory<AppDbContext> _dbFactory;
-    private readonly IHttpClientFactory _httpFactory;
-    private readonly SettingsService _settings;
+    private readonly IDbContextFactory<AppDbContext> dbFactory;
+    private readonly IHttpClientFactory httpFactory;
+    private readonly SettingsService settings;
 
     public CensusJurisdictionImportService(
         IDbContextFactory<AppDbContext> dbFactory,
         IHttpClientFactory httpFactory,
         SettingsService settings)
     {
-        _dbFactory   = dbFactory;
-        _httpFactory = httpFactory;
-        _settings    = settings;
+        this.dbFactory   = dbFactory;
+        this.httpFactory = httpFactory;
+        this.settings    = settings;
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -70,7 +73,7 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
     public async Task<(int SeededCounties, int SeededCities, int LinkedZips)> GetCoverageAsync(
         CancellationToken ct = default)
     {
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
         var counties   = await db.Jurisdictions.CountAsync(j => j.JurisdictionType == JurisdictionType.County, ct);
         var cities     = await db.Jurisdictions.CountAsync(j => j.JurisdictionType == JurisdictionType.City,   ct);
         var linkedZips = await db.ZipCodes.CountAsync(z => z.CountyJurisdictionId != null, ct);
@@ -90,36 +93,46 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
         var sw = Stopwatch.StartNew();
         Directory.CreateDirectory(CacheDir);
 
-        var http = _httpFactory.CreateClient();
+        var http = httpFactory.CreateClient();
         http.Timeout = TimeSpan.FromMinutes(10);
 
         // ── 1. Download files ─────────────────────────────────────────────────
         // Note: the national place→county crosswalk no longer exists on the Census server.
         // Cities fall back to first-county-per-state.
-        var countyGazUrl = _settings.Current.CensusCountyGazUrl;
-        var placeGazUrl  = _settings.Current.CensusPlaceGazUrl;
-        Report(progress, "Downloading", 0, 2, 0, 0, 0, "Census county file…");
+        var countyGazUrl = settings.Current.CensusCountyGazUrl;
+        var placeGazUrl  = settings.Current.CensusPlaceGazUrl;
+        Report(progress, "Downloading", 0, 4, 0, 0, 0, "Census county gazetteer…");
         await EnsureCachedAsync(http, countyGazUrl, CountyCache, ct);
-        Report(progress, "Downloading", 1, 2, 0, 0, 0, "Census places file…");
+        Report(progress, "Downloading", 1, 4, 0, 0, 0, "Census places gazetteer…");
         await EnsureCachedAsync(http, placeGazUrl,  PlaceCache,  ct);
-        Report(progress, "Downloading", 2, 2, 0, 0, 0, "Done");
 
-        // ── 2. Parse files ────────────────────────────────────────────────────
+        // ── 2. Download ZCTA crosswalk files to build place→county mapping ───
+        Report(progress, "Downloading", 2, 4, 0, 0, 0, "ZCTA→county crosswalk…");
+        await EnsureCachedAsync(http, settings.Current.CensusZctaCountyUrl, ZctaCountyCache, ct);
+        Report(progress, "Downloading", 3, 4, 0, 0, 0, "ZCTA→place crosswalk…");
+        await EnsureCachedAsync(http, settings.Current.CensusZctaPlaceUrl,  ZctaPlaceCache,  ct);
+        Report(progress, "Downloading", 4, 4, 0, 0, 0, "Building place→county map…");
+
+        // ── 3. Parse files ────────────────────────────────────────────────────
         var counties    = ParseGazetteerCounties(await File.ReadAllTextAsync(CountyCache, ct));
         var places      = ParseGazetteerPlaces(await File.ReadAllTextAsync(PlaceCache,   ct));
-        var placeCounty = new Dictionary<string, string>(); // crosswalk unavailable; fallback active
+        var zctaCounty  = ParseZctaCountyMap(await File.ReadAllTextAsync(ZctaCountyCache, ct));
+        var placeCounty = BuildPlaceCountyFromZcta(await File.ReadAllTextAsync(ZctaPlaceCache, ct), zctaCounty);
 
-        // ── 3. Import counties ────────────────────────────────────────────────
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        // ── 4. Import counties ────────────────────────────────────────────────
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
 
         var (countiesCreated, countiesSkipped) = await ImportCountiesAsync(
             db, counties, progress, ct);
 
-        // ── 4. Import cities ──────────────────────────────────────────────────
+        // ── 5. Import cities (using real place→county crosswalk) ──────────────
         var (citiesCreated, citiesSkipped) = await ImportCitiesAsync(
             db, places, placeCounty, progress, ct);
 
-        // ── 5. Re-link ZIP codes ──────────────────────────────────────────────
+        // ── 6. Re-parent any cities that were previously assigned to wrong county
+        var reparented = await ReparentCitiesAsync(db, placeCounty, progress, ct);
+
+        // ── 7. Re-link ZIP codes ──────────────────────────────────────────────
         var zipsRelinked = await RelinkZipsAsync(db, progress, ct);
 
         sw.Stop();
@@ -436,6 +449,110 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
         await db.SaveChangesAsync(ct);
         Report(progress, "Re-linking ZIPs", total, total, updated, 0, 0, "Done");
         return updated;
+    }
+
+    // ── Re-parent cities that ended up under the wrong county ─────────────────
+
+    private async Task<int> ReparentCitiesAsync(
+        AppDbContext db,
+        Dictionary<string, string> placeCounty,
+        IProgress<CensusImportProgress>? progress,
+        CancellationToken ct)
+    {
+        if (placeCounty.Count == 0) return 0;
+
+        Report(progress, "Re-parenting cities", 0, 0, 0, 0, 0, "Loading…");
+
+        var countyById = await db.Jurisdictions
+            .Where(j => j.JurisdictionType == JurisdictionType.County)
+            .Select(j => new { j.Id, j.FipsCode })
+            .ToDictionaryAsync(j => j.FipsCode, ct);
+
+        var cities = await db.Jurisdictions
+            .Where(j => j.JurisdictionType == JurisdictionType.City)
+            .ToListAsync(ct);
+
+        int fixed_ = 0;
+        foreach (var city in cities)
+        {
+            if (!placeCounty.TryGetValue(city.FipsCode, out var countyFips)) continue;
+            if (!countyById.TryGetValue(countyFips, out var county)) continue;
+            if (city.ParentId == county.Id) continue;
+
+            city.ParentId = county.Id;
+            fixed_++;
+        }
+
+        if (fixed_ > 0) await db.SaveChangesAsync(ct);
+        Report(progress, "Re-parenting cities", cities.Count, cities.Count, fixed_, 0, 0, $"{fixed_:N0} cities re-parented");
+        return fixed_;
+    }
+
+    // ── ZCTA crosswalk parsers (shared column names with ZipImportService) ────
+
+    /// <summary>Returns zcta(5) → countyFips(5) using largest AREALAND_PART.</summary>
+    private static Dictionary<string, string> ParseZctaCountyMap(string content)
+    {
+        var best  = new Dictionary<string, (string CountyFips, long Area)>(StringComparer.Ordinal);
+        var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (lines.Length < 2) return new();
+
+        var header  = lines[0].Split('|');
+        int iZcta   = ColIdx(header, "GEOID_ZCTA5_20");
+        int iCounty = ColIdx(header, "GEOID_COUNTY_20");
+        int iArea   = ColIdx(header, "AREALAND_PART");
+        if (iZcta < 0 || iCounty < 0) return new();
+
+        for (int i = 1; i < lines.Length; i++)
+        {
+            var cols = lines[i].Split('|');
+            if (cols.Length <= Math.Max(iZcta, iCounty)) continue;
+
+            var zcta   = cols[iZcta].Trim();
+            var county = cols[iCounty].Trim();
+            long area  = iArea >= 0 && cols.Length > iArea && long.TryParse(cols[iArea].Trim(), out var a) ? a : 0;
+
+            if (zcta.Length != 5 || county.Length != 5) continue;
+            if (!best.TryGetValue(zcta, out var prev) || area > prev.Area)
+                best[zcta] = (county, area);
+        }
+        return best.ToDictionary(kv => kv.Key, kv => kv.Value.CountyFips);
+    }
+
+    /// <summary>
+    /// Joins the ZCTA-to-place crosswalk with the zcta→county map to derive
+    /// placeFips(7) → countyFips(5) using the largest AREALAND_PART intersection.
+    /// The ZCTA-to-place crosswalk file contains GEOID_PLACE_20 (7-digit place FIPS).
+    /// </summary>
+    private static Dictionary<string, string> BuildPlaceCountyFromZcta(
+        string placeContent, Dictionary<string, string> zctaToCounty)
+    {
+        var best  = new Dictionary<string, (string CountyFips, long Area)>(StringComparer.Ordinal);
+        var lines = placeContent.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (lines.Length < 2) return new();
+
+        var header = lines[0].Split('|');
+        int iZcta  = ColIdx(header, "GEOID_ZCTA5_20");
+        int iPlace = ColIdx(header, "GEOID_PLACE_20");
+        int iArea  = ColIdx(header, "AREALAND_PART");
+        if (iZcta < 0 || iPlace < 0) return new(); // column absent — fallback stays active
+
+        for (int i = 1; i < lines.Length; i++)
+        {
+            var cols = lines[i].Split('|');
+            if (cols.Length <= Math.Max(iZcta, iPlace)) continue;
+
+            var zcta  = cols[iZcta].Trim();
+            var place = cols[iPlace].Trim().PadLeft(7, '0');
+            long area = iArea >= 0 && cols.Length > iArea && long.TryParse(cols[iArea].Trim(), out var a) ? a : 0;
+
+            if (zcta.Length != 5 || place.Length != 7) continue;
+            if (!zctaToCounty.TryGetValue(zcta, out var countyFips)) continue;
+
+            if (!best.TryGetValue(place, out var prev) || area > prev.Area)
+                best[place] = (countyFips, area);
+        }
+        return best.ToDictionary(kv => kv.Key, kv => kv.Value.CountyFips);
     }
 
     // ── File parsers ──────────────────────────────────────────────────────────

@@ -2,11 +2,15 @@
 @attribute [Authorize]
 @using Microsoft.EntityFrameworkCore
 @using TaxRateCollector.Core.Entities
+@using TaxRateCollector.Core.Interfaces
 @using TaxRateCollector.Infrastructure.Data
 @using TaxRateCollector.Infrastructure.Services
-@inject SettingsService _settings
+@inject SettingsService settings
 @inject IDbContextFactory<AppDbContext> DbFactory
+@inject ICensusJurisdictionImportService censusSvc
+@inject IZipImportService zipSvc
 @inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
 @rendermode InteractiveServer
 
 <PageTitle>Settings — TaxRateCollector</PageTitle>
@@ -22,24 +26,26 @@
         <h2>Appearance</h2>
         <div class="setting-row">
             <label class="setting-label">Theme</label>
-            <div class="theme-toggle" style="flex-wrap:wrap;gap:.35rem">
-                <button class="theme-btn @(_settings.Current.Theme == "light"  ? "theme-active" : "")" @onclick='() => SetTheme("light")'>☀ Light</button>
-                <button class="theme-btn @(_settings.Current.Theme == "dark"   ? "theme-active" : "")" @onclick='() => SetTheme("dark")'>☾ Dark</button>
-                <button class="theme-btn @(_settings.Current.Theme == "spring" ? "theme-active" : "")" @onclick='() => SetTheme("spring")'>🌸 Spring</button>
-                <button class="theme-btn @(_settings.Current.Theme == "summer" ? "theme-active" : "")" @onclick='() => SetTheme("summer")'>☀ Summer</button>
-                <button class="theme-btn @(_settings.Current.Theme == "autumn" ? "theme-active" : "")" @onclick='() => SetTheme("autumn")'>🍂 Autumn</button>
-                <button class="theme-btn @(_settings.Current.Theme == "winter" ? "theme-active" : "")" @onclick='() => SetTheme("winter")'>❄ Winter</button>
-                <button class="theme-btn @(_settings.Current.Theme == "tutor"  ? "theme-active" : "")" @onclick='() => SetTheme("tutor")'>📘 Tutor</button>
-                <button class="theme-btn @(_settings.Current.Theme == "llm"    ? "theme-active" : "")" @onclick='() => SetTheme("llm")'>🤖 LLM</button>
-                <button class="theme-btn @(_settings.Current.Theme == "samurai"? "theme-active" : "")" @onclick='() => SetTheme("samurai")'>⚔ Samurai</button>
-            </div>
+            <select class="setting-input" style="max-width:220px"
+                    value="@settings.Current.Theme"
+                    @onchange="e => SetTheme(e.Value?.ToString() ?? settings.Current.Theme)">
+                <option value="light">☀ Light</option>
+                <option value="dark">☾ Dark</option>
+                <option value="spring">🌸 Spring</option>
+                <option value="summer">☀ Summer</option>
+                <option value="autumn">🍂 Autumn</option>
+                <option value="winter">❄ Winter</option>
+                <option value="tutor">📘 Tutor</option>
+                <option value="llm">🤖 LLM</option>
+                <option value="samurai">⚔ Samurai</option>
+            </select>
         </div>
         <div class="setting-row">
             <label class="setting-label">Font</label>
             <select class="setting-input" style="max-width:220px"
-                    value="@_settings.Current.Font"
-                    @onchange="e => SetFont(e.Value?.ToString() ?? _settings.Current.Font)">
-                <option value="outfit">Outfit (Outline)</option>
+                    value="@settings.Current.Font"
+                    @onchange="e => SetFont(e.Value?.ToString() ?? settings.Current.Font)">
+                <option value="outfit">Outfit</option>
                 <option value="roboto">Roboto</option>
                 <option value="lato">Lato</option>
                 <option value="calibri">Calibri</option>
@@ -47,93 +53,164 @@
                 <option value="times">Times New Roman</option>
             </select>
         </div>
-        <div class="setting-row">
-            <label class="setting-label">Font size</label>
-            <select class="setting-input" style="max-width:100px"
-                    value="@_settings.Current.FontSize"
-                    @onchange="e => SetFontSize(int.TryParse(e.Value?.ToString(), out var sz) ? sz : _settings.Current.FontSize)">
-                <option value="12">12 px</option>
-                <option value="13">13 px</option>
-                <option value="14">14 px</option>
-                <option value="15">15 px</option>
-                <option value="16">16 px</option>
-                <option value="18">18 px</option>
-            </select>
-        </div>
     </section>
 
-    <!-- ── USPS ──────────────────────────────────────────────────────────── -->
-    <section class="settings-section">
-        <h2>USPS Address Validation</h2>
-        <p class="section-note">
-            Validates that every jurisdiction corresponds to a real USPS-recognized location.
-            Get a key at <a href="https://www.usps.com/business/web-tools-apis/" target="_blank">usps.com</a>.
-        </p>
-        <div class="setting-row">
-            <label class="setting-label">API Key</label>
-            <input class="setting-input" type="password" placeholder="USPS Web Tools API Key"
-                   @bind="_settings.Current.UspsApiKey" />
-        </div>
-    </section>
+    @if (isAdmin)
+    {
 
-    <!-- ── Scraping ──────────────────────────────────────────────────────── -->
-    <section class="settings-section">
-        <h2>Scraping & Updates</h2>
-        <div class="setting-row">
-            <label class="setting-label">Default update frequency (days)</label>
-            <input class="setting-input setting-input-sm" type="number" min="1" max="365"
-                   @bind="_settings.Current.DefaultUpdateFrequencyDays" />
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <div class="admin-divider">
+            <span>Admin Configuration</span>
         </div>
-        <div class="setting-row">
-            <label class="setting-label">Auto-fetch evidence when scraping</label>
-            <input type="checkbox" @bind="_settings.Current.EvidenceAutoFetch" />
-        </div>
-        <div class="setting-row">
-            <label class="setting-label">Fall back to Wayback Machine for unavailable pages</label>
-            <input type="checkbox" @bind="_settings.Current.WaybackMachineFallback" />
-        </div>
-    </section>
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
 
-    <!-- ── Census data source URLs ────────────────────────────────────────── -->
-    <section class="settings-section">
-        <h2>Census Data Source URLs</h2>
-        <p class="section-note">
-            Update these when the Census Bureau moves files to a new year or path.
-            Changes take effect on the next import run (clear cache first to force re-download).
-        </p>
-        <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem">
-            <label class="setting-label">County Gazetteer (ZIP)</label>
-            <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
-                   @bind="_settings.Current.CensusCountyGazUrl" />
-        </div>
-        <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
-            <label class="setting-label">Place Gazetteer (ZIP)</label>
-            <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
-                   @bind="_settings.Current.CensusPlaceGazUrl" />
-        </div>
-        <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
-            <label class="setting-label">ZCTA → County crosswalk (TXT)</label>
-            <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
-                   @bind="_settings.Current.CensusZctaCountyUrl" />
-        </div>
-        <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
-            <label class="setting-label">ZCTA → Place crosswalk (TXT)</label>
-            <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
-                   @bind="_settings.Current.CensusZctaPlaceUrl" />
-        </div>
-    </section>
+        <!-- ── USPS ──────────────────────────────────────────────────────────── -->
+        <section class="settings-section">
+            <h2>USPS Address Validation</h2>
+            <p class="section-note">
+                Validates that every jurisdiction corresponds to a real USPS-recognized location.
+                Get a key at <a href="https://www.usps.com/business/web-tools-apis/" target="_blank">usps.com</a>.
+            </p>
+            <div class="setting-row">
+                <label class="setting-label">API Key</label>
+                <input class="setting-input" type="password" placeholder="USPS Web Tools API Key"
+                       @bind="settings.Current.UspsApiKey" />
+            </div>
+        </section>
+
+        <!-- ── Scraping ──────────────────────────────────────────────────────── -->
+        <section class="settings-section">
+            <h2>Scraping &amp; Updates</h2>
+            <div class="setting-row">
+                <label class="setting-label">Default update frequency (days)</label>
+                <input class="setting-input setting-input-sm" type="number" min="1" max="365"
+                       @bind="settings.Current.DefaultUpdateFrequencyDays" />
+            </div>
+            <div class="setting-row">
+                <label class="setting-label">Auto-fetch evidence when scraping</label>
+                <input type="checkbox" @bind="settings.Current.EvidenceAutoFetch" />
+            </div>
+            <div class="setting-row">
+                <label class="setting-label">Fall back to Wayback Machine for unavailable pages</label>
+                <input type="checkbox" @bind="settings.Current.WaybackMachineFallback" />
+            </div>
+        </section>
+
+        <!-- ── Census data source URLs ────────────────────────────────────────── -->
+        <section class="settings-section">
+            <h2>Census Data Source URLs</h2>
+            <p class="section-note">
+                Update these when the Census Bureau moves files to a new year or path.
+                Changes take effect on the next import run (clear cache first to force re-download).
+            </p>
+            <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem">
+                <label class="setting-label">County Gazetteer (ZIP)</label>
+                <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
+                       @bind="settings.Current.CensusCountyGazUrl" />
+            </div>
+            <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
+                <label class="setting-label">Place Gazetteer (ZIP)</label>
+                <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
+                       @bind="settings.Current.CensusPlaceGazUrl" />
+            </div>
+            <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
+                <label class="setting-label">ZCTA → County crosswalk (TXT)</label>
+                <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
+                       @bind="settings.Current.CensusZctaCountyUrl" />
+            </div>
+            <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
+                <label class="setting-label">ZCTA → Place crosswalk (TXT)</label>
+                <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
+                       @bind="settings.Current.CensusZctaPlaceUrl" />
+            </div>
+            <div class="settings-actions" style="margin-top:.8rem">
+                <button class="btn-primary" @onclick="Save">Save Settings</button>
+                @if (saved) { <span class="save-confirm">✓ Saved</span> }
+            </div>
+        </section>
+    }
 
     <!-- ── Save app settings ─────────────────────────────────────────────── -->
     <div class="settings-actions">
         <button class="btn-primary" @onclick="Save">Save Settings</button>
-        @if (_saved) { <span class="save-confirm">✓ Saved</span> }
+        @if (saved)
+        {
+            <span class="save-confirm">✓ Saved</span>
+        }
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <div class="admin-divider">
-        <span>Admin Configuration</span>
-    </div>
-    <!-- ═══════════════════════════════════════════════════════════════════ -->
+</div>
+
+@if (isAdmin)
+{
+<div class="settings-grid">
+
+    <!-- ── Data Import ──────────────────────────────────────────────────── -->
+    <section class="settings-section">
+        <h2>Data Import</h2>
+        <p class="section-note">
+            Import jurisdiction and ZIP code data from the US Census Bureau.
+            Step 1 must complete before Step 2 so that ZIP codes can resolve to real county and city rows.
+        </p>
+
+        <!-- Step 1 -->
+        <div class="setting-row" style="align-items:flex-start;flex-direction:column;gap:.4rem">
+            <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+                <label class="setting-label" style="min-width:0">
+                    Step 1 — Counties &amp; Cities
+                    <span class="muted" style="font-weight:400;margin-left:.4rem">(@countyCount.ToString("N0") counties · @cityCount.ToString("N0") cities)</span>
+                </label>
+                <button class="btn-secondary" style="font-size:.82rem" @onclick="RunCensusImport"
+                        disabled="@(importBusy)">
+                    @if (censusRunning)
+                    {
+                        <span>Running…</span>
+                    }
+                    else
+                    {
+                        <span>↺ Re-import</span>
+                    }
+                </button>
+                <button class="btn-secondary" style="font-size:.82rem" @onclick="ClearCensusCache"
+                        disabled="@importBusy">
+                    Clear cache
+                </button>
+            </div>
+            @if (!string.IsNullOrEmpty(importMsg))
+            {
+                <span class="muted small">@importMsg</span>
+            }
+        </div>
+
+        <!-- Step 2 -->
+        <div class="setting-row" style="align-items:flex-start;flex-direction:column;gap:.4rem;margin-top:.75rem">
+            <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+                <label class="setting-label" style="min-width:0">
+                    Step 2 — ZIP Codes
+                    <span class="muted" style="font-weight:400;margin-left:.4rem">(@zipCount.ToString("N0") ZIPs imported)</span>
+                </label>
+                <button class="btn-secondary" style="font-size:.82rem" @onclick="RunZipImport"
+                        disabled="@(importBusy || countyCount == 0)">
+                    @if (zipRunning)
+                    {
+                        <span>Running…</span>
+                    }
+                    else
+                    {
+                        <span>↺ Re-import</span>
+                    }
+                </button>
+                <button class="btn-secondary" style="font-size:.82rem" @onclick="ClearZipCache"
+                        disabled="@importBusy">
+                    Clear cache
+                </button>
+            </div>
+            @if (countyCount == 0)
+            {
+                <span class="muted small">Complete Step 1 first.</span>
+            }
+        </div>
+    </section>
 
     <!-- ── Pricing ───────────────────────────────────────────────────────── -->
     <section class="settings-section">
@@ -142,24 +219,27 @@
             These values are stored in the database and applied to all new subscription checkouts.
             Changes take effect immediately — existing subscriptions are not retroactively changed.
         </p>
-        @if (_pricing is not null)
+        @if (pricing is not null)
         {
             <div class="setting-row">
                 <label class="setting-label">Price per state / month</label>
                 <div style="display:flex;align-items:center;gap:.5rem">
                     <span class="muted">$</span>
                     <input class="setting-input setting-input-sm" type="number" step="0.001" min="0.001"
-                           @bind="_pricing.PricePerState" />
-                    <span class="muted">USD · 50 states = @((_pricing.PricePerState * 50).ToString("C"))/mo full access</span>
+                           @bind="pricing.PricePerState" />
+                    <span class="muted">USD · 50 states = @((pricing.PricePerState * 50).ToString("C"))/mo full access</span>
                 </div>
             </div>
             <div class="setting-row">
                 <label class="setting-label">Currency</label>
-                <input class="setting-input" style="max-width:80px" @bind="_pricing.Currency" />
+                <input class="setting-input" style="max-width:80px" @bind="pricing.Currency" />
             </div>
             <div class="settings-actions" style="margin-top:.8rem">
-                <button class="btn-primary" @onclick="SavePricing" disabled="@_adminBusy">Save Pricing</button>
-                @if (_adminStatus is not null) { <span class="save-confirm">@_adminStatus</span> }
+                <button class="btn-primary" @onclick="SavePricing" disabled="@adminBusy">Save Pricing</button>
+                @if (adminStatus is not null)
+                {
+                    <span class="save-confirm">@adminStatus</span>
+                }
             </div>
         }
         else
@@ -176,35 +256,42 @@
             Get credentials at <a href="https://developer.paypal.com/dashboard/" target="_blank">developer.paypal.com</a> →
             Apps &amp; Credentials.
         </p>
-        @if (_paypal is not null)
+        @if (paypal is not null)
         {
             <div class="setting-row">
                 <label class="setting-label">Mode</label>
                 <div class="theme-toggle">
-                    <button class="theme-btn @(_paypal.Mode == "sandbox" ? "theme-active" : "")"
-                            @onclick='() => _paypal.Mode = "sandbox"'>Sandbox</button>
-                    <button class="theme-btn @(_paypal.Mode == "live" ? "theme-active" : "")"
-                            @onclick='() => _paypal.Mode = "live"'>Live</button>
+                    <button class="theme-btn @(paypal.Mode == "sandbox" ? "theme-active" : "")"
+                            @onclick='() => paypal.Mode = "sandbox"'>
+                        Sandbox
+                    </button>
+                    <button class="theme-btn @(paypal.Mode == "live" ? "theme-active" : "")"
+                            @onclick='() => paypal.Mode = "live"'>
+                        Live
+                    </button>
                 </div>
             </div>
             <div class="setting-row">
                 <label class="setting-label">Client ID</label>
                 <input class="setting-input" placeholder="AXxx… (from PayPal dashboard)"
-                       @bind="_paypal.ClientId" />
+                       @bind="paypal.ClientId" />
             </div>
             <div class="setting-row">
                 <label class="setting-label">Client Secret</label>
                 <input class="setting-input" type="password" placeholder="EXxx… (keep secret)"
-                       @bind="_paypal.ClientSecret" />
+                       @bind="paypal.ClientSecret" />
             </div>
             <div class="setting-row">
                 <label class="setting-label">Webhook ID <span class="muted">(optional)</span></label>
                 <input class="setting-input" placeholder="For signature verification"
-                       @bind="_paypal.WebhookId" />
+                       @bind="paypal.WebhookId" />
             </div>
             <div class="settings-actions" style="margin-top:.8rem">
-                <button class="btn-primary" @onclick="SavePayPal" disabled="@_adminBusy">Save PayPal Config</button>
-                @if (_adminStatus is not null) { <span class="save-confirm">@_adminStatus</span> }
+                <button class="btn-primary" @onclick="SavePayPal" disabled="@adminBusy">Save PayPal Config</button>
+                @if (adminStatus is not null)
+                {
+                    <span class="save-confirm">@adminStatus</span>
+                }
             </div>
         }
         else
@@ -214,88 +301,152 @@
     </section>
 
 </div>
+}
 
 @code {
-    private bool _saved;
-    private bool _adminBusy;
-    private string? _adminStatus;
-    private PricingConfig? _pricing;
-    private PayPalConfig? _paypal;
+    private bool saved;
+    private bool adminBusy;
+    private bool isAdmin;
+    private string? adminStatus;
+    private PricingConfig? pricing;
+    private PayPalConfig? paypal;
+
+    // ── Import state ──────────────────────────────────────────────────────────
+    private int countyCount, cityCount, zipCount;
+    private bool importBusy;
+    private bool censusRunning, zipRunning;
+    private string? importMsg;
 
     protected override async Task OnInitializedAsync()
     {
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        isAdmin = auth.User.Identity?.IsAuthenticated == true;
+
         await using var db = await DbFactory.CreateDbContextAsync();
-        _pricing = await db.PricingConfigs.FirstOrDefaultAsync();
-        _paypal  = await db.PayPalConfigs.FirstOrDefaultAsync();
+        pricing = await db.PricingConfigs.FirstOrDefaultAsync();
+        paypal = await db.PayPalConfigs.FirstOrDefaultAsync();
+        await RefreshImportCounts();
     }
+
+    private async Task RefreshImportCounts()
+    {
+        var cov = await censusSvc.GetCoverageAsync();
+        countyCount = cov.SeededCounties;
+        cityCount = cov.SeededCities;
+        zipCount = await zipSvc.GetImportedCountAsync();
+    }
+
+    private async Task RunCensusImport()
+    {
+        importBusy = censusRunning = true;
+        importMsg = "Importing counties & cities…";
+        StateHasChanged();
+        try
+        {
+            var p = new Progress<CensusImportProgress>(snap =>
+            {
+                importMsg = $"{snap.Stage}: {snap.Created:N0} created";
+                InvokeAsync(StateHasChanged);
+            });
+            var r = await censusSvc.ImportAsync(p);
+            importMsg = $"✓ {r.CountiesCreated:N0} counties · {r.CitiesCreated:N0} cities created in {r.Elapsed:m\\:ss}";
+            await RefreshImportCounts();
+        }
+        catch (Exception ex) { importMsg = $"✗ {ex.Message}"; }
+        finally { importBusy = censusRunning = false; StateHasChanged(); }
+    }
+
+    private async Task RunZipImport()
+    {
+        importBusy = zipRunning = true;
+        importMsg = "Importing ZIP codes…";
+        StateHasChanged();
+        try
+        {
+            zipSvc.ClearCache();
+            var p = new Progress<ZipImportProgress>(snap =>
+            {
+                importMsg = $"ZIP: {snap.Imported:N0} imported";
+                InvokeAsync(StateHasChanged);
+            });
+            var r = await zipSvc.ImportAsync(p);
+            importMsg = $"✓ {r.Imported:N0} ZIPs imported in {r.Elapsed:m\\:ss}";
+            await RefreshImportCounts();
+        }
+        catch (Exception ex) { importMsg = $"✗ {ex.Message}"; }
+        finally { importBusy = zipRunning = false; StateHasChanged(); }
+    }
+
+    private void ClearCensusCache() { censusSvc.ClearCache(); importMsg = "Census cache cleared."; StateHasChanged(); }
+    private void ClearZipCache() { zipSvc.ClearCache(); importMsg = "ZIP cache cleared."; StateHasChanged(); }
 
     private async Task SetTheme(string theme)
     {
-        _settings.SetTheme(theme);
+        settings.SetTheme(theme);
         await JS.InvokeVoidAsync("applyTheme", theme);
         StateHasChanged();
     }
 
     private async Task SetFont(string font)
     {
-        _settings.Current.Font = font;
-        await JS.InvokeVoidAsync("applyFont", font, _settings.Current.FontSize);
+        settings.Current.Font = font;
+        await JS.InvokeVoidAsync("applyFont", font, settings.Current.FontSize);
         StateHasChanged();
     }
 
     private async Task SetFontSize(int size)
     {
-        _settings.Current.FontSize = size;
-        await JS.InvokeVoidAsync("applyFont", _settings.Current.Font, size);
+        settings.Current.FontSize = size;
+        await JS.InvokeVoidAsync("applyFont", settings.Current.Font, size);
         StateHasChanged();
     }
 
     private async Task Save()
     {
-        _settings.Save();
-        _saved = true;
+        settings.Save();
+        saved = true;
         StateHasChanged();
         await Task.Delay(2000);
-        _saved = false;
+        saved = false;
         StateHasChanged();
     }
 
     private async Task SavePricing()
     {
-        if (_pricing is null) return;
-        _adminBusy = true;
+        if (pricing is null) return;
+        adminBusy = true;
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
-            _pricing.UpdatedAt = DateTime.UtcNow.ToString("o");
-            db.PricingConfigs.Update(_pricing);
+            pricing.UpdatedAt = DateTime.UtcNow.ToString("o");
+            db.PricingConfigs.Update(pricing);
             await db.SaveChangesAsync();
             SetAdminStatus("✓ Pricing saved");
         }
         catch (Exception ex) { SetAdminStatus($"✗ {ex.Message}"); }
-        finally { _adminBusy = false; }
+        finally { adminBusy = false; }
     }
 
     private async Task SavePayPal()
     {
-        if (_paypal is null) return;
-        _adminBusy = true;
+        if (paypal is null) return;
+        adminBusy = true;
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
-            _paypal.UpdatedAt = DateTime.UtcNow.ToString("o");
-            db.PayPalConfigs.Update(_paypal);
+            paypal.UpdatedAt = DateTime.UtcNow.ToString("o");
+            db.PayPalConfigs.Update(paypal);
             await db.SaveChangesAsync();
             SetAdminStatus("✓ PayPal config saved");
         }
         catch (Exception ex) { SetAdminStatus($"✗ {ex.Message}"); }
-        finally { _adminBusy = false; }
+        finally { adminBusy = false; }
     }
 
     private void SetAdminStatus(string msg)
     {
-        _adminStatus = msg;
+        adminStatus = msg;
         StateHasChanged();
-        _ = Task.Delay(3000).ContinueWith(_ => { _adminStatus = null; InvokeAsync(StateHasChanged); });
+        _ = Task.Delay(3000).ContinueWith(_ => { adminStatus = null; InvokeAsync(StateHasChanged); });
     }
 }

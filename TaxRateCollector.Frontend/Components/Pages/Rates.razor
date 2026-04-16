@@ -9,8 +9,8 @@
 <h1>Rates Browser</h1>
 
 <div class="filter-row">
-    <input class="filter-input" placeholder="Search jurisdiction…" @bind="_search" @bind:event="oninput" />
-    <select class="filter-select" @bind="_stateFilter">
+    <input class="filter-input" placeholder="Search jurisdiction…" @bind="search" @bind:event="oninput" />
+    <select class="filter-select" @bind="stateFilter">
         <option value="">All States</option>
         <option value="IL">Illinois</option>
         <option value="CA">California</option>
@@ -19,11 +19,11 @@
     <button class="btn-secondary" @onclick="ExportCsv">Export CSV</button>
 </div>
 
-@if (_rates is null)
+@if (rates is null)
 {
     <p class="muted">Loading…</p>
 }
-else if (_rates.Count == 0)
+else if (rates.Count == 0)
 {
     <p class="muted">No rates found.</p>
 }
@@ -56,15 +56,15 @@ else
             }
         </tbody>
     </table>
-    <div class="muted" style="margin-top:8px">Showing @Filtered.Count() of @_rates.Count rates</div>
+    <div class="muted" style="margin-top:8px">Showing @Filtered.Count() of @rates.Count rates</div>
 }
 
 @code {
-    private List<RateRow>? _rates;
-    private string _search = string.Empty;
-    private string _stateFilter = string.Empty;
-    private string _sortCol = "state";
-    private bool _sortAsc = true;
+    private List<RateRow>? rates;
+    private string search = string.Empty;
+    private string stateFilter = string.Empty;
+    private string sortCol = "state";
+    private bool sortAsc = true;
 
     private record RateRow(string JurisdictionName, string StateCode, string JurisdictionType,
         decimal Rate, string RateType, string EffectiveDate, string ScrapedAt);
@@ -72,7 +72,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
-        _rates = await db.TaxRates
+        rates = await db.TaxRates
             .Include(t => t.Jurisdiction)
             .Where(t => t.IsCurrent)
             .Select(t => new RateRow(
@@ -90,18 +90,18 @@ else
     {
         get
         {
-            var q = _rates?.AsEnumerable() ?? Enumerable.Empty<RateRow>();
-            if (!string.IsNullOrWhiteSpace(_search))
-                q = q.Where(r => r.JurisdictionName.Contains(_search, StringComparison.OrdinalIgnoreCase));
-            if (!string.IsNullOrWhiteSpace(_stateFilter))
-                q = q.Where(r => r.StateCode == _stateFilter);
+            var q = rates?.AsEnumerable() ?? Enumerable.Empty<RateRow>();
+            if (!string.IsNullOrWhiteSpace(search))
+                q = q.Where(r => r.JurisdictionName.Contains(search, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(stateFilter))
+                q = q.Where(r => r.StateCode == stateFilter);
 
-            q = _sortCol switch
+            q = sortCol switch
             {
-                "name" => _sortAsc ? q.OrderBy(r => r.JurisdictionName) : q.OrderByDescending(r => r.JurisdictionName),
-                "state" => _sortAsc ? q.OrderBy(r => r.StateCode) : q.OrderByDescending(r => r.StateCode),
-                "type" => _sortAsc ? q.OrderBy(r => r.JurisdictionType) : q.OrderByDescending(r => r.JurisdictionType),
-                "rate" => _sortAsc ? q.OrderBy(r => r.Rate) : q.OrderByDescending(r => r.Rate),
+                "name" => sortAsc ? q.OrderBy(r => r.JurisdictionName) : q.OrderByDescending(r => r.JurisdictionName),
+                "state" => sortAsc ? q.OrderBy(r => r.StateCode) : q.OrderByDescending(r => r.StateCode),
+                "type" => sortAsc ? q.OrderBy(r => r.JurisdictionType) : q.OrderByDescending(r => r.JurisdictionType),
+                "rate" => sortAsc ? q.OrderBy(r => r.Rate) : q.OrderByDescending(r => r.Rate),
                 _ => q
             };
             return q;
@@ -110,12 +110,12 @@ else
 
     private void SetSort(string col)
     {
-        if (_sortCol == col) _sortAsc = !_sortAsc;
-        else { _sortCol = col; _sortAsc = true; }
+        if (sortCol == col) sortAsc = !sortAsc;
+        else { sortCol = col; sortAsc = true; }
     }
 
     private string SortIcon(string col) =>
-        _sortCol != col ? "" : _sortAsc ? " ▲" : " ▼";
+        sortCol != col ? "" : sortAsc ? " ▲" : " ▼";
 
     private void ExportCsv()
     {

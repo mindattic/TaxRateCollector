@@ -16,17 +16,17 @@
     <div class="page-header-row">
         <div>
             <h1 class="page-title">My Account</h1>
-            <p class="page-sub">@_email</p>
+            <p class="page-sub">@email</p>
         </div>
         <div class="header-actions">
             <a href="/subscribe" class="btn-primary" style="text-decoration:none;padding:.42rem 1rem">
-                @(_subscriber is null ? "Subscribe" : "Change Plan")
+                @(subscriber is null ? "Subscribe" : "Change Plan")
             </a>
         </div>
     </div>
 </div>
 
-@if (_loading)
+@if (loading)
 {
     <div class="loading-state">Loading…</div>
 }
@@ -37,7 +37,7 @@ else
         <!-- ── Subscription status ── -->
         <section class="settings-section">
             <h2>Subscription</h2>
-            @if (_subscriber is null || !_activeStates.Any())
+            @if (subscriber is null || !activeStates.Any())
             {
                 <p class="muted">No active subscription. <a href="/subscribe">Subscribe by state</a> to unlock tax rates and evidence.</p>
             }
@@ -49,16 +49,16 @@ else
                 </div>
                 <div class="setting-row">
                     <span class="setting-label">States subscribed</span>
-                    <span>@_activeStates.Count states</span>
+                    <span>@activeStates.Count states</span>
                 </div>
                 <div class="setting-row">
                     <span class="setting-label">Monthly total</span>
-                    <span>@((_activeStates.Count * _pricePerState).ToString("C"))/mo (excl. tax)</span>
+                    <span>@((activeStates.Count * pricePerState).ToString("C"))/mo (excl. tax)</span>
                 </div>
                 <div style="margin-top:1rem">
                     <div class="subscribe-section-title" style="font-size:.8rem;margin-bottom:.5rem">Subscribed States</div>
                     <div class="states-grid" style="grid-template-columns:repeat(auto-fill,minmax(100px,1fr))">
-                        @foreach (var s in _activeStates)
+                        @foreach (var s in activeStates)
                         {
                             <div class="state-tile state-tile-active" style="cursor:default">
                                 <span class="state-tile-code">@s.StateCode</span>
@@ -73,7 +73,7 @@ else
         <!-- ── Billing history ── -->
         <section class="settings-section">
             <h2>Billing History</h2>
-            @if (_billingRecords.Count == 0)
+            @if (billingRecords.Count == 0)
             {
                 <p class="muted">No billing records yet.</p>
             }
@@ -92,7 +92,7 @@ else
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var b in _billingRecords)
+                        @foreach (var b in billingRecords)
                         {
                             <tr>
                                 <td class="mono">@b.CreatedAt[..10]</td>
@@ -118,42 +118,42 @@ else
 }
 
 @code {
-    private bool _loading = true;
-    private string _email = "";
-    private Subscriber? _subscriber;
-    private List<SubscribedState> _activeStates = [];
-    private List<BillingRecord> _billingRecords = [];
-    private decimal _pricePerState;
+    private bool loading = true;
+    private string email = "";
+    private Subscriber? subscriber;
+    private List<SubscribedState> activeStates = [];
+    private List<BillingRecord> billingRecords = [];
+    private decimal pricePerState;
 
     protected override async Task OnInitializedAsync()
     {
         var auth = await AuthStateProvider.GetAuthenticationStateAsync();
-        _email = auth.User.Identity?.Name ?? "";
+        email = auth.User.Identity?.Name ?? "";
         var userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
         if (userId is not null)
         {
             await using var db = await DbFactory.CreateDbContextAsync();
 
-            _pricePerState = (await db.PricingConfigs.FirstOrDefaultAsync())?.PricePerState ?? 0.01m;
+            pricePerState = (await db.PricingConfigs.FirstOrDefaultAsync())?.PricePerState ?? 0.01m;
 
-            _subscriber = await db.Subscribers
+            subscriber = await db.Subscribers
                 .FirstOrDefaultAsync(s => s.UserId == userId && s.IsActive);
 
-            if (_subscriber is not null)
+            if (subscriber is not null)
             {
-                _activeStates = await db.SubscribedStates
-                    .Where(ss => ss.SubscriberId == _subscriber.Id && ss.IsActive)
+                activeStates = await db.SubscribedStates
+                    .Where(ss => ss.SubscriberId == subscriber.Id && ss.IsActive)
                     .OrderBy(ss => ss.StateName)
                     .ToListAsync();
 
-                _billingRecords = await db.BillingRecords
-                    .Where(b => b.SubscriberId == _subscriber.Id)
+                billingRecords = await db.BillingRecords
+                    .Where(b => b.SubscriberId == subscriber.Id)
                     .OrderByDescending(b => b.CreatedAt)
                     .ToListAsync();
             }
         }
 
-        _loading = false;
+        loading = false;
     }
 }

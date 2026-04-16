@@ -21,11 +21,11 @@ public sealed class WebDirectoryScanner : IWebDirectoryScanner
         @"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})",
         RegexOptions.Compiled);
 
-    private readonly IHttpClientFactory _httpFactory;
+    private readonly IHttpClientFactory httpFactory;
 
     public WebDirectoryScanner(IHttpClientFactory httpFactory)
     {
-        _httpFactory = httpFactory;
+        this.httpFactory = httpFactory;
     }
 
     // ── Public API ─────────────────────────────────────────────────────────────
@@ -33,7 +33,7 @@ public sealed class WebDirectoryScanner : IWebDirectoryScanner
     public async Task<IReadOnlyList<WebDirectoryEntry>> ListAsync(
         string directoryUrl, CancellationToken ct = default)
     {
-        var http    = _httpFactory.CreateClient();
+        var http    = httpFactory.CreateClient();
         var html    = await http.GetStringAsync(directoryUrl, ct);
         var baseUri = new Uri(directoryUrl.TrimEnd('/') + '/');
         var entries = new List<WebDirectoryEntry>();

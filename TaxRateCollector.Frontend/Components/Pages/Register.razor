@@ -13,31 +13,31 @@
         <h2 class="auth-title">Create your account</h2>
         <p class="auth-sub muted">Browse the full jurisdiction hierarchy. Subscribe by state to unlock rates and evidence.</p>
 
-        @if (_errors.Count > 0)
+        @if (errors.Count > 0)
         {
             <div class="auth-error">
-                @foreach (var e in _errors) { <div>@e</div> }
+                @foreach (var e in errors) { <div>@e</div> }
             </div>
         }
 
         <div class="auth-field">
             <label>Email</label>
             <input type="email" class="setting-input" placeholder="you@example.com"
-                   @bind="_email" @bind:event="oninput" />
+                   @bind="email" @bind:event="oninput" />
         </div>
         <div class="auth-field">
             <label>Password <span class="muted">(min 8 chars, at least one digit)</span></label>
             <input type="password" class="setting-input" placeholder="••••••••"
-                   @bind="_password" @bind:event="oninput" />
+                   @bind="password" @bind:event="oninput" />
         </div>
         <div class="auth-field">
             <label>Confirm password</label>
             <input type="password" class="setting-input" placeholder="••••••••"
-                   @bind="_confirm" @bind:event="oninput" />
+                   @bind="confirm" @bind:event="oninput" />
         </div>
 
-        <button class="btn-primary auth-btn" @onclick="Submit" disabled="@_busy">
-            @(_busy ? "Creating account…" : "Create Account")
+        <button class="btn-primary auth-btn" @onclick="Submit" disabled="@busy">
+            @(busy ? "Creating account…" : "Create Account")
         </button>
 
         <div class="auth-links">
@@ -48,22 +48,22 @@
 </div>
 
 @code {
-    private string _email = "";
-    private string _password = "";
-    private string _confirm = "";
-    private List<string> _errors = [];
-    private bool _busy;
+    private string email = "";
+    private string password = "";
+    private string confirm = "";
+    private List<string> errors = [];
+    private bool busy;
 
     private async Task Submit()
     {
-        _errors.Clear();
-        if (_password != _confirm) { _errors.Add("Passwords do not match."); return; }
+        errors.Clear();
+        if (password != confirm) { errors.Add("Passwords do not match."); return; }
 
-        _busy = true;
+        busy = true;
         StateHasChanged();
 
-        var user = new IdentityUser { UserName = _email, Email = _email };
-        var result = await UserMgr.CreateAsync(user, _password);
+        var user = new IdentityUser { UserName = email, Email = email };
+        var result = await UserMgr.CreateAsync(user, password);
 
         if (result.Succeeded)
         {
@@ -72,8 +72,8 @@
         }
         else
         {
-            _errors = result.Errors.Select(e => e.Description).ToList();
-            _busy = false;
+            errors = result.Errors.Select(e => e.Description).ToList();
+            busy = false;
         }
     }
 }

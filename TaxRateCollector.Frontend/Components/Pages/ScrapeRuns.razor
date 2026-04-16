@@ -16,30 +16,14 @@
             <h1 class="page-title">Scrape Runs</h1>
             <p class="page-sub">Manually trigger a full scrape across all jurisdictions that have a registered strategy.</p>
         </div>
-        <div class="scrape-actions">
-            <button class="btn-primary" @onclick="RunScrape" disabled="@_running">
-                @if (_running)
-                {
-                    <span>⟳ Running…</span>
-                }
-                else
-                {
-                    <span>▶ Run Scrape Now</span>
-                }
-            </button>
-            @if (_lastResult is not null)
-            {
-                <span class="save-confirm">@_lastResult</span>
-            }
-        </div>
     </div>
 </div>
 
-@if (_runs is null)
+@if (runs is null)
 {
     <p class="muted">Loading…</p>
 }
-else if (_runs.Count == 0)
+else if (runs.Count == 0)
 {
     <p class="muted">No scrape runs yet.</p>
 }
@@ -59,7 +43,7 @@ else
             </tr>
         </thead>
         <tbody>
-            @foreach (var r in _runs)
+            @foreach (var r in runs)
             {
                 <tr>
                     <td>#@r.Id</td>
@@ -71,24 +55,24 @@ else
                     <td>@r.ErrorCount</td>
                     <td>
                         <button class="btn-tiny" @onclick="() => ToggleDetail(r.Id)">
-                            @(_expanded == r.Id ? "Hide" : "Details")
+                            @(expanded == r.Id ? "Hide" : "Details")
                         </button>
                     </td>
                 </tr>
-                @if (_expanded == r.Id)
+                @if (expanded == r.Id)
                 {
                     <tr>
                         <td colspan="8">
                             <div class="run-detail">
                                 <strong>Rates recorded in this run:</strong>
-                                @if (_runRates.Count == 0)
+                                @if (runRates.Count == 0)
                                 {
                                     <span class="muted"> None</span>
                                 }
                                 else
                                 {
                                     <ul>
-                                        @foreach (var tr in _runRates)
+                                        @foreach (var tr in runRates)
                                         {
                                             <li>@tr.JurisdictionName — @tr.Rate.ToString("P4") (@tr.RateType)</li>
                                         }
@@ -104,40 +88,40 @@ else
 }
 
 @code {
-    private List<ScrapeRun>? _runs;
-    private int? _expanded;
-    private List<(string JurisdictionName, decimal Rate, string RateType)> _runRates = [];
-    private bool _running;
-    private string? _lastResult;
+    private List<ScrapeRun>? runs;
+    private int? expanded;
+    private List<(string JurisdictionName, decimal Rate, string RateType)> runRates = [];
+    private bool running;
+    private string? lastResult;
 
     protected override async Task OnInitializedAsync() => await LoadRuns();
 
     private async Task LoadRuns()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
-        _runs = await db.ScrapeRuns
+        runs = await db.ScrapeRuns
             .OrderByDescending(r => r.StartedAt)
             .ToListAsync();
     }
 
     private async Task RunScrape()
     {
-        _running = true;
-        _lastResult = null;
+        running = true;
+        lastResult = null;
         StateHasChanged();
 
         try
         {
             var changed = await Orchestrator.RunFullScrapeAsync();
-            _lastResult = $"✓ Done — {changed} change(s) detected";
+            lastResult = $"✓ Done — {changed} change(s) detected";
         }
         catch (Exception ex)
         {
-            _lastResult = $"✗ {ex.Message}";
+            lastResult = $"✗ {ex.Message}";
         }
         finally
         {
-            _running = false;
+            running = false;
             await LoadRuns();
             StateHasChanged();
         }
@@ -145,16 +129,16 @@ else
 
     private async Task ToggleDetail(int runId)
     {
-        if (_expanded == runId)
+        if (expanded == runId)
         {
-            _expanded = null;
-            _runRates = [];
+            expanded = null;
+            runRates = [];
             return;
         }
 
-        _expanded = runId;
+        expanded = runId;
         await using var db = await DbFactory.CreateDbContextAsync();
-        _runRates = await db.TaxRates
+        runRates = await db.TaxRates
             .Include(t => t.Jurisdiction)
             .Where(t => t.ScrapeRunId == runId)
             .Select(t => ValueTuple.Create(t.Jurisdiction.JurisdictionName, t.Rate, t.RateType))

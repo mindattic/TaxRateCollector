@@ -19,18 +19,18 @@ public class ZctaCrosswalkTests
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(3) };
 
-    private static string[]? _countyHeader;
-    private static string[]? _placeHeader;
-    private static string[]? _countyFirstDataRow;
-    private static string[]? _placeFirstDataRow;
+    private static string[]? countyHeader;
+    private static string[]? placeHeader;
+    private static string[]? countyFirstDataRow;
+    private static string[]? placeFirstDataRow;
 
     [OneTimeSetUp]
     public async Task FetchHeaders()
     {
-        _countyHeader       = await FetchHeaderAsync(CountyUrl);
-        _placeHeader        = await FetchHeaderAsync(PlaceUrl);
-        _countyFirstDataRow = await FetchFirstDataRowAsync(CountyUrl);
-        _placeFirstDataRow  = await FetchFirstDataRowAsync(PlaceUrl);
+        countyHeader       = await FetchHeaderAsync(CountyUrl);
+        placeHeader        = await FetchHeaderAsync(PlaceUrl);
+        countyFirstDataRow = await FetchFirstDataRowAsync(CountyUrl);
+        placeFirstDataRow  = await FetchFirstDataRowAsync(PlaceUrl);
     }
 
     // ── County crosswalk ───────────────────────────────────────────────────────
@@ -44,39 +44,39 @@ public class ZctaCrosswalkTests
 
     [Test]
     public void CountyCrosswalk_HasZctaColumn()
-        => Assert.That(_countyHeader, Does.Contain("GEOID_ZCTA5_20"),
+        => Assert.That(countyHeader, Does.Contain("GEOID_ZCTA5_20"),
             "County crosswalk must have GEOID_ZCTA5_20 column");
 
     [Test]
     public void CountyCrosswalk_HasCountyFipsColumn()
-        => Assert.That(_countyHeader, Does.Contain("GEOID_COUNTY_20"),
+        => Assert.That(countyHeader, Does.Contain("GEOID_COUNTY_20"),
             "County crosswalk must have GEOID_COUNTY_20 column");
 
     [Test]
     public void CountyCrosswalk_HasCountyNameColumn()
-        => Assert.That(_countyHeader, Does.Contain("NAMELSAD_COUNTY_20"),
+        => Assert.That(countyHeader, Does.Contain("NAMELSAD_COUNTY_20"),
             "County crosswalk must have NAMELSAD_COUNTY_20 column");
 
     [Test]
     public void CountyCrosswalk_HasAreaColumn()
-        => Assert.That(_countyHeader, Does.Contain("AREALAND_PART"),
+        => Assert.That(countyHeader, Does.Contain("AREALAND_PART"),
             "County crosswalk must have AREALAND_PART column");
 
     [Test]
     public void CountyCrosswalk_FirstDataRow_ZctaIs5Digits()
     {
-        Assert.That(_countyFirstDataRow, Is.Not.Null.And.Not.Empty, "No data rows found");
-        var zctaIdx = Array.IndexOf(_countyHeader!, "GEOID_ZCTA5_20");
-        var zcta = _countyFirstDataRow![zctaIdx];
+        Assert.That(countyFirstDataRow, Is.Not.Null.And.Not.Empty, "No data rows found");
+        var zctaIdx = Array.IndexOf(countyHeader!, "GEOID_ZCTA5_20");
+        var zcta = countyFirstDataRow![zctaIdx];
         Assert.That(zcta, Does.Match(@"^\d{5}$"), $"ZCTA '{zcta}' should be a 5-digit number");
     }
 
     [Test]
     public void CountyCrosswalk_FirstDataRow_CountyFipsIs5Digits()
     {
-        Assert.That(_countyFirstDataRow, Is.Not.Null.And.Not.Empty, "No data rows found");
-        var fipsIdx = Array.IndexOf(_countyHeader!, "GEOID_COUNTY_20");
-        var fips = _countyFirstDataRow![fipsIdx];
+        Assert.That(countyFirstDataRow, Is.Not.Null.And.Not.Empty, "No data rows found");
+        var fipsIdx = Array.IndexOf(countyHeader!, "GEOID_COUNTY_20");
+        var fips = countyFirstDataRow![fipsIdx];
         Assert.That(fips, Does.Match(@"^\d{5}$"), $"County FIPS '{fips}' should be a 5-digit number");
     }
 
@@ -91,25 +91,25 @@ public class ZctaCrosswalkTests
 
     [Test]
     public void PlaceCrosswalk_HasZctaColumn()
-        => Assert.That(_placeHeader, Does.Contain("GEOID_ZCTA5_20"),
+        => Assert.That(placeHeader, Does.Contain("GEOID_ZCTA5_20"),
             "Place crosswalk must have GEOID_ZCTA5_20 column");
 
     [Test]
     public void PlaceCrosswalk_HasPlaceNameColumn()
-        => Assert.That(_placeHeader, Does.Contain("NAMELSAD_PLACE_20"),
+        => Assert.That(placeHeader, Does.Contain("NAMELSAD_PLACE_20"),
             "Place crosswalk must have NAMELSAD_PLACE_20 column");
 
     [Test]
     public void PlaceCrosswalk_HasAreaColumn()
-        => Assert.That(_placeHeader, Does.Contain("AREALAND_PART"),
+        => Assert.That(placeHeader, Does.Contain("AREALAND_PART"),
             "Place crosswalk must have AREALAND_PART column");
 
     [Test]
     public void PlaceCrosswalk_FirstDataRow_ZctaIs5Digits()
     {
-        Assert.That(_placeFirstDataRow, Is.Not.Null.And.Not.Empty, "No data rows found");
-        var zctaIdx = Array.IndexOf(_placeHeader!, "GEOID_ZCTA5_20");
-        var zcta = _placeFirstDataRow![zctaIdx];
+        Assert.That(placeFirstDataRow, Is.Not.Null.And.Not.Empty, "No data rows found");
+        var zctaIdx = Array.IndexOf(placeHeader!, "GEOID_ZCTA5_20");
+        var zcta = placeFirstDataRow![zctaIdx];
         Assert.That(zcta, Does.Match(@"^\d{5}$"), $"ZCTA '{zcta}' should be a 5-digit number");
     }
 

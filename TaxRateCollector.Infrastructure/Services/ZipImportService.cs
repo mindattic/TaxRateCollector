@@ -55,25 +55,25 @@ public sealed class ZipImportService : IZipImportService
         ["56"]="WY",["60"]="AS",["66"]="GU",["69"]="MP",["72"]="PR",["78"]="VI"
     };
 
-    private readonly IDbContextFactory<AppDbContext> _dbFactory;
-    private readonly IHttpClientFactory _httpFactory;
-    private readonly SettingsService _settings;
+    private readonly IDbContextFactory<AppDbContext> dbFactory;
+    private readonly IHttpClientFactory httpFactory;
+    private readonly SettingsService settings;
 
     public ZipImportService(
         IDbContextFactory<AppDbContext> dbFactory,
         IHttpClientFactory httpFactory,
         SettingsService settings)
     {
-        _dbFactory  = dbFactory;
-        _httpFactory = httpFactory;
-        _settings   = settings;
+        this.dbFactory  = dbFactory;
+        this.httpFactory = httpFactory;
+        this.settings   = settings;
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
     public async Task<int> GetImportedCountAsync(CancellationToken ct = default)
     {
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
         return await db.ZipCodes.CountAsync(ct);
     }
 
@@ -91,11 +91,11 @@ public sealed class ZipImportService : IZipImportService
         Directory.CreateDirectory(CacheDir);
 
         // 1. Download Census crosswalk files (cached after first run)
-        var http = _httpFactory.CreateClient();
+        var http = httpFactory.CreateClient();
         http.Timeout = TimeSpan.FromMinutes(5);
 
-        await EnsureCachedAsync(http, _settings.Current.CensusZctaCountyUrl, CountyCacheFile, ct);
-        await EnsureCachedAsync(http, _settings.Current.CensusZctaPlaceUrl,  PlaceCacheFile,  ct);
+        await EnsureCachedAsync(http, settings.Current.CensusZctaCountyUrl, CountyCacheFile, ct);
+        await EnsureCachedAsync(http, settings.Current.CensusZctaPlaceUrl,  PlaceCacheFile,  ct);
 
         // 2. Parse crosswalk files
         var countyMap = ParseCountyCrosswalk(await File.ReadAllTextAsync(CountyCacheFile, ct));
@@ -105,7 +105,7 @@ public sealed class ZipImportService : IZipImportService
         var allZctas = countyMap.Keys.Union(placeMap.Keys).OrderBy(z => z).ToList();
 
         // 4. Skip already-imported ZIPs
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
         var existing = await db.ZipCodes.Select(z => z.ZipCode).ToHashSetAsync(ct);
         var newZctas = allZctas.Where(z => !existing.Contains(z)).ToList();
 
@@ -135,10 +135,10 @@ public sealed class ZipImportService : IZipImportService
 
         // 6. Optional USPS enrichment for city names
         Dictionary<string, string>? uspsCities = null;
-        if (!string.IsNullOrWhiteSpace(_settings.Current.UspsApiKey))
+        if (!string.IsNullOrWhiteSpace(settings.Current.UspsApiKey))
         {
             progress?.Report(new ZipImportProgress(0, total, 0, 0, 0, "Fetching USPS city names…"));
-            uspsCities = await FetchUspsCitiesAsync(http, newZctas, _settings.Current.UspsApiKey, ct);
+            uspsCities = await FetchUspsCitiesAsync(http, newZctas, settings.Current.UspsApiKey, ct);
         }
 
         // 7. Build records in batches of 500

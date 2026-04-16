@@ -25,25 +25,19 @@
             <p class="page-sub">Expand any tier to view or edit rates and attach evidence documents.</p>
         </div>
         <div class="header-actions">
-            <select class="btn-export-select" value="@_exportFormat" @onchange="OnExportChange" disabled="@_exporting">
-                <option value="">@(_exporting ? "Exporting…" : "Export ▾")</option>
+            <select class="btn-export-select" value="@exportFormat" @onchange="OnExportChange" disabled="@exporting">
+                <option value="">@(exporting ? "Exporting…" : "Export ▾")</option>
                 <option value="csv">CSV</option>
                 <option value="xlsx">Excel (XLSX)</option>
                 <option value="sql">SQL INSERTs</option>
                 <option value="html">HTML Table</option>
             </select>
-            @if (_isAdmin)
-            {
-                <button class="btn-secondary" @onclick="RunScrape" disabled="@_scraping">
-                    @(_scraping ? "⟳ Scraping…" : "▶ Run Scrape")
-                </button>
-            }
-            @if (_status is not null) { <span class="save-confirm">@_status</span> }
+            @if (status is not null) { <span class="save-confirm">@status</span> }
         </div>
     </div>
 </div>
 
-@if (!_isSubscribed)
+@if (!isSubscribed)
 {
     <div class="subscribe-banner">
         🔒 <strong>Tax rates and evidence documents are unlocked for subscribers.</strong>
@@ -52,21 +46,21 @@
     </div>
 }
 
-@if (_loading)
+@if (loading)
 {
     <div class="loading-state">Loading states…</div>
 }
 else
 {
     <div class="tree-root">
-        @foreach (var state in _states)
+        @foreach (var state in states)
         {
             <!-- ── State row ── -->
             <div class="jnode state-node" @onclick="() => ToggleState(state.Id)">
                 <span class="expand-icon">@(IsExpanded(state.Id) ? "▼" : "▶")</span>
                 <span class="tier-badge tier-state">State</span>
                 <span class="jname">@state.Name</span>
-                <span class="fips mono">@state.FipsCode</span>
+                <span class="fips mono">(FIPS: @state.FipsCode)</span>
                 <span class="jnode-spacer"></span>
                 @RangeDisplay(state)
             </div>
@@ -75,26 +69,24 @@ else
             {
                 <!-- State detail: rate editor + evidence -->
                 <div class="jnode-detail state-detail">
-                    @RateCell(state)
-                    @EvidenceToggle(state)
+                    @DetailPanel(state)
                 </div>
-                @if (_evidenceOpen == state.Id) { @EvidencePanel(state) }
 
                 <!-- County children -->
-                @if (!_children.ContainsKey(state.Id))
+                @if (!children.ContainsKey(state.Id))
                 {
                     <div class="loading-child muted">Loading counties…</div>
                 }
                 else
                 {
-                    @foreach (var county in _children[state.Id])
+                    @foreach (var county in children[state.Id])
                     {
                         <!-- ── County row ── -->
                         <div class="jnode county-node" @onclick="() => ToggleCounty(county.Id)">
                             <span class="expand-icon">@(IsExpanded(county.Id) ? "▼" : "▶")</span>
                             <span class="tier-badge tier-county">County</span>
                             <span class="jname">@county.Name</span>
-                            <span class="fips mono">@county.FipsCode</span>
+                            <span class="fips mono">(FIPS: @county.FipsCode)</span>
                             <span class="jnode-spacer"></span>
                             @RangeDisplay(county)
                         </div>
@@ -103,26 +95,24 @@ else
                         {
                             <!-- County detail: rate editor + evidence -->
                             <div class="jnode-detail county-detail">
-                                @RateCell(county)
-                                @EvidenceToggle(county)
+                                @DetailPanel(county)
                             </div>
-                            @if (_evidenceOpen == county.Id) { @EvidencePanel(county) }
 
                             <!-- City children -->
-                            @if (!_children.ContainsKey(county.Id))
+                            @if (!children.ContainsKey(county.Id))
                             {
                                 <div class="loading-child muted">Loading cities…</div>
                             }
                             else
                             {
-                                @foreach (var city in _children[county.Id])
+                                @foreach (var city in children[county.Id])
                                 {
                                     <!-- ── City row ── -->
                                     <div class="jnode city-node" @onclick="() => ToggleCity(city.Id)">
                                         <span class="expand-icon">@(IsExpanded(city.Id) ? "▼" : "▶")</span>
                                         <span class="tier-badge tier-city">City</span>
                                         <span class="jname">@city.Name</span>
-                                        <span class="fips mono">@city.FipsCode</span>
+                                        <span class="fips mono">(FIPS: @city.FipsCode)</span>
                                         <span class="jnode-spacer"></span>
                                         @RangeDisplay(city)
                                     </div>
@@ -131,16 +121,8 @@ else
                                     {
                                         <!-- City detail: rate editor + combined + evidence -->
                                         <div class="jnode-detail city-detail">
-                                            @RateCell(city)
-                                            @if (_isSubscribed && (city.MinCumulative ?? 0) > 0)
-                                            {
-                                                <span class="combined-pill" title="State + County + City">
-                                                    ∑ @((city.MinCumulative!.Value * 100).ToString("F3"))%
-                                                </span>
-                                            }
-                                            @EvidenceToggle(city)
+                                            @DetailPanel(city, showCombined: true)
                                         </div>
-                                        @if (_evidenceOpen == city.Id) { @EvidencePanel(city) }
                                     }
                                 }
                             }
@@ -153,13 +135,23 @@ else
 }
 
 <!-- ── Fixed role picker overlay (lower-right, admin only) ──────────────────── -->
-@if (_isAdmin)
+@if (isAdmin)
 {
     <div class="role-picker-overlay">
-        <span class="role-picker-label">View as</span>
-        <button class="role-btn @(_previewRole == "visitor"    ? "role-btn-active role-visitor-active"    : "")" @onclick='() => SetRole("visitor")'>Visitor</button>
-        <button class="role-btn @(_previewRole == "subscriber" ? "role-btn-active role-subscriber-active" : "")" @onclick='() => SetRole("subscriber")'>Subscriber</button>
-        <button class="role-btn @(_previewRole == "admin"      ? "role-btn-active role-admin-active"      : "")" @onclick='() => SetRole("admin")'>Admin</button>
+<button class="role-btn @(previewRole == "visitor"    ? "role-btn-active role-visitor-active"    : "")" @onclick='() => SetRole("visitor")'>Visitor</button>
+        <button class="role-btn @(previewRole == "subscriber" ? "role-btn-active role-subscriber-active" : "")" @onclick='() => SetRole("subscriber")'>Subscriber</button>
+        <button class="role-btn @(previewRole == "admin"      ? "role-btn-active role-admin-active"      : "")" @onclick='() => SetRole("admin")'>Admin</button>
+    </div>
+}
+
+<!-- ── Export spinner overlay ────────────────────────────────────────────────── -->
+@if (exporting)
+{
+    <div class="export-overlay">
+        <div class="export-spinner-card">
+            <div class="spinner"></div>
+            <span>Building export…</span>
+        </div>
     </div>
 }
 
@@ -173,38 +165,38 @@ else
         decimal? MaxCumulative = null);
 
     // ── State ──────────────────────────────────────────────────────────────────
-    private bool _loading = true;
-    private bool _scraping;
-    private bool _exporting;
-    private string _exportFormat = "";
-    private bool _isAdmin;
-    private string _previewRole = "admin"; // "visitor" | "subscriber" | "admin"
-    private bool _isSubscribed => _previewRole != "visitor";
-    private string? _status;
-    private int? _manualRunId;
+    private bool loading = true;
+    private bool scraping;
+    private bool exporting;
+    private string exportFormat = "";
+    private bool isAdmin;
+    private string previewRole = "admin"; // "visitor" | "subscriber" | "admin"
+    private bool isSubscribed => previewRole != "visitor";
+    private string? status;
+    private int? manualRunId;
 
-    private List<JNode> _states = [];
-    private readonly Dictionary<int, List<JNode>> _children = new();
-    private readonly HashSet<int> _expanded = new();
+    private List<JNode> states = [];
+    private readonly Dictionary<int, List<JNode>> children = new();
+    private readonly HashSet<int> expanded = new();
 
     // Rate editing
-    private readonly HashSet<int> _editActive = new();
-    private readonly Dictionary<int, string> _editValues = new();
+    private readonly HashSet<int> editActive = new();
+    private readonly Dictionary<int, string> editValues = new();
 
     // Evidence panel
-    private int? _evidenceOpen;
-    private bool _uploading;
+    private int? evidenceOpen;
+    private bool uploading;
 
     // ── Init ───────────────────────────────────────────────────────────────────
     protected override async Task OnInitializedAsync()
     {
         var auth = await AuthStateProvider.GetAuthenticationStateAsync();
-        _isAdmin = auth.User.Identity?.IsAuthenticated == true;
-        if (!_isAdmin) _previewRole = "visitor";
+        isAdmin = auth.User.Identity?.IsAuthenticated == true;
+        if (!isAdmin) previewRole = "visitor";
 
         await using var db = await DbFactory.CreateDbContextAsync();
-        _states = await BuildNodes(db, JurisdictionType.State, parentType: JurisdictionType.Country);
-        _loading = false;
+        states = await BuildNodes(db, JurisdictionType.State, parentType: JurisdictionType.Country);
+        loading = false;
     }
 
     private async Task<List<JNode>> BuildNodes(AppDbContext db, JurisdictionType type,
@@ -219,7 +211,7 @@ else
 
         var jurisdictions = await q.OrderBy(j => j.JurisdictionName).ToListAsync();
 
-        if (!_isSubscribed)
+        if (!isSubscribed)
             return jurisdictions.Select(j =>
                 new JNode(j.Id, j.JurisdictionName, j.StateCode, j.FipsCode, type, null, null, [], parentCumulative)
             ).ToList();
@@ -238,7 +230,9 @@ else
             .Select(d => new { d.TaxRateId, d.Id, d.FileName, d.SourceType, d.FetchedAt, d.SourceUrl })
             .ToListAsync();
 
-        var rateMap = rates.ToDictionary(r => r.JurisdictionId);
+        var rateMap = rates
+            .GroupBy(r => r.JurisdictionId)
+            .ToDictionary(g => g.Key, g => g.MaxBy(r => r.Id)!);
         var docMap = docs.GroupBy(d => d.TaxRateId).ToDictionary(g => g.Key, g => g.ToList());
 
         // Compute child ranges
@@ -358,43 +352,95 @@ else
     }
 
     // ── Expand / collapse ─────────────────────────────────────────────────────
-    private bool IsExpanded(int id) => _expanded.Contains(id);
+    private bool IsExpanded(int id) => expanded.Contains(id);
 
     private async Task ToggleState(int stateId)
     {
-        if (!_expanded.Add(stateId)) { _expanded.Remove(stateId); return; }
-        if (!_children.ContainsKey(stateId))
+        if (!expanded.Add(stateId)) { expanded.Remove(stateId); return; }
+        if (!children.ContainsKey(stateId))
         {
-            var stateNode = _states.FirstOrDefault(s => s.Id == stateId);
+            var stateNode = states.FirstOrDefault(s => s.Id == stateId);
             await using var db = await DbFactory.CreateDbContextAsync();
-            _children[stateId] = await BuildNodes(db, JurisdictionType.County, parentId: stateId,
+            children[stateId] = await BuildNodes(db, JurisdictionType.County, parentId: stateId,
                 parentCumulative: stateNode?.Rate ?? 0m);
         }
     }
 
     private async Task ToggleCounty(int countyId)
     {
-        if (!_expanded.Add(countyId)) { _expanded.Remove(countyId); return; }
-        if (!_children.ContainsKey(countyId))
+        if (!expanded.Add(countyId)) { expanded.Remove(countyId); return; }
+        if (!children.ContainsKey(countyId))
         {
-            var countyNode = _children.Values.SelectMany(l => l).FirstOrDefault(n => n.Id == countyId);
+            var countyNode = children.Values.SelectMany(l => l).FirstOrDefault(n => n.Id == countyId);
             var parentCum = (countyNode?.ParentCumulative ?? 0m) + (countyNode?.Rate ?? 0m);
             await using var db = await DbFactory.CreateDbContextAsync();
-            _children[countyId] = await BuildNodes(db, JurisdictionType.City, parentId: countyId,
+            children[countyId] = await BuildNodes(db, JurisdictionType.City, parentId: countyId,
                 parentCumulative: parentCum);
         }
     }
 
     private void ToggleCity(int cityId)
     {
-        if (!_expanded.Add(cityId)) _expanded.Remove(cityId);
+        if (!expanded.Add(cityId)) expanded.Remove(cityId);
     }
+
+    // ── Detail panel (rate label + upload + inline evidence list) ────────────
+    private RenderFragment DetailPanel(JNode node, bool showCombined = false) => __builder =>
+    {
+        <div @onclick:stopPropagation="true">
+            <!-- top row: label + rate + combined pill + upload -->
+            <div class="detail-top-row">
+                <span class="detail-label">Tax Rate</span>
+                @RateCell(node)
+                @if (showCombined && isSubscribed && (node.MinCumulative ?? 0) > 0)
+                {
+                    <span class="combined-pill" title="State + County + City">
+                        ∑ @((node.MinCumulative!.Value * 100).ToString("F3"))%
+                    </span>
+                }
+                @if (isAdmin)
+                {
+                    @if (node.RateId.HasValue)
+                    {
+                        <label class="btn-secondary upload-label-sm" title="Upload evidence file (.pdf, .txt, .csv, .html, .xlsx, .json)">
+                            ↑ Upload Evidence
+                            <InputFile OnChange="e => UploadEvidence(node, e)"
+                                       accept=".pdf,.txt,.csv,.html,.xlsx,.json"
+                                       disabled="@uploading" style="display:none" />
+                        </label>
+                        @if (uploading) { <span class="muted small">Saving…</span> }
+                    }
+                    else
+                    {
+                        <span class="muted small" style="margin-left:.75rem">Save a rate first to attach evidence</span>
+                    }
+                }
+            </div>
+            <!-- inline evidence list -->
+            @if (node.Evidence.Count > 0)
+            {
+                <ul class="detail-evidence-list">
+                    @foreach (var f in node.Evidence)
+                    {
+                        <li class="evidence-item">
+                            <span class="ev-icon">@FileIcon(f.FileName)</span>
+                            <a href="/evidence/@f.FileName" target="_blank" class="ev-name" title="@f.FileName">@f.FileName</a>
+                            <span class="ev-type muted small">@f.SourceType</span>
+                            <span class="ev-date muted small">@f.FetchedAt[..10]</span>
+                            <button class="btn-danger-tiny" @onclick="() => DisassociateEvidence(node, f.Id)"
+                                    title="Disassociate (file kept for audit)">✕</button>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    };
 
     // ── Rate cell ─────────────────────────────────────────────────────────────
     private RenderFragment RateCell(JNode node) => __builder =>
     {
         <span @onclick:stopPropagation="true" class="rate-cell-wrap">
-        @if (!_isSubscribed)
+        @if (!isSubscribed)
         {
             var fake = node.Tier switch {
                 JurisdictionType.State  => "6.250%",
@@ -406,11 +452,11 @@ else
                 <span class="lock-pill">🔒 Locked</span>
             </div>
         }
-        else if (_editActive.Contains(node.Id))
+        else if (editActive.Contains(node.Id))
         {
             <input class="rate-input"
                    type="number" step="0.001" min="0" max="30"
-                   value="@(_editValues.TryGetValue(node.Id, out var v) ? v : FormatRate(node.Rate))"
+                   value="@(editValues.TryGetValue(node.Id, out var v) ? v : FormatRate(node.Rate))"
                    @onchange="e => OnRateChange(node.Id, e.Value?.ToString() ?? string.Empty)"
                    @onkeydown="e => OnRateKey(e, node.Id)" />
             <span class="muted small">%</span>
@@ -429,9 +475,9 @@ else
     };
 
     private string FormatRate(decimal? rate) => rate.HasValue ? $"{rate.Value * 100:F3}" : "0.000";
-    private void StartEdit(int id, decimal? current) { _editValues[id] = FormatRate(current); _editActive.Add(id); }
-    private void OnRateChange(int id, string value) => _editValues[id] = value;
-    private void CancelEdit(int id) { _editActive.Remove(id); _editValues.Remove(id); }
+    private void StartEdit(int id, decimal? current) { editValues[id] = FormatRate(current); editActive.Add(id); }
+    private void OnRateChange(int id, string value) => editValues[id] = value;
+    private void CancelEdit(int id) { editActive.Remove(id); editValues.Remove(id); }
 
     private async Task OnRateKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, int id)
     {
@@ -441,10 +487,10 @@ else
 
     private async Task SaveRate(int jurisdictionId)
     {
-        if (!_isAdmin) { SetStatus("✗ Sign in to edit rates"); return; }
-        _editActive.Remove(jurisdictionId);
-        if (!_editValues.TryGetValue(jurisdictionId, out var valStr)) return;
-        _editValues.Remove(jurisdictionId);
+        if (!isAdmin) { SetStatus("✗ Sign in to edit rates"); return; }
+        editActive.Remove(jurisdictionId);
+        if (!editValues.TryGetValue(jurisdictionId, out var valStr)) return;
+        editValues.Remove(jurisdictionId);
         if (!decimal.TryParse(valStr, out var pct)) return;
         var rate = pct / 100m;
 
@@ -452,12 +498,12 @@ else
         {
             await using var db = await DbFactory.CreateDbContextAsync();
 
-            if (_manualRunId is null)
+            if (manualRunId is null)
             {
                 var run = await db.ScrapeRuns.FirstOrDefaultAsync(r => r.Status == ScrapeStatus.Manual)
                     ?? new ScrapeRun { StartedAt = DateTime.UtcNow.ToString("o"), CompletedAt = DateTime.UtcNow.ToString("o"), Status = ScrapeStatus.Manual };
                 if (run.Id == 0) { db.ScrapeRuns.Add(run); await db.SaveChangesAsync(); }
-                _manualRunId = run.Id;
+                manualRunId = run.Id;
             }
 
             var old = await db.TaxRates.FirstOrDefaultAsync(r => r.JurisdictionId == jurisdictionId && r.IsCurrent);
@@ -467,7 +513,7 @@ else
             {
                 JurisdictionId = jurisdictionId, Rate = rate, RateType = "General",
                 EffectiveDate = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd"),
-                ScrapedAt = DateTime.UtcNow.ToString("o"), ScrapeRunId = _manualRunId.Value,
+                ScrapedAt = DateTime.UtcNow.ToString("o"), ScrapeRunId = manualRunId.Value,
                 RawValue = $"{pct:F3}%", IsCurrent = true
             });
             await db.SaveChangesAsync();
@@ -482,7 +528,7 @@ else
     // ── Range display ──────────────────────────────────────────────────────────
     private RenderFragment RangeDisplay(JNode node) => __builder =>
     {
-        if (!_isSubscribed) return;
+        if (!isSubscribed) return;
 
         if (node.MinCumulative.HasValue)
         {
@@ -512,7 +558,7 @@ else
     private RenderFragment EvidenceToggle(JNode node) => __builder =>
     {
         <span @onclick:stopPropagation="true">
-        @if (!_isSubscribed)
+        @if (!isSubscribed)
         {
             <span class="evidence-badge evidence-redacted" title="Subscribe to view evidence">
                 <span class="redacted-blur">📎 ●</span>
@@ -521,7 +567,7 @@ else
         else
         {
             var count = node.Evidence.Count;
-            var isOpen = _evidenceOpen == node.Id;
+            var isOpen = evidenceOpen == node.Id;
             if (isOpen)
             {
                 <button class="evidence-badge evidence-hide" @onclick="() => ToggleEvidence(node.Id)"
@@ -551,7 +597,7 @@ else
         </span>
     };
 
-    private void ToggleEvidence(int id) => _evidenceOpen = _evidenceOpen == id ? null : id;
+    private void ToggleEvidence(int id) => evidenceOpen = evidenceOpen == id ? null : id;
 
     // ── Evidence panel ────────────────────────────────────────────────────────
     private RenderFragment EvidencePanel(JNode node) => __builder =>
@@ -559,7 +605,7 @@ else
         <div class="evidence-panel">
             <div class="evidence-panel-title">
                 Evidence — <strong>@node.Name</strong>
-                <button class="btn-icon" @onclick="() => _evidenceOpen = null" title="Close">✕</button>
+                <button class="btn-icon" @onclick="() => evidenceOpen = null" title="Close">✕</button>
             </div>
 
             @if (node.Evidence.Count == 0)
@@ -595,9 +641,9 @@ else
                     <label class="btn-secondary upload-label" title="Upload a file (pdf, txt, csv, etc.)">
                         ＋ Attach File
                         <InputFile OnChange="e => UploadEvidence(node, e)" accept=".pdf,.txt,.csv,.html,.xlsx,.json"
-                                   disabled="@_uploading" style="display:none" />
+                                   disabled="@uploading" style="display:none" />
                     </label>
-                    @if (_uploading) { <span class="muted small">Saving…</span> }
+                    @if (uploading) { <span class="muted small">Saving…</span> }
                 </div>
             }
         </div>
@@ -616,9 +662,9 @@ else
 
     private async Task UploadEvidence(JNode node, InputFileChangeEventArgs e)
     {
-        if (!_isAdmin) { SetStatus("✗ Sign in to upload evidence"); return; }
+        if (!isAdmin) { SetStatus("✗ Sign in to upload evidence"); return; }
         if (!node.RateId.HasValue || e.FileCount == 0) return;
-        _uploading = true;
+        uploading = true;
         StateHasChanged();
 
         try
@@ -681,12 +727,12 @@ else
             SetStatus("✓ Evidence attached");
         }
         catch (Exception ex) { SetStatus($"✗ Upload failed: {ex.Message}"); }
-        finally { _uploading = false; StateHasChanged(); }
+        finally { uploading = false; StateHasChanged(); }
     }
 
     private async Task DisassociateEvidence(JNode node, int docId)
     {
-        if (!_isAdmin) { SetStatus("✗ Sign in to remove evidence"); return; }
+        if (!isAdmin) { SetStatus("✗ Sign in to remove evidence"); return; }
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
@@ -720,11 +766,11 @@ else
 
     private void UpdateNodeInplace(int id, decimal? rate, int? rateId, List<EvidenceFile> evidence)
     {
-        for (int i = 0; i < _states.Count; i++)
+        for (int i = 0; i < states.Count; i++)
         {
-            if (_states[i].Id == id) { _states[i] = _states[i] with { Rate = rate, RateId = rateId, Evidence = evidence }; return; }
+            if (states[i].Id == id) { states[i] = states[i] with { Rate = rate, RateId = rateId, Evidence = evidence }; return; }
         }
-        foreach (var list in _children.Values)
+        foreach (var list in children.Values)
             for (int i = 0; i < list.Count; i++)
                 if (list[i].Id == id) { list[i] = list[i] with { Rate = rate, RateId = rateId, Evidence = evidence }; return; }
     }
@@ -732,8 +778,8 @@ else
     // ── Scrape ────────────────────────────────────────────────────────────────
     private async Task RunScrape()
     {
-        if (!_isAdmin) { SetStatus("✗ Sign in to run scrape"); return; }
-        _scraping = true;
+        if (!isAdmin) { SetStatus("✗ Sign in to run scrape"); return; }
+        scraping = true;
         SetStatus(null);
         StateHasChanged();
         try
@@ -741,35 +787,35 @@ else
             var changed = await Orchestrator.RunFullScrapeAsync();
             SetStatus($"✓ Scrape done — {changed} change(s)");
             await using var db = await DbFactory.CreateDbContextAsync();
-            _states = await BuildNodes(db, JurisdictionType.State, parentType: JurisdictionType.Country);
-            _children.Clear();
-            _expanded.Clear();
+            states = await BuildNodes(db, JurisdictionType.State, parentType: JurisdictionType.Country);
+            children.Clear();
+            expanded.Clear();
         }
         catch (Exception ex) { SetStatus($"✗ {ex.Message}"); }
-        finally { _scraping = false; StateHasChanged(); }
+        finally { scraping = false; StateHasChanged(); }
     }
 
     // ── Subscription demo toggle ──────────────────────────────────────────────
     private async Task SetRole(string role)
     {
-        if (_previewRole == role) return;
-        _previewRole = role;
-        _loading = true;
-        _children.Clear();
-        _expanded.Clear();
-        _evidenceOpen = null;
+        if (previewRole == role) return;
+        previewRole = role;
+        loading = true;
+        children.Clear();
+        expanded.Clear();
+        evidenceOpen = null;
         StateHasChanged();
         await using var db = await DbFactory.CreateDbContextAsync();
-        _states = await BuildNodes(db, JurisdictionType.State, parentType: JurisdictionType.Country);
-        _loading = false;
+        states = await BuildNodes(db, JurisdictionType.State, parentType: JurisdictionType.Country);
+        loading = false;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     private void SetStatus(string? msg)
     {
-        _status = msg;
+        status = msg;
         if (msg is not null)
-            _ = Task.Delay(4000).ContinueWith(_ => { _status = null; InvokeAsync(StateHasChanged); });
+            _ = Task.Delay(4000).ContinueWith(_ => { status = null; InvokeAsync(StateHasChanged); });
     }
 
     // ── Export ────────────────────────────────────────────────────────────────
@@ -793,9 +839,9 @@ else
             })
             .ToListAsync();
 
-        var allRateIds = jurisdictions.Where(j => j.RateId.HasValue).Select(j => j.RateId!.Value).ToList();
+        // Use a subquery to avoid SQLite's 999-variable limit when Contains is used with large lists
         var evidencedRateIds = await db.SourceDocuments
-            .Where(d => allRateIds.Contains(d.TaxRateId) && d.IsActive)
+            .Where(d => d.IsActive && db.TaxRates.Any(r => r.Id == d.TaxRateId && r.IsCurrent))
             .Select(d => d.TaxRateId)
             .Distinct()
             .ToListAsync();
@@ -835,7 +881,7 @@ else
     private async Task OnExportChange(ChangeEventArgs e)
     {
         var fmt = e.Value?.ToString();
-        _exportFormat = "";
+        exportFormat = "";
         switch (fmt)
         {
             case "csv":  await ExportCsv();  break;
@@ -847,7 +893,7 @@ else
 
     private async Task ExportCsv()
     {
-        _exporting = true; SetStatus("⟳ Building…"); StateHasChanged();
+        exporting = true; SetStatus("⟳ Building…"); StateHasChanged();
         try
         {
             var rows = await BuildExportData();
@@ -862,12 +908,12 @@ else
             SetStatus("✓ CSV downloaded");
         }
         catch (Exception ex) { SetStatus($"✗ {ex.Message}"); }
-        finally { _exporting = false; StateHasChanged(); }
+        finally { exporting = false; StateHasChanged(); }
     }
 
     private async Task ExportXlsx()
     {
-        _exporting = true; SetStatus("⟳ Building…"); StateHasChanged();
+        exporting = true; SetStatus("⟳ Building…"); StateHasChanged();
         try
         {
             var rows = await BuildExportData();
@@ -905,12 +951,12 @@ else
             SetStatus("✓ XLSX downloaded");
         }
         catch (Exception ex) { SetStatus($"✗ {ex.Message}"); }
-        finally { _exporting = false; StateHasChanged(); }
+        finally { exporting = false; StateHasChanged(); }
     }
 
     private async Task ExportSql()
     {
-        _exporting = true; SetStatus("⟳ Building…"); StateHasChanged();
+        exporting = true; SetStatus("⟳ Building…"); StateHasChanged();
         try
         {
             var rows = await BuildExportData();
@@ -937,12 +983,12 @@ else
             SetStatus("✓ SQL downloaded");
         }
         catch (Exception ex) { SetStatus($"✗ {ex.Message}"); }
-        finally { _exporting = false; StateHasChanged(); }
+        finally { exporting = false; StateHasChanged(); }
     }
 
     private async Task ExportHtml()
     {
-        _exporting = true; SetStatus("⟳ Building…"); StateHasChanged();
+        exporting = true; SetStatus("⟳ Building…"); StateHasChanged();
         try
         {
             var rows = await BuildExportData();
@@ -989,7 +1035,7 @@ else
             SetStatus("✓ HTML downloaded");
         }
         catch (Exception ex) { SetStatus($"✗ {ex.Message}"); }
-        finally { _exporting = false; StateHasChanged(); }
+        finally { exporting = false; StateHasChanged(); }
     }
 
     private async Task DownloadFile(string fileName, string mimeType, byte[] data)

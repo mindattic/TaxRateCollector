@@ -3,8 +3,8 @@
 @using TaxRateCollector.Core.Interfaces
 @using TaxRateCollector.Infrastructure.Data
 @using Microsoft.EntityFrameworkCore
-@inject IZipImportService _zipSvc
-@inject ICensusJurisdictionImportService _censusSvc
+@inject IZipImportService zipSvc
+@inject ICensusJurisdictionImportService censusSvc
 @inject IDbContextFactory<AppDbContext> DbFactory
 @rendermode InteractiveServer
 
@@ -37,22 +37,22 @@
     </div>
 
     <div class="discovery-stats" style="margin-bottom:1rem">
-        <span class="disc-stat disc-stat-total"><strong>@_seededCounties.ToString("N0")</strong> counties seeded</span>
-        <span class="disc-stat disc-stat-found"><strong>@_seededCities.ToString("N0")</strong> cities seeded</span>
-        <span class="disc-stat disc-stat-skipped"><strong>@_linkedZips.ToString("N0")</strong> ZIPs linked to county</span>
+        <span class="disc-stat disc-stat-total"><strong>@seededCounties.ToString("N0")</strong> counties seeded</span>
+        <span class="disc-stat disc-stat-found"><strong>@seededCities.ToString("N0")</strong> cities seeded</span>
+        <span class="disc-stat disc-stat-skipped"><strong>@linkedZips.ToString("N0")</strong> ZIPs linked to county</span>
     </div>
 
     <div class="header-actions" style="margin-bottom:1rem">
-        @if (!_censusRunning)
+        @if (!censusRunning)
         {
-            @if (_seededCounties == 0)
+            @if (seededCounties == 0)
             {
                 <button class="btn-primary" @onclick="StartCensusImport">▶ Import All Counties &amp; Cities</button>
             }
             else
             {
                 <span class="step-complete-badge">✓ Complete</span>
-                <button class="btn-secondary" @onclick="async () => { _censusSvc.ClearCache(); await StartCensusImport(); }">↺ Re-download &amp; Import</button>
+                <button class="btn-secondary" @onclick="async () => { censusSvc.ClearCache(); await StartCensusImport(); }">↺ Re-download &amp; Import</button>
             }
         }
         else
@@ -61,15 +61,15 @@
         }
     </div>
 
-    @if (_censusRunning || _censusResult != null)
+    @if (censusRunning || censusResult != null)
     {
         <div class="discovery-progress-wrap">
-            @if (_censusRunning && _censusProgress.Total > 0)
+            @if (censusRunning && censusProgress.Total > 0)
             {
-                var pct = (int)Math.Round(_censusProgress.Processed * 100.0 / _censusProgress.Total);
+                var pct = (int)Math.Round(censusProgress.Processed * 100.0 / censusProgress.Total);
                 <div class="discovery-progress-bar" style="width:@pct%"></div>
             }
-            else if (_censusRunning)
+            else if (censusRunning)
             {
                 <div class="progress-bar-indeterminate"></div>
             }
@@ -80,37 +80,37 @@
         </div>
 
         <div class="discovery-stats" style="margin-top:.5rem">
-            <span class="disc-stat muted"><strong>@_censusProgress.Stage</strong></span>
-            <span class="disc-stat disc-stat-found"><strong>@_censusProgress.Created.ToString("N0")</strong> created</span>
-            <span class="disc-stat disc-stat-skipped"><strong>@_censusProgress.Skipped.ToString("N0")</strong> skipped</span>
-            @if (_censusProgress.Errors > 0)
+            <span class="disc-stat muted"><strong>@censusProgress.Stage</strong></span>
+            <span class="disc-stat disc-stat-found"><strong>@censusProgress.Created.ToString("N0")</strong> created</span>
+            <span class="disc-stat disc-stat-skipped"><strong>@censusProgress.Skipped.ToString("N0")</strong> skipped</span>
+            @if (censusProgress.Errors > 0)
             {
-                <span class="disc-stat disc-stat-error"><strong>@_censusProgress.Errors</strong> errors</span>
+                <span class="disc-stat disc-stat-error"><strong>@censusProgress.Errors</strong> errors</span>
             }
-            @if (!string.IsNullOrEmpty(_censusProgress.Current))
+            @if (!string.IsNullOrEmpty(censusProgress.Current))
             {
-                <span class="disc-stat muted">@_censusProgress.Current</span>
+                <span class="disc-stat muted">@censusProgress.Current</span>
             }
-            @if (_censusResult != null && !_censusRunning)
+            @if (censusResult != null && !censusRunning)
             {
-                <span class="disc-stat">Done in @_censusResult.Elapsed.ToString(@"m\:ss")</span>
+                <span class="disc-stat">Done in @censusResult.Elapsed.ToString(@"m\:ss")</span>
             }
         </div>
     }
 
-    @if (_censusResult != null && !_censusRunning)
+    @if (censusResult != null && !censusRunning)
     {
         <div class="zip-result-card" style="margin-top:1rem">
             <div class="zip-result-stat">
-                <div class="zip-result-num">@_censusResult.CountiesCreated.ToString("N0")</div>
+                <div class="zip-result-num">@censusResult.CountiesCreated.ToString("N0")</div>
                 <div class="zip-result-label">counties created</div>
             </div>
             <div class="zip-result-stat">
-                <div class="zip-result-num">@_censusResult.CitiesCreated.ToString("N0")</div>
+                <div class="zip-result-num">@censusResult.CitiesCreated.ToString("N0")</div>
                 <div class="zip-result-label">cities created</div>
             </div>
             <div class="zip-result-stat">
-                <div class="zip-result-num">@_censusResult.ZipsRelinked.ToString("N0")</div>
+                <div class="zip-result-num">@censusResult.ZipsRelinked.ToString("N0")</div>
                 <div class="zip-result-label">ZIP codes re-linked</div>
             </div>
         </div>
@@ -120,13 +120,13 @@
 <!-- ── Step 2: ZIP Code Import ─────────────────────────────────────────────── -->
 <div class="settings-section" style="margin-top:2rem">
     <div class="step-header">
-        <span class="step-badge @(_seededCounties == 0 ? "step-badge-blocked" : "")">Step 2</span>
+        <span class="step-badge @(seededCounties == 0 ? "step-badge-blocked" : "")">Step 2</span>
         <div>
             <h2 style="margin:0">Import ZIP Codes</h2>
             <p class="section-note" style="margin:.25rem 0 0">
                 Downloads the Census Bureau ZCTA crosswalk files and maps ~33,000 ZIP codes to their
                 State, County, and City jurisdictions.
-                @if (_seededCounties == 0)
+                @if (seededCounties == 0)
                 {
                     <strong class="step-blocked-note"> Complete Step 1 first so ZIPs can link to real county and city rows.</strong>
                 }
@@ -134,15 +134,15 @@
         </div>
     </div>
 
-    @if (_importedCount > 0 && !_running && _result == null)
+    @if (importedCount > 0 && !running && result == null)
     {
         <div class="zip-status-banner">
             <span class="zip-status-icon">✓</span>
-            <strong>@_importedCount.ToString("N0")</strong> ZIP codes imported and linked to jurisdiction hierarchy.
+            <strong>@importedCount.ToString("N0")</strong> ZIP codes imported and linked to jurisdiction hierarchy.
         </div>
     }
 
-    @if (!_running && _result == null && _importedCount == 0 && _seededCounties > 0)
+    @if (!running && result == null && importedCount == 0 && seededCounties > 0)
     {
         <div class="zip-info-card">
             <h3>How ZIP-based tax resolution works</h3>
@@ -189,15 +189,15 @@
     }
 
     <div class="header-actions" style="margin:1rem 0">
-        @if (!_running)
+        @if (!running)
         {
             <button class="btn-primary" @onclick="StartImport"
-                    disabled="@(_alreadyComplete || _seededCounties == 0 || _censusRunning)">
-                @if (_alreadyComplete)
+                    disabled="@(alreadyComplete || seededCounties == 0 || censusRunning)">
+                @if (alreadyComplete)
                 {
                     <span>✓ Import Complete</span>
                 }
-                else if (_seededCounties == 0)
+                else if (seededCounties == 0)
                 {
                     <span>▶ Import ZIP Codes (complete Step 1 first)</span>
                 }
@@ -206,9 +206,9 @@
                     <span>▶ Import ZIP Codes</span>
                 }
             </button>
-            @if (_importedCount > 0)
+            @if (importedCount > 0)
             {
-                <button class="btn-secondary" @onclick="ReImport" disabled="@_censusRunning">↺ Re-import</button>
+                <button class="btn-secondary" @onclick="ReImport" disabled="@censusRunning">↺ Re-import</button>
             }
         }
         else
@@ -217,15 +217,15 @@
         }
     </div>
 
-    @if (_running || _result != null)
+    @if (running || result != null)
     {
         <div class="discovery-progress-wrap">
-            @if (_running && _progress.Total > 0)
+            @if (running && progress.Total > 0)
             {
-                var pct = (int)Math.Round(_progress.Processed * 100.0 / _progress.Total);
+                var pct = (int)Math.Round(progress.Processed * 100.0 / progress.Total);
                 <div class="discovery-progress-bar" style="width:@pct%"></div>
             }
-            else if (_running)
+            else if (running)
             {
                 <div class="progress-bar-indeterminate"></div>
             }
@@ -236,46 +236,46 @@
         </div>
 
         <div class="discovery-stats">
-            @if (_running)
+            @if (running)
             {
                 <span class="disc-stat disc-stat-total">
-                    <strong>@_progress.Processed.ToString("N0")</strong> / @(_progress.Total > 0 ? _progress.Total.ToString("N0") : "…") processed
+                    <strong>@progress.Processed.ToString("N0")</strong> / @(progress.Total > 0 ? progress.Total.ToString("N0") : "…") processed
                 </span>
             }
-            <span class="disc-stat disc-stat-found"><strong>@_progress.Imported.ToString("N0")</strong> imported</span>
-            <span class="disc-stat disc-stat-skipped"><strong>@_progress.Skipped.ToString("N0")</strong> skipped</span>
-            @if (_progress.Errors > 0)
+            <span class="disc-stat disc-stat-found"><strong>@progress.Imported.ToString("N0")</strong> imported</span>
+            <span class="disc-stat disc-stat-skipped"><strong>@progress.Skipped.ToString("N0")</strong> skipped</span>
+            @if (progress.Errors > 0)
             {
-                <span class="disc-stat disc-stat-error"><strong>@_progress.Errors</strong> errors</span>
+                <span class="disc-stat disc-stat-error"><strong>@progress.Errors</strong> errors</span>
             }
-            @if (!string.IsNullOrEmpty(_progress.CurrentZip))
+            @if (!string.IsNullOrEmpty(progress.CurrentZip))
             {
-                <span class="disc-stat muted">processing @_progress.CurrentZip</span>
+                <span class="disc-stat muted">processing @progress.CurrentZip</span>
             }
-            @if (_result != null)
+            @if (result != null)
             {
-                <span class="disc-stat">Done in @_result.Elapsed.ToString(@"m\:ss")</span>
+                <span class="disc-stat">Done in @result.Elapsed.ToString(@"m\:ss")</span>
             }
         </div>
     }
 
-    @if (_result != null)
+    @if (result != null)
     {
         <div class="zip-result-card" style="margin-top:1rem">
             <div class="zip-result-stat">
-                <div class="zip-result-num">@_result.Imported.ToString("N0")</div>
+                <div class="zip-result-num">@result.Imported.ToString("N0")</div>
                 <div class="zip-result-label">ZIP codes imported</div>
             </div>
             <div class="zip-result-stat">
-                <div class="zip-result-num">@_linkedState.ToString("N0")</div>
+                <div class="zip-result-num">@linkedState.ToString("N0")</div>
                 <div class="zip-result-label">linked to state</div>
             </div>
             <div class="zip-result-stat">
-                <div class="zip-result-num">@_linkedCounty.ToString("N0")</div>
+                <div class="zip-result-num">@linkedCounty.ToString("N0")</div>
                 <div class="zip-result-label">linked to county</div>
             </div>
             <div class="zip-result-stat">
-                <div class="zip-result-num">@_linkedCity.ToString("N0")</div>
+                <div class="zip-result-num">@linkedCity.ToString("N0")</div>
                 <div class="zip-result-label">linked to city</div>
             </div>
         </div>
@@ -283,7 +283,7 @@
 </div>
 
 <!-- ── State breakdown table ───────────────────────────────────────────────── -->
-@if (_stateCounts.Count > 0)
+@if (stateCounts.Count > 0)
 {
     <div class="zip-table-wrap" style="margin-top:2rem">
         <table class="data-table">
@@ -296,7 +296,7 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach (var row in _stateCounts.OrderBy(r => r.StateCode))
+                @foreach (var row in stateCounts.OrderBy(r => r.StateCode))
                 {
                     <tr>
                         <td class="mono">@row.StateCode</td>
@@ -311,133 +311,133 @@
 }
 
 @code {
-    private bool _running;
-    private CancellationTokenSource? _cts;
-    private int _importedCount;
-    private bool _alreadyComplete;
-    private ZipImportProgress _progress = new(0, 0, 0, 0, 0);
-    private ZipImportResult? _result;
-    private int _linkedState, _linkedCounty, _linkedCity;
+    private bool running;
+    private CancellationTokenSource? cts;
+    private int importedCount;
+    private bool alreadyComplete;
+    private ZipImportProgress progress = new(0, 0, 0, 0, 0);
+    private ZipImportResult? result;
+    private int linkedState, linkedCounty, linkedCity;
 
     // ── Census import state ───────────────────────────────────────────────────
-    private bool _censusRunning;
-    private CancellationTokenSource? _censusCts;
-    private CensusImportProgress _censusProgress = new("", 0, 0, 0, 0, 0);
-    private CensusImportResult? _censusResult;
-    private int _seededCounties, _seededCities, _linkedZips;
+    private bool censusRunning;
+    private CancellationTokenSource? censusCts;
+    private CensusImportProgress censusProgress = new("", 0, 0, 0, 0, 0);
+    private CensusImportResult? censusResult;
+    private int seededCounties, seededCities, linkedZips;
 
     private record StateRow(string StateCode, int Total, int CountyLinked, int CityLinked);
-    private List<StateRow> _stateCounts = new();
+    private List<StateRow> stateCounts = new();
 
     protected override async Task OnInitializedAsync()
     {
-        _importedCount = await _zipSvc.GetImportedCountAsync();
-        _alreadyComplete = _importedCount > 0;
-        var coverage = await _censusSvc.GetCoverageAsync();
-        _seededCounties = coverage.SeededCounties;
-        _seededCities   = coverage.SeededCities;
-        _linkedZips     = coverage.LinkedZips;
-        if (_importedCount > 0) await LoadStateCountsAsync();
+        importedCount = await zipSvc.GetImportedCountAsync();
+        alreadyComplete = importedCount > 0;
+        var coverage = await censusSvc.GetCoverageAsync();
+        seededCounties = coverage.SeededCounties;
+        seededCities   = coverage.SeededCities;
+        linkedZips     = coverage.LinkedZips;
+        if (importedCount > 0) await LoadStateCountsAsync();
     }
 
     private async Task StartImport()
     {
-        _running = true;
-        _result  = null;
-        _progress = new(0, 0, 0, 0, 0);
-        _cts = new CancellationTokenSource();
+        running = true;
+        result  = null;
+        progress = new(0, 0, 0, 0, 0);
+        cts = new CancellationTokenSource();
         StateHasChanged();
 
         var p = new Progress<ZipImportProgress>(snap =>
         {
-            _progress = snap;
+            progress = snap;
             InvokeAsync(StateHasChanged);
         });
 
         try
         {
-            _result = await _zipSvc.ImportAsync(p, _cts.Token);
-            _importedCount = await _zipSvc.GetImportedCountAsync();
-            _alreadyComplete = _importedCount > 0;
+            result = await zipSvc.ImportAsync(p, cts.Token);
+            importedCount = await zipSvc.GetImportedCountAsync();
+            alreadyComplete = importedCount > 0;
             await LoadLinkStatsAsync();
             await LoadStateCountsAsync();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            _progress = _progress with { CurrentZip = $"Error: {ex.Message}" };
+            progress = progress with { CurrentZip = $"Error: {ex.Message}" };
         }
         finally
         {
-            _running = false;
+            running = false;
             await InvokeAsync(StateHasChanged);
         }
     }
 
     private async Task ReImport()
     {
-        _zipSvc.ClearCache();
-        _alreadyComplete = false;
-        _importedCount = 0;
-        _stateCounts.Clear();
-        _result = null;
+        zipSvc.ClearCache();
+        alreadyComplete = false;
+        importedCount = 0;
+        stateCounts.Clear();
+        result = null;
         // Note: does not delete existing DB records — re-import only adds new ZIPs
         await StartImport();
     }
 
-    private void StopImport() => _cts?.Cancel();
+    private void StopImport() => cts?.Cancel();
 
     // ── Census import ─────────────────────────────────────────────────────────
 
     private async Task StartCensusImport()
     {
-        _censusRunning = true;
-        _censusResult  = null;
-        _censusProgress = new("Starting…", 0, 0, 0, 0, 0);
-        _censusCts = new CancellationTokenSource();
+        censusRunning = true;
+        censusResult  = null;
+        censusProgress = new("Starting…", 0, 0, 0, 0, 0);
+        censusCts = new CancellationTokenSource();
         StateHasChanged();
 
         var p = new Progress<CensusImportProgress>(snap =>
         {
-            _censusProgress = snap;
+            censusProgress = snap;
             InvokeAsync(StateHasChanged);
         });
 
         try
         {
-            _censusResult = await _censusSvc.ImportAsync(p, _censusCts.Token);
-            var coverage  = await _censusSvc.GetCoverageAsync();
-            _seededCounties = coverage.SeededCounties;
-            _seededCities   = coverage.SeededCities;
-            _linkedZips     = coverage.LinkedZips;
+            censusResult = await censusSvc.ImportAsync(p, censusCts.Token);
+            var coverage  = await censusSvc.GetCoverageAsync();
+            seededCounties = coverage.SeededCounties;
+            seededCities   = coverage.SeededCities;
+            linkedZips     = coverage.LinkedZips;
             await LoadStateCountsAsync();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            _censusProgress = _censusProgress with { Current = $"Error: {ex.Message}" };
+            censusProgress = censusProgress with { Current = $"Error: {ex.Message}" };
         }
         finally
         {
-            _censusRunning = false;
+            censusRunning = false;
             await InvokeAsync(StateHasChanged);
         }
     }
 
-    private void StopCensusImport() => _censusCts?.Cancel();
+    private void StopCensusImport() => censusCts?.Cancel();
 
     private async Task LoadLinkStatsAsync()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
-        _linkedState  = await db.ZipCodes.CountAsync(z => z.StateJurisdictionId  != null);
-        _linkedCounty = await db.ZipCodes.CountAsync(z => z.CountyJurisdictionId != null);
-        _linkedCity   = await db.ZipCodes.CountAsync(z => z.CityJurisdictionId   != null);
+        linkedState  = await db.ZipCodes.CountAsync(z => z.StateJurisdictionId  != null);
+        linkedCounty = await db.ZipCodes.CountAsync(z => z.CountyJurisdictionId != null);
+        linkedCity   = await db.ZipCodes.CountAsync(z => z.CityJurisdictionId   != null);
     }
 
     private async Task LoadStateCountsAsync()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
-        _stateCounts = await db.ZipCodes
+        stateCounts = await db.ZipCodes
             .GroupBy(z => z.StateCode)
             .Select(g => new StateRow(
                 g.Key,
@@ -446,11 +446,11 @@
                 g.Count(z => z.CityJurisdictionId   != null)))
             .ToListAsync();
 
-        if (_linkedState == 0 && _stateCounts.Count > 0)
+        if (linkedState == 0 && stateCounts.Count > 0)
         {
-            _linkedState  = await db.ZipCodes.CountAsync(z => z.StateJurisdictionId  != null);
-            _linkedCounty = await db.ZipCodes.CountAsync(z => z.CountyJurisdictionId != null);
-            _linkedCity   = await db.ZipCodes.CountAsync(z => z.CityJurisdictionId   != null);
+            linkedState  = await db.ZipCodes.CountAsync(z => z.StateJurisdictionId  != null);
+            linkedCounty = await db.ZipCodes.CountAsync(z => z.CountyJurisdictionId != null);
+            linkedCity   = await db.ZipCodes.CountAsync(z => z.CityJurisdictionId   != null);
         }
     }
 }

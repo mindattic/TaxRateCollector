@@ -9,7 +9,7 @@ public class ScrapeSchedulerService(
     IServiceScopeFactory scopeFactory,
     ILogger<ScrapeSchedulerService> logger) : BackgroundService
 {
-    private readonly TimeSpan _interval = TimeSpan.FromHours(24);
+    private readonly TimeSpan interval = TimeSpan.FromHours(24);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -33,7 +33,7 @@ public class ScrapeSchedulerService(
                 logger.LogError(ex, "Scheduled scrape cycle failed");
             }
 
-            await Task.Delay(_interval, stoppingToken);
+            await Task.Delay(interval, stoppingToken);
         }
     }
 }

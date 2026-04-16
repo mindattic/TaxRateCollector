@@ -11,11 +11,11 @@ namespace TaxRateCollector.Infrastructure.Services;
 /// </summary>
 public class DiscoveryService : IDiscoveryService
 {
-    private readonly HttpClient _http;
+    private readonly HttpClient http;
 
     public DiscoveryService(HttpClient http)
     {
-        _http = http;
+        this.http = http;
     }
 
     public async Task<DiscoveryResult> DiscoverAsync(Jurisdiction jurisdiction, CancellationToken ct = default)
