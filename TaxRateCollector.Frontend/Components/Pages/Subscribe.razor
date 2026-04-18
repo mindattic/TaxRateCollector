@@ -5,6 +5,7 @@
 @using TaxRateCollector.Core.Entities
 @using TaxRateCollector.Core.Enums
 @using TaxRateCollector.Core.Interfaces
+@using Microsoft.AspNetCore.Components.Authorization
 @using TaxRateCollector.Infrastructure.Data
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject IPayPalService PayPal
@@ -15,8 +16,8 @@
 <PageTitle>Subscribe — TaxRateCollector</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">Subscribe by State</h1>
-    <p class="page-sub">Select the states your business operates in. Pay only for what you need.</p>
+    <h1 class="page-title">Subscribe</h1>
+    <p class="page-sub">Select the states and product categories your business needs. Pay only for what you use.</p>
 </div>
 
 @if (loading)
@@ -29,7 +30,7 @@ else if (step == 3)
     <div class="auth-card" style="max-width:520px">
         <div style="font-size:2.5rem;margin-bottom:.5rem">✓</div>
         <h2 class="auth-title" style="color:var(--green)">Payment Complete!</h2>
-        <p>You now have access to tax rates and evidence for <strong>@selectedStates.Count state(s)</strong>.</p>
+        <p>You now have access to tax rates for <strong>@selectedStates.Count state(s)</strong> across <strong>@selectedCategories.Count product category/categories</strong>.</p>
         @if (lastBillingRecord is not null)
         {
             <div class="billing-summary">
@@ -53,7 +54,7 @@ else
         <div class="subscribe-states">
             <div class="subscribe-section-title">
                 Select States
-                <span class="muted small">@selectedStates.Count selected · @PricePerMonth.ToString("C")/mo subtotal</span>
+                <span class="muted small">@selectedStates.Count selected</span>
             </div>
             <div class="states-grid">
                 @foreach (var state in availableStates)
@@ -70,6 +71,35 @@ else
             <div class="states-actions">
                 <button class="btn-tiny" @onclick="SelectAll">Select All</button>
                 <button class="btn-tiny" @onclick="ClearAll">Clear</button>
+            </div>
+        </div>
+
+        <!-- ── Middle: Category selector ── -->
+        <div class="subscribe-categories">
+            <div class="subscribe-section-title">
+                Select Product Categories
+                <span class="muted small">@selectedCategories.Count selected</span>
+            </div>
+            <div class="category-select-list">
+                @foreach (var (groupName, leaves) in availableCategoryGroups)
+                {
+                    <div class="cat-select-group">
+                        <div class="cat-select-group-label">@groupName</div>
+                        @foreach (var cat in leaves)
+                        {
+                            var active = selectedCategories.Contains(cat.Id);
+                            <button class="cat-select-chip @(active ? "cat-select-active" : "")"
+                                    @onclick="() => ToggleCategory(cat.Id)">
+                                @if (active) { <span>✓</span> }
+                                @cat.Name
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="states-actions">
+                <button class="btn-tiny" @onclick="SelectAllCategories">Select All</button>
+                <button class="btn-tiny" @onclick="ClearCategories">Clear</button>
             </div>
         </div>
 
@@ -110,8 +140,8 @@ else
             <!-- Order summary -->
             <div class="order-summary">
                 <div class="subscribe-section-title" style="margin-bottom:.6rem">Order Summary</div>
-                <div class="billing-row"><span>Price per state</span><span>@pricing.PricePerState.ToString("C") / month</span></div>
-                <div class="billing-row"><span>States selected</span><span>@selectedStates.Count</span></div>
+                <div class="billing-row"><span>States × @pricing.PricePerState.ToString("C")/mo</span><span>@selectedStates.Count × @pricing.PricePerState.ToString("C") = @StateSubtotal.ToString("C")</span></div>
+                <div class="billing-row"><span>Categories × @pricing.PricePerCategory.ToString("C")/mo</span><span>@selectedCategories.Count × @pricing.PricePerCategory.ToString("C") = @CatSubtotal.ToString("C")</span></div>
                 <div class="billing-row"><span>Subtotal</span><span>@PricePerMonth.ToString("C") / month</span></div>
                 @if (!string.IsNullOrEmpty(billingState) && billingTaxRate > 0)
                 {
@@ -156,9 +186,14 @@ else
     private string? error;
     private bool isMock = true;
 
+    private sealed record CategoryItem(int Id, string Name, string GroupName);
+
     private PricingConfig pricing = new();
     private List<(string StateCode, string Name)> availableStates = [];
     private HashSet<string> selectedStates = [];
+
+    private List<(string GroupName, List<CategoryItem> Leaves)> availableCategoryGroups = [];
+    private HashSet<int> selectedCategories = [];
 
     // Billing form
     private string fullName = "";
@@ -170,12 +205,14 @@ else
 
     private BillingRecord? lastBillingRecord;
 
-    private decimal PricePerMonth => selectedStates.Count * pricing.PricePerState;
+    private decimal StateSubtotal => selectedStates.Count * pricing.PricePerState;
+    private decimal CatSubtotal => selectedCategories.Count * pricing.PricePerCategory;
+    private decimal PricePerMonth => StateSubtotal + CatSubtotal;
     private decimal TaxAmount => PricePerMonth * billingTaxRate;
     private decimal Total => PricePerMonth + TaxAmount;
 
     private bool CanCheckout =>
-        selectedStates.Count > 0 &&
+        (selectedStates.Count > 0 || selectedCategories.Count > 0) &&
         !string.IsNullOrWhiteSpace(fullName) &&
         !string.IsNullOrWhiteSpace(address) &&
         !string.IsNullOrWhiteSpace(city) &&
@@ -195,6 +232,55 @@ else
             .ToListAsync()
             .ContinueWith(t => t.Result.Select(x => (x.StateCode, x.JurisdictionName)).ToList());
 
+        // Load leaf categories grouped by parent
+        var cats = await db.TaxCategories
+            .Where(c => c.IsLeaf && c.ParentId != null)
+            .OrderBy(c => c.SortOrder)
+            .Select(c => new { c.Id, c.Name, ParentId = c.ParentId!.Value })
+            .ToListAsync();
+
+        var groups = await db.TaxCategories
+            .Where(c => !c.IsLeaf && c.ParentId != null)
+            .Select(c => new { c.Id, c.Name })
+            .ToListAsync();
+
+        var groupLookup = groups.ToDictionary(g => g.Id, g => g.Name);
+        availableCategoryGroups = cats
+            .GroupBy(c => c.ParentId)
+            .Select(g => (
+                GroupName: groupLookup.GetValueOrDefault(g.Key, "Other"),
+                Leaves: g.Select(c => new CategoryItem(c.Id, c.Name, groupLookup.GetValueOrDefault(c.ParentId, "Other"))).ToList()
+            ))
+            .ToList();
+
+        // Pre-populate selections from existing subscription
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (userId != null)
+        {
+            var existingStates = await db.SubscribedStates
+                .Where(ss => ss.Subscriber.UserId == userId && ss.IsActive)
+                .Select(ss => ss.StateCode)
+                .ToListAsync();
+            selectedStates = new HashSet<string>(existingStates, StringComparer.OrdinalIgnoreCase);
+
+            var existingCats = await db.SubscribedCategories
+                .Where(sc => sc.Subscriber.UserId == userId && sc.IsActive)
+                .Select(sc => sc.CategoryId)
+                .ToListAsync();
+            selectedCategories = new HashSet<int>(existingCats);
+
+            var sub = await db.Subscribers.FirstOrDefaultAsync(s => s.UserId == userId);
+            if (sub != null)
+            {
+                fullName = sub.FullName;
+                address = sub.AddressLine1;
+                city = sub.City;
+                zip = sub.ZipCode;
+                billingState = sub.StateCode;
+            }
+        }
+
         isMock = !await PayPal.IsConfiguredAsync();
         loading = false;
     }
@@ -205,6 +291,14 @@ else
     }
     private void SelectAll() => selectedStates = availableStates.Select(s => s.StateCode).ToHashSet();
     private void ClearAll() => selectedStates.Clear();
+
+    private void ToggleCategory(int id)
+    {
+        if (!selectedCategories.Remove(id)) selectedCategories.Add(id);
+    }
+    private void SelectAllCategories() =>
+        selectedCategories = availableCategoryGroups.SelectMany(g => g.Leaves).Select(c => c.Id).ToHashSet();
+    private void ClearCategories() => selectedCategories.Clear();
 
     private async Task OnBillingStateChange()
     {
@@ -276,7 +370,7 @@ else
             await db.SaveChangesAsync();
 
             // PayPal order
-            var description = $"TaxRateCollector — {selectedStates.Count} state(s)/month";
+            var description = $"TaxRateCollector — {selectedStates.Count} state(s), {selectedCategories.Count} category/categories/month";
             var orderResult = await PayPal.CreateOrderAsync(Total, pricing.Currency, description);
 
             if (!orderResult.Success)
@@ -316,6 +410,31 @@ else
                         SubscriberId = subscriber.Id,
                         StateCode = code,
                         StateName = name,
+                        IsActive = true,
+                        StartDate = DateTime.UtcNow.ToString("o")
+                    });
+            }
+
+            // Activate subscribed categories
+            var existingCats = await db.SubscribedCategories
+                .Where(sc => sc.SubscriberId == subscriber.Id)
+                .ToListAsync();
+
+            foreach (var sc in existingCats) sc.IsActive = false;
+
+            var allLeaves = availableCategoryGroups.SelectMany(g => g.Leaves).ToList();
+            foreach (var catId in selectedCategories)
+            {
+                var catName = allLeaves.FirstOrDefault(c => c.Id == catId)?.Name ?? "";
+                var existing2 = existingCats.FirstOrDefault(sc => sc.CategoryId == catId);
+                if (existing2 is not null)
+                    existing2.IsActive = true;
+                else
+                    db.SubscribedCategories.Add(new SubscribedCategory
+                    {
+                        SubscriberId = subscriber.Id,
+                        CategoryId = catId,
+                        CategoryName = catName,
                         IsActive = true,
                         StartDate = DateTime.UtcNow.ToString("o")
                     });

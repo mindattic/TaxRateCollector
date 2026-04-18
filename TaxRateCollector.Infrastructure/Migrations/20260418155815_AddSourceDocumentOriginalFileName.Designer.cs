@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TaxRateCollector.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using TaxRateCollector.Infrastructure.Data;
 namespace TaxRateCollector.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260418155815_AddSourceDocumentOriginalFileName")]
+    partial class AddSourceDocumentOriginalFileName
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -541,10 +544,6 @@ namespace TaxRateCollector.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<decimal>("PricePerCategory")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
                     b.Property<decimal>("PricePerState")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -604,10 +603,6 @@ namespace TaxRateCollector.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("FetchedAt")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("EvidenceType")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
@@ -752,38 +747,6 @@ namespace TaxRateCollector.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("StateTaxProfiles");
-                });
-
-            modelBuilder.Entity("TaxRateCollector.Core.Entities.SubscribedCategory", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("CategoryId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("CategoryName")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("StartDate")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("SubscriberId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SubscriberId", "CategoryId");
-
-                    b.ToTable("SubscribedCategories");
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.SubscribedState", b =>
@@ -1191,17 +1154,6 @@ namespace TaxRateCollector.Infrastructure.Migrations
                     b.Navigation("TaxCategory");
                 });
 
-            modelBuilder.Entity("TaxRateCollector.Core.Entities.SubscribedCategory", b =>
-                {
-                    b.HasOne("TaxRateCollector.Core.Entities.Subscriber", "Subscriber")
-                        .WithMany("SubscribedCategories")
-                        .HasForeignKey("SubscriberId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Subscriber");
-                });
-
             modelBuilder.Entity("TaxRateCollector.Core.Entities.SubscribedState", b =>
                 {
                     b.HasOne("TaxRateCollector.Core.Entities.Subscriber", "Subscriber")
@@ -1295,8 +1247,6 @@ namespace TaxRateCollector.Infrastructure.Migrations
             modelBuilder.Entity("TaxRateCollector.Core.Entities.Subscriber", b =>
                 {
                     b.Navigation("BillingRecords");
-
-                    b.Navigation("SubscribedCategories");
 
                     b.Navigation("SubscribedStates");
                 });

@@ -1,5 +1,5 @@
 @page "/setup"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Administrator")]
 @using Microsoft.EntityFrameworkCore
 @using TaxRateCollector.Core.Entities
 @using TaxRateCollector.Core.Enums
@@ -15,6 +15,7 @@
 @inject SettingsService settings
 @inject IHttpClientFactory HttpClientFactory
 @inject IJSRuntime JS
+@inject IConfiguration Configuration
 @rendermode InteractiveServer
 
 <PageTitle>Setup — TaxRateCollector</PageTitle>
@@ -26,6 +27,167 @@
         from authoritative external sources before running the scrape pipeline.
     </p>
 </div>
+
+<!-- ── Phase guide ──────────────────────────────────────────────────────────── -->
+<div class="setup-card" style="border-style:dashed">
+    <p style="margin:0;font-weight:600">Complete the three phases in order:</p>
+    <ol style="margin:.5rem 0 0 1.1rem;padding:0;line-height:1.9">
+        <li><strong>Phase 1 — Configure</strong> Set the source URLs and scraping preferences the import pipeline needs. Do this once before running any imports.</li>
+        <li><strong>Phase 2 — Import Pipeline (Steps 1–6)</strong> Populate the database from authoritative external sources. Steps are sequential and each unlocks the next.</li>
+        <li><strong>Phase 3 — Business Configuration</strong> Set subscription pricing and PayPal credentials. Do this before opening subscriptions to customers.</li>
+    </ol>
+</div>
+
+<!-- ── Phase 1: Configure ────────────────────────────────────────────────────── -->
+<div class="setup-phase-label">Phase 1 — Configure Source URLs &amp; Preferences</div>
+
+@{ var failedUrlCount = urlResults.Values.Count(v => !v); }
+@if (urlResults.Count > 0 && failedUrlCount > 0)
+{
+    <div class="ds-alert ds-alert-error">
+        <strong>@failedUrlCount source(s) unreachable</strong> — update the broken URLs below and save before importing.
+    </div>
+}
+else if (urlResults.Count > 0)
+{
+    <div class="ds-alert ds-alert-ok">All @urlResults.Count data sources reachable.</div>
+}
+else
+{
+    <div class="ds-alert ds-alert-warn">Data sources not yet validated — use the <em>Check Sources</em> button in the Data Source URLs card below.</div>
+}
+
+<!-- ── Data Source URLs card ─────────────────────────────────────────────────── -->
+<div class="setup-card">
+    <div class="setup-card-header">
+        <div>
+            <h2 class="setup-card-title">Data Source URLs</h2>
+            <p class="setup-card-desc">
+                These point to the files the import pipeline downloads. They default to the current 2025 Census Bureau
+                files and the latest SSUTA Agreement PDF. Update them if the Census Bureau publishes a new year or
+                the SST Governing Board publishes a new amendment. Clear the cache after updating to force a fresh download.
+            </p>
+        </div>
+    </div>
+    <div class="setup-url-config">
+        <div class="setup-url-group-label">Census Bureau — free, no API key required</div>
+        <div class="setup-url-field">
+            <label class="setting-label">County Gazetteer (ZIP) — ~3,200 US counties with FIPS codes</label>
+            <div class="setup-url-input-row">
+                <input class="setting-input setup-url-input" @bind="settings.Current.CensusCountyGazUrl" />
+                @if (urlResults.TryGetValue("CensusCountyGaz", out var r1)) { <span class="@(r1 ? "ds-url-ok" : "ds-url-fail") url-check-badge">@(r1 ? "✓" : "✗")</span> }
+            </div>
+        </div>
+        <div class="setup-url-field">
+            <label class="setting-label">Place Gazetteer (ZIP) — ~30,000 incorporated cities and places</label>
+            <div class="setup-url-input-row">
+                <input class="setting-input setup-url-input" @bind="settings.Current.CensusPlaceGazUrl" />
+                @if (urlResults.TryGetValue("CensusPlaceGaz", out var r2)) { <span class="@(r2 ? "ds-url-ok" : "ds-url-fail") url-check-badge">@(r2 ? "✓" : "✗")</span> }
+            </div>
+        </div>
+        <div class="setup-url-field">
+            <label class="setting-label">ZCTA → County crosswalk (TXT) — maps ZIP codes to counties by land-area</label>
+            <div class="setup-url-input-row">
+                <input class="setting-input setup-url-input" @bind="settings.Current.CensusZctaCountyUrl" />
+                @if (urlResults.TryGetValue("CensusZctaCounty", out var r3)) { <span class="@(r3 ? "ds-url-ok" : "ds-url-fail") url-check-badge">@(r3 ? "✓" : "✗")</span> }
+            </div>
+        </div>
+        <div class="setup-url-field">
+            <label class="setting-label">ZCTA → Place crosswalk (TXT) — maps ZIP codes to cities by land-area</label>
+            <div class="setup-url-input-row">
+                <input class="setting-input setup-url-input" @bind="settings.Current.CensusZctaPlaceUrl" />
+                @if (urlResults.TryGetValue("CensusZctaPlace", out var r4)) { <span class="@(r4 ? "ds-url-ok" : "ds-url-fail") url-check-badge">@(r4 ? "✓" : "✗")</span> }
+            </div>
+        </div>
+        <div class="setup-url-group-label">Streamlined Sales Tax Governing Board</div>
+        <div class="setup-url-field">
+            <label class="setting-label">SSUTA Agreement PDF — Appendix C is the authoritative product/service taxonomy source</label>
+            <div class="setup-url-input-row">
+                <input class="setting-input setup-url-input" @bind="settings.Current.SstAgreementUrl" />
+                @if (urlResults.TryGetValue("SstAgreement", out var r5)) { <span class="@(r5 ? "ds-url-ok" : "ds-url-fail") url-check-badge">@(r5 ? "✓" : "✗")</span> }
+            </div>
+        </div>
+        <div class="setup-url-field">
+            <label class="setting-label">SST Taxability Matrix (web)</label>
+            <div class="setup-url-input-row">
+                <input class="setting-input setup-url-input" @bind="settings.Current.SstTaxabilityMatrixUrl" />
+                @if (urlResults.TryGetValue("SstTaxabilityMatrix", out var r6)) { <span class="@(r6 ? "ds-url-ok" : "ds-url-fail") url-check-badge">@(r6 ? "✓" : "✗")</span> }
+            </div>
+        </div>
+        <div class="setup-url-field">
+            <label class="setting-label">SST Member States &amp; News (web)</label>
+            <div class="setup-url-input-row">
+                <input class="setting-input setup-url-input" @bind="settings.Current.SstMemberStatesUrl" />
+                @if (urlResults.TryGetValue("SstMemberStates", out var r7)) { <span class="@(r7 ? "ds-url-ok" : "ds-url-fail") url-check-badge">@(r7 ? "✓" : "✗")</span> }
+            </div>
+        </div>
+    </div>
+    <div class="settings-actions" style="margin-top:1rem;gap:.6rem;justify-content:flex-end">
+        <button class="btn-secondary" @onclick="CheckSources" disabled="@checkingUrls">
+            @(checkingUrls ? "Checking…" : "Check Sources")
+        </button>
+        <button class="btn-primary" @onclick="SaveConfig" disabled="@(configBusy || !step1Ok)">Save URLs</button>
+        @if (!string.IsNullOrEmpty(configMsg)) { <span class="save-confirm">@configMsg</span> }
+    </div>
+    @if (checkingUrls || urlResults.Count > 0)
+    {
+        <div class="url-check-results">
+            @foreach (var kv in UrlMap)
+            {
+                @if (checkingUrls && !urlResults.ContainsKey(kv.Key))
+                {
+                    <div class="url-check-row url-check-pending">
+                        <span class="url-check-spinner"></span>
+                        <span class="url-check-label">@kv.Value.Label</span>
+                    </div>
+                }
+                else if (urlResults.TryGetValue(kv.Key, out var ok))
+                {
+                    <div class="url-check-row @(ok ? "url-check-ok-row" : "url-check-fail-row")">
+                        <span class="url-check-icon">@(ok ? "✓" : "✗")</span>
+                        <span class="url-check-label">@kv.Value.Label</span>
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+<!-- ── Scraping Preferences card ──────────────────────────────────────────────── -->
+<div class="setup-card">
+    <div class="setup-card-header">
+        <div>
+            <h2 class="setup-card-title">Scraping Preferences</h2>
+            <p class="setup-card-desc">
+                Controls how the scrape pipeline behaves. The USPS key is optional — it enriches ZIP code city names
+                via the USPS CityStateLookup API. Without it, city names come directly from the Census Bureau.
+            </p>
+        </div>
+    </div>
+    <div class="setting-row">
+        <label class="setting-label">USPS API Key <span class="muted">(optional)</span></label>
+        <input class="setting-input" type="password" placeholder="USPS Web Tools API key" @bind="settings.Current.UspsApiKey" />
+    </div>
+    <div class="setting-row" style="margin-top:.6rem">
+        <label class="setting-label">Re-scrape interval (days)</label>
+        <input class="setting-input setting-input-sm" type="number" min="1" max="365" @bind="settings.Current.DefaultUpdateFrequencyDays" />
+    </div>
+    <div class="setting-row" style="margin-top:.6rem">
+        <label class="setting-label">Auto-fetch evidence PDFs when scraping</label>
+        <input type="checkbox" @bind="settings.Current.EvidenceAutoFetch" />
+    </div>
+    <div class="setting-row" style="margin-top:.6rem">
+        <label class="setting-label">Use Wayback Machine if source URL returns 404</label>
+        <input type="checkbox" @bind="settings.Current.WaybackMachineFallback" />
+    </div>
+    <div class="settings-actions" style="margin-top:.75rem;gap:.6rem">
+        <button class="btn-primary" @onclick="SaveConfig" disabled="@configBusy">Save Preferences</button>
+        @if (!string.IsNullOrEmpty(configMsg)) { <span class="save-confirm">@configMsg</span> }
+    </div>
+</div>
+
+<!-- ── Phase 2: Import Pipeline ──────────────────────────────────────────────── -->
+<div class="setup-phase-label">Phase 2 — Import Pipeline</div>
 
 <!-- ── Checklist ────────────────────────────────────────────────────────────── -->
 <div class="setup-checklist">
@@ -40,8 +202,8 @@
                 <strong>Validate data source URLs</strong>
                 <span class="step-desc">
                     All Census and SST URLs must be reachable before importing.
-                    Source URLs are configured in <a href="/settings">Settings</a>.
-                    @if (!step1Ok) { <span class="step-action">→ Use the <em>Check Sources</em> button below</span> }
+                    Configure source URLs in the Phase 1 cards above.
+                    @if (!step1Ok) { <span class="step-action">→ Use the <em>Check Sources</em> button in the Data Source URLs card above</span> }
                 </span>
             </div>
         </li>
@@ -103,82 +265,45 @@
 <!-- ── Run All ─────────────────────────────────────────────────────────────── -->
 <div class="setup-card">
     <div class="setup-card-header">
-        <div>
-            <h2 class="setup-card-title">Run All Import Steps</h2>
-            <p class="setup-card-desc">
-                Runs steps 1→4 in sequence: validate URLs, import SST taxonomy, import Census jurisdictions,
-                then import ZIP codes. Skips steps that have already completed.
-            </p>
-        </div>
-        <div class="setup-card-actions">
-            <button class="btn-primary" @onclick="RunAllSteps" disabled="@importBusy">
-                @(importBusy ? "Running…" : "▶▶ Run All Steps")
-            </button>
-        </div>
+        <h2 class="setup-card-title">Run All Import Steps</h2>
+        <p class="setup-card-desc">
+            Runs steps 1→4 in sequence: validate URLs, import SST taxonomy, import Census jurisdictions,
+            then import ZIP codes. Skips steps that have already completed.
+        </p>
     </div>
     @if (!string.IsNullOrEmpty(runAllMsg))
     {
         <div class="setup-status @(runAllMsg.StartsWith("✗") ? "setup-status-error" : "setup-status-ok")">@runAllMsg</div>
     }
-</div>
-
-<!-- ── Step 1: Validate sources ─────────────────────────────────────────────── -->
-<div class="setup-card @(step1Ok ? "setup-card-done" : "")">
-    <div class="setup-card-header">
-        <div>
-            <h2 class="setup-card-title">
-                <span class="setup-step-num @(step1Ok ? "num-done" : "num-active")">@(step1Ok ? "✓" : "1")</span>
-                Validate Data Source URLs
-            </h2>
-            <p class="setup-card-desc">
-                Confirms every Census and SST URL is reachable before attempting a download.
-                Update any broken URLs in <a href="/settings">Settings → Admin</a> first.
-            </p>
-        </div>
-        <div class="setup-card-actions">
-            <button class="btn-primary" @onclick="CheckSources" disabled="@checkingUrls">
-                @(checkingUrls ? "Checking…" : "Check Sources")
-            </button>
-        </div>
+    <div class="settings-actions">
+        <button class="btn-primary" @onclick="RunAllSteps" disabled="@importBusy">
+            @(importBusy ? "Running…" : "▶▶ Run All Steps")
+        </button>
     </div>
-    @if (urlResults.Count > 0)
-    {
-        <div class="setup-url-results">
-            @foreach (var (label, ok) in urlResults)
-            {
-                <div class="setup-url-row">
-                    <span class="@(ok ? "ds-url-ok" : "ds-url-fail")">@(ok ? "✓" : "✗")</span>
-                    <span>@label</span>
-                </div>
-            }
-        </div>
-    }
 </div>
 
 <!-- ── Step 2: SST Taxonomy ──────────────────────────────────────────────────── -->
 <div class="setup-card @(step2Ok ? "setup-card-done" : "")">
     <div class="setup-card-header">
-        <div>
-            <h2 class="setup-card-title">
-                <span class="setup-step-num @(step2Ok ? "num-done" : (step1Ok ? "num-active" : "num-todo"))">@(step2Ok ? "✓" : "2")</span>
-                SST Product/Service Taxonomy
-            </h2>
-            <p class="setup-card-desc">
-                Downloads the SSUTA Agreement PDF, extracts Appendix C defined terms, and builds
-                the product/service category tree used to scope tax rates per product type.
-                Source: <span class="mono-sm">@TruncateUrl(settings.Current.SstAgreementUrl)</span>
-            </p>
-        </div>
-        <div class="setup-card-actions">
-            <button class="btn-primary" @onclick="RunSstImport" disabled="@(importBusy || !step1Ok)">
-                @(sstRunning ? "Importing…" : (step2Ok ? "↺ Re-import" : "▶ Import Taxonomy"))
-            </button>
-        </div>
+        <h2 class="setup-card-title">
+            <span class="setup-step-num @(step2Ok ? "num-done" : (step1Ok ? "num-active" : "num-todo"))">@(step2Ok ? "✓" : "2")</span>
+            SST Product/Service Taxonomy
+        </h2>
+        <p class="setup-card-desc">
+            Downloads the SSUTA Agreement PDF, extracts Appendix C defined terms, and builds
+            the product/service category tree used to scope tax rates per product type.
+            Source: <span class="mono-sm">@TruncateUrl(settings.Current.SstAgreementUrl)</span>
+        </p>
     </div>
     @if (!string.IsNullOrEmpty(sstMsg))
     {
         <div class="setup-status @(sstMsg.StartsWith("✗") ? "setup-status-error" : "setup-status-ok")">@sstMsg</div>
     }
+    <div class="settings-actions">
+        <button class="btn-primary" @onclick="RunSstImport" disabled="@(importBusy || !step1Ok)">
+            @(sstRunning ? "Importing…" : (step2Ok ? "↺ Re-import" : "▶ Import Taxonomy"))
+        </button>
+    </div>
 </div>
 
 <!-- ── Step 3: Census jurisdictions ─────────────────────────────────────────── -->
@@ -478,11 +603,160 @@
     </div>
 }
 
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- ── Phase 3: Business Configuration ──────────────────────────────────────── -->
+<div class="setup-phase-label">Phase 3 — Business Configuration</div>
+
+<!-- ── Subscription Pricing ──────────────────────────────────────────────────── -->
+<div class="setup-card">
+    <div class="setup-card-header">
+        <div>
+            <h2 class="setup-card-title">Subscription Pricing</h2>
+            <p class="setup-card-desc">
+                The unit price charged per state per month. A subscriber who selects 10 states is billed
+                <em>PricePerState × countyCount(selectedStates)</em> each billing cycle. Changes take effect
+                immediately for new checkouts — existing subscriptions are not retroactively changed.
+            </p>
+        </div>
+    </div>
+    @if (pricing is not null)
+    {
+        <div class="setting-row">
+            <label class="setting-label">Price per state / month</label>
+            <div style="display:flex;align-items:center;gap:.5rem">
+                <span class="muted">$</span>
+                <input class="setting-input setting-input-sm" type="number" step="0.001" min="0.001"
+                       @bind="pricing.PricePerState" />
+                <span class="muted">USD · 50 states = @((pricing.PricePerState * 50).ToString("C"))/mo full access</span>
+            </div>
+        </div>
+        <div class="setting-row" style="margin-top:.6rem">
+            <label class="setting-label">Price per product category / month</label>
+            <div style="display:flex;align-items:center;gap:.5rem">
+                <span class="muted">$</span>
+                <input class="setting-input setting-input-sm" type="number" step="0.001" min="0.001"
+                       @bind="pricing.PricePerCategory" />
+                <span class="muted">USD per category selected by subscriber</span>
+            </div>
+        </div>
+        <div class="setting-row" style="margin-top:.6rem">
+            <label class="setting-label">Currency</label>
+            <input class="setting-input" style="max-width:80px" @bind="pricing.Currency" />
+        </div>
+        <div class="settings-actions" style="margin-top:.75rem">
+            <button class="btn-primary" @onclick="SavePricing" disabled="@adminBusy">Save Pricing</button>
+            @if (adminStatus is not null) { <span class="save-confirm">@adminStatus</span> }
+        </div>
+    }
+    else { <div class="loading-state">Loading…</div> }
+</div>
+
+<!-- ── PayPal Integration ──────────────────────────────────────────────────────── -->
+<div class="setup-card">
+    <div class="setup-card-header">
+        <div>
+            <h2 class="setup-card-title">PayPal Integration</h2>
+            <p class="setup-card-desc">
+                PayPal handles subscription checkout. Leave blank to run in <strong>mock mode</strong> —
+                payments are simulated and no real charges occur. Get credentials at
+                <a href="https://developer.paypal.com/dashboard/" target="_blank">developer.paypal.com</a> →
+                Apps &amp; Credentials. Start in Sandbox until ready for live transactions.
+            </p>
+        </div>
+    </div>
+    @if (paypal is not null)
+    {
+        <div class="setting-row">
+            <label class="setting-label">Mode</label>
+            <div class="theme-toggle">
+                <button class="theme-btn @(paypal.Mode == "sandbox" ? "theme-active" : "")"
+                        @onclick='() => paypal.Mode = "sandbox"'>Sandbox</button>
+                <button class="theme-btn @(paypal.Mode == "live" ? "theme-active" : "")"
+                        @onclick='() => paypal.Mode = "live"'>Live</button>
+            </div>
+        </div>
+        <div class="setting-row" style="margin-top:.6rem">
+            <label class="setting-label">Client ID</label>
+            <input class="setting-input" placeholder="AXxx… (from PayPal dashboard)" @bind="paypal.ClientId" />
+        </div>
+        <div class="setting-row" style="margin-top:.6rem">
+            <label class="setting-label">Client Secret</label>
+            <input class="setting-input" type="password" placeholder="EXxx… (keep secret)" @bind="paypal.ClientSecret" />
+        </div>
+        <div class="setting-row" style="margin-top:.6rem">
+            <label class="setting-label">Webhook ID <span class="muted">(optional)</span></label>
+            <input class="setting-input" placeholder="For payment signature verification" @bind="paypal.WebhookId" />
+        </div>
+        <div class="settings-actions" style="margin-top:.75rem">
+            <button class="btn-primary" @onclick="SavePayPal" disabled="@adminBusy">Save PayPal Config</button>
+            @if (adminStatus is not null) { <span class="save-confirm">@adminStatus</span> }
+        </div>
+    }
+    else { <div class="loading-state">Loading…</div> }
+</div>
+
+<!-- ── Maintenance ────────────────────────────────────────────────────────────── -->
+<div class="setup-phase-label">Maintenance</div>
+
+<!-- ── Database Backup ───────────────────────────────────────────────────────── -->
+<div class="setup-card">
+    <div class="setup-card-header">
+        <div>
+            <h2 class="setup-card-title">Database Backup</h2>
+            <p class="setup-card-desc">
+                Exports the SQL Server database to a <code>.bacpac</code> file (a portable schema + data archive).
+                Requires <code>sqlpackage</code>: <code>dotnet tool install -g microsoft.sqlpackage</code>
+            </p>
+        </div>
+    </div>
+    <div style="flex-direction:column;align-items:flex-start;gap:.4rem">
+        <label class="setting-label">Output path</label>
+        <input class="setting-input" style="font-size:.85rem;font-family:monospace;margin-top:.25rem"
+               placeholder="C:\Users\…\TaxRateCollector.bacpac" @bind="backupPath" />
+    </div>
+    <div class="settings-actions" style="margin-top:.75rem;gap:.6rem">
+        <button class="btn-primary" @onclick="CreateBackup" disabled="@backupBusy">
+            @(backupBusy ? "Exporting…" : "Create Backup")
+        </button>
+        @if (!string.IsNullOrEmpty(backupMsg))
+        {
+            <span class="@(backupMsg.StartsWith("✗") ? "text-error" : "save-confirm")">@backupMsg</span>
+        }
+    </div>
+</div>
+
+<!-- ── Danger Zone ────────────────────────────────────────────────────────────── -->
+<div class="setup-card settings-section-danger">
+    <div class="setup-card-header">
+        <div>
+            <h2 class="setup-card-title" style="color:var(--color-error,#dc2626)">Danger Zone</h2>
+            <p class="setup-card-desc">
+                Permanently deletes all collected data. The schema (tables, indexes, migrations) is preserved.
+                Login credentials and payment configuration are <strong>not</strong> cleared.
+                You will need to re-run the Phase 2 import pipeline after truncating.
+            </p>
+        </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+        <button class="btn-danger" @onclick="TruncateAll" disabled="@truncateBusy">
+            @(truncateBusy ? "Truncating…" : "Truncate All Data")
+        </button>
+        @if (!string.IsNullOrEmpty(truncateMsg))
+        {
+            <span class="@(truncateMsg.StartsWith("✗") ? "text-error" : "save-confirm")">@truncateMsg</span>
+        }
+    </div>
+    <p class="section-note" style="margin-top:.5rem;color:var(--color-error,#dc2626)">
+        Clears: Jurisdictions · TaxRates · ZipCodes · TaxCategories · TaxCategoryRules ·
+        ExciseTaxRates · ScrapeRuns · ChangeLog · SourceDocuments · Subscribers · BillingRecords · LogEntries
+    </p>
+</div>
+
 @code {
     // ── Counts ────────────────────────────────────────────────────────────────
     private int countyCount, cityCount, zipCount, taxCategoryCount, scrapeRunCount, jurisdictionsWithSources;
 
-    private bool step1Ok => urlResults.Count > 0 && urlResults.All(r => r.Ok);
+    private bool step1Ok => urlResults.Count > 0 && urlResults.Values.All(v => v);
     private bool step2Ok => taxCategoryCount > 0;
     private bool step3Ok => countyCount > 0 && cityCount > 0;
     private bool step4Ok => zipCount > 0;
@@ -491,7 +765,7 @@
 
     // ── URL validation ────────────────────────────────────────────────────────
     private bool checkingUrls;
-    private List<(string Label, bool Ok)> urlResults = [];
+    private Dictionary<string, bool> urlResults = [];
 
     private Dictionary<string, (string Label, Func<string> Url)> UrlMap => new()
     {
@@ -519,7 +793,28 @@
     private record ZipStateRow(string StateCode, int Total, int CountyLinked, int CityLinked);
     private List<ZipStateRow> zipStateCounts = [];
 
-    protected override async Task OnInitializedAsync() => await Refresh();
+    // ── Config / admin state ──────────────────────────────────────────────────
+    private bool configBusy;
+    private string? configMsg;
+    private bool adminBusy;
+    private string? adminStatus;
+    private PricingConfig? pricing;
+    private PayPalConfig? paypal;
+    private bool backupBusy;
+    private string? backupMsg;
+    private string backupPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        $"TaxRateCollector_{DateTime.Now:yyyyMMdd}.bacpac");
+    private bool truncateBusy;
+    private string? truncateMsg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Refresh();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        pricing = await db.PricingConfigs.FirstOrDefaultAsync();
+        paypal  = await db.PayPalConfigs.FirstOrDefaultAsync();
+    }
 
     private async Task Refresh()
     {
@@ -549,20 +844,19 @@
 
         var tasks = UrlMap.Select(async kv =>
         {
-            var (label, urlFn) = kv.Value;
-            var url = urlFn();
-            if (string.IsNullOrWhiteSpace(url)) return (label, false);
+            var url = kv.Value.Url();
+            if (string.IsNullOrWhiteSpace(url)) return (kv.Key, false);
             try
             {
                 using var req = new HttpRequestMessage(HttpMethod.Head, url);
                 using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
-                return (label, resp.IsSuccessStatusCode || (int)resp.StatusCode < 400);
+                return (kv.Key, resp.IsSuccessStatusCode || (int)resp.StatusCode < 400);
             }
-            catch { return (label, false); }
+            catch { return (kv.Key, false); }
         });
 
         var results = await Task.WhenAll(tasks);
-        urlResults = results.Select(r => (r.Item1, r.Item2)).ToList();
+        urlResults = results.ToDictionary(r => r.Item1, r => r.Item2);
         checkingUrls = false;
         StateHasChanged();
     }
@@ -837,5 +1131,141 @@
     {
         if (string.IsNullOrEmpty(url) || url == "—") return url;
         return url.Length <= 40 ? url : url[..37] + "…";
+    }
+
+    // ── Config save ───────────────────────────────────────────────────────────
+    private async Task SaveConfig()
+    {
+        configBusy = true;
+        settings.Save();
+        configMsg = "✓ Saved";
+        StateHasChanged();
+        await Task.Delay(2000);
+        configMsg = null;
+        configBusy = false;
+        StateHasChanged();
+    }
+
+    // ── Pricing ───────────────────────────────────────────────────────────────
+    private async Task SavePricing()
+    {
+        if (pricing is null) return;
+        adminBusy = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            pricing.UpdatedAt = DateTime.UtcNow.ToString("o");
+            db.PricingConfigs.Update(pricing);
+            await db.SaveChangesAsync();
+            SetAdminStatus("✓ Pricing saved");
+        }
+        catch (Exception ex) { SetAdminStatus($"✗ {ex.Message}"); }
+        finally { adminBusy = false; }
+    }
+
+    // ── PayPal ────────────────────────────────────────────────────────────────
+    private async Task SavePayPal()
+    {
+        if (paypal is null) return;
+        adminBusy = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            paypal.UpdatedAt = DateTime.UtcNow.ToString("o");
+            db.PayPalConfigs.Update(paypal);
+            await db.SaveChangesAsync();
+            SetAdminStatus("✓ PayPal config saved");
+        }
+        catch (Exception ex) { SetAdminStatus($"✗ {ex.Message}"); }
+        finally { adminBusy = false; }
+    }
+
+    private void SetAdminStatus(string msg)
+    {
+        adminStatus = msg;
+        StateHasChanged();
+        _ = Task.Delay(3000).ContinueWith(_ => { adminStatus = null; InvokeAsync(StateHasChanged); });
+    }
+
+    // ── Backup ────────────────────────────────────────────────────────────────
+    private async Task CreateBackup()
+    {
+        if (string.IsNullOrWhiteSpace(backupPath)) return;
+        backupBusy = true; backupMsg = null;
+        StateHasChanged();
+        try
+        {
+            var connStr = Configuration.GetConnectionString("DefaultConnection") ?? "";
+            var server = ""; var database = "";
+            foreach (var part in connStr.Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var kv = part.Split('=', 2);
+                if (kv.Length < 2) continue;
+                var key = kv[0].Trim(); var val = kv[1].Trim();
+                if (key.Equals("Server", StringComparison.OrdinalIgnoreCase) ||
+                    key.Equals("Data Source", StringComparison.OrdinalIgnoreCase))
+                    server = val;
+                else if (key.Equals("Database", StringComparison.OrdinalIgnoreCase) ||
+                         key.Equals("Initial Catalog", StringComparison.OrdinalIgnoreCase))
+                    database = val;
+            }
+            var dir = Path.GetDirectoryName(backupPath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            using var proc = new System.Diagnostics.Process();
+            proc.StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "sqlpackage",
+                Arguments = $"/Action:Export /SourceServerName:\"{server}\" /SourceDatabaseName:\"{database}\" /TargetFile:\"{backupPath}\"",
+                RedirectStandardOutput = true, RedirectStandardError = true,
+                UseShellExecute = false, CreateNoWindow = true
+            };
+            proc.Start();
+            await proc.WaitForExitAsync();
+            sw.Stop();
+            backupMsg = proc.ExitCode == 0
+                ? $"✓ Saved to {backupPath} ({sw.Elapsed.TotalSeconds:F1}s)"
+                : $"✗ sqlpackage exited {proc.ExitCode}: {(await proc.StandardError.ReadToEndAsync()).Split('\n').FirstOrDefault()?.Trim()}";
+        }
+        catch (Exception ex) { backupMsg = $"✗ {ex.Message}"; }
+        finally { backupBusy = false; StateHasChanged(); }
+    }
+
+    // ── Truncate ──────────────────────────────────────────────────────────────
+    private async Task TruncateAll()
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm",
+            "TRUNCATE ALL DATA?\n\nThis permanently deletes:\n" +
+            "  • All jurisdictions, tax rates, ZIP codes\n" +
+            "  • All tax categories and rules\n" +
+            "  • All scrape runs, source documents, change log\n" +
+            "  • All subscribers, billing records, log entries\n\n" +
+            "Login credentials and payment config are preserved.\n\nContinue?");
+        if (!confirmed) return;
+        truncateBusy = true; truncateMsg = null;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM BillingRecords");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM SubscribedStates");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM Subscribers");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM LogEntries");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM ChangeLog");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM ExciseSourceDocuments");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM ExciseTaxRates");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM SourceDocuments");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM TaxRates");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM ScrapeRuns");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM ZipCodes");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM TaxCategoryRules");
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE TaxCategories NOCHECK CONSTRAINT ALL");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM TaxCategories");
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE TaxCategories WITH CHECK CHECK CONSTRAINT ALL");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM Jurisdictions");
+            truncateMsg = "✓ All data cleared.";
+        }
+        catch (Exception ex) { truncateMsg = $"✗ {ex.Message}"; }
+        finally { truncateBusy = false; StateHasChanged(); }
     }
 }

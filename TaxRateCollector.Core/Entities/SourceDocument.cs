@@ -44,6 +44,18 @@ public class SourceDocument
     public string FileName { get; set; } = string.Empty;
 
     /// <summary>
+    /// The original filename as uploaded by the admin (e.g. "Alaska-Rate-2024.pdf").
+    /// Used for display in the evidence reader breadcrumb.
+    /// </summary>
+    public string OriginalFileName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Evidence type discriminator: "pdf", "txt", "csv", "xlsx", "html", "json",
+    /// "url" (external link, no file on disk), or "raw" (inline text in RawContent).
+    /// </summary>
+    public string EvidenceType { get; set; } = string.Empty;
+
+    /// <summary>
     /// For text/API evidence: the raw content or a short note.
     /// For file evidence: empty (the file lives on disk, identified by FileName).
     /// </summary>

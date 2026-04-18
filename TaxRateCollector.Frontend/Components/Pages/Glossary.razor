@@ -86,8 +86,30 @@
             new("SST Member State",
                 "A state that has fully ratified the SSUTA and is bound by its uniform definitions. As of 2025 there are " +
                 "<strong>24 full members</strong>: AR, GA, IN, IA, KS, KY, MI, MN, NE, NV, NJ, NC, ND, OH, OK, RI, SD, TN, UT, VT, WA, WV, WI, WY. " +
-                "Major states including CA, TX, NY, FL, and PA are <em>not</em> members and define their own taxability rules independently.",
+                "Local jurisdictions within a member state must follow the state's SST-derived taxability base — they cannot independently redefine exemptions. " +
+                "Major states including CA, TX, NY, FL, IL, and PA are <em>not</em> members and define their own taxability rules independently.",
                 Badge: "24 states", BadgeClass: "badge-sst"),
+
+            new("Non-SST State",
+                "A state with a sales tax that has <em>not</em> ratified the SSUTA. There are approximately 21 such states. " +
+                "Their taxability rules for individual product/service categories can differ substantially from the SST definitions — " +
+                "even when they use the same category name. The <strong>TaxCategory</strong> tree still applies as a classification scaffold, " +
+                "but <strong>StateCategoryRule</strong> rows for these states must be sourced from each state's own statutes, not from the SST Taxability Matrix." +
+                "<table class='gloss-table'>" +
+                "<tr><th>State</th><th>Notable difference</th></tr>" +
+                "<tr><td>California</td><td>Own definitions for candy &amp; dietary supplements; complex district taxes</td></tr>" +
+                "<tr><td>Texas</td><td>Own definitions for food, software, and services; origin-based intrastate sourcing</td></tr>" +
+                "<tr><td>Florida</td><td>Broad sales tax base with unique service exemptions; no personal income tax</td></tr>" +
+                "<tr><td>New York</td><td>Clothing under $110 exempt; complex state + NYC + county layers</td></tr>" +
+                "<tr><td>Illinois</td><td>Two-tier rates: 1% food/drugs, 6.25% general</td></tr>" +
+                "<tr><td>Pennsylvania</td><td>Clothing and most food fully exempt; taxable items differ from SST</td></tr>" +
+                "<tr><td>Arizona</td><td>Transaction privilege tax — taxed on seller's privilege, not the buyer's purchase</td></tr>" +
+                "<tr><td>Louisiana</td><td>State + parish rates; unique food and drug definitions</td></tr>" +
+                "<tr><td>Colorado</td><td>~70 home-rule cities each administer their own sales tax independently</td></tr>" +
+                "<tr><td>Virginia</td><td>Reduced 2.5% food rate; definitions diverge from SST in several categories</td></tr>" +
+                "</table>" +
+                "<em>Five states levy no sales tax at all: AK, DE, MT, NH, OR.</em>",
+                Badge: "~21 states", BadgeClass: "badge-warn"),
 
             new("SST Taxability Matrix",
                 "A state-by-state disclosure table published at <em>sst.streamlinedsalestax.org/TM</em>. Each SST member state " +

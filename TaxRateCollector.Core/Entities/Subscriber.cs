@@ -18,5 +18,6 @@ public class Subscriber
     public string CreatedAt { get; set; } = "";
 
     public ICollection<SubscribedState> SubscribedStates { get; set; } = [];
+    public ICollection<SubscribedCategory> SubscribedCategories { get; set; } = [];
     public ICollection<BillingRecord> BillingRecords { get; set; } = [];
 }

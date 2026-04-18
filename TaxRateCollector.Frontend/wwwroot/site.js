@@ -38,6 +38,27 @@ window.initFont = function (serverFont, serverSize) {
     window.applyFont(fontKey, parseInt(fontSize, 10));
 };
 
+// ── Evidence reader ───────────────────────────────────────────────────────────
+window.evidenceReader = (() => {
+    return {
+        open(overlayId) {
+            const shield = document.getElementById('evidence-reader-shield');
+            const body   = document.getElementById('evidence-reader-body');
+            if (shield && body)
+                shield.addEventListener('wheel', e => { body.scrollTop += e.deltaY; e.preventDefault(); }, { passive: false });
+        },
+
+        close() {},
+
+        async fetchText(url) {
+            try {
+                const res = await fetch(url, { credentials: 'include' });
+                return res.ok ? await res.text() : null;
+            } catch { return null; }
+        }
+    };
+})();
+
 // ── File download ─────────────────────────────────────────────────────────────
 window.downloadBase64File = function (fileName, mimeType, base64) {
     const bytes = atob(base64);

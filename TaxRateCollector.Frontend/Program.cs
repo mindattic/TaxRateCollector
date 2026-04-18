@@ -51,6 +51,7 @@ builder.Services.AddIdentityCore<IdentityUser>(options =>
     options.Password.RequireNonAlphanumeric = false;
     options.SignIn.RequireConfirmedEmail = false;
 })
+.AddRoles<IdentityRole>()
 .AddEntityFrameworkStores<AppDbContext>()
 .AddSignInManager()
 .AddDefaultTokenProviders();
@@ -122,6 +123,7 @@ await using (var db = await dbFactory.CreateDbContextAsync())
         db.PricingConfigs.Add(new PricingConfig
         {
             PricePerState = 0.01m,
+            PricePerCategory = 0.01m,
             Currency = "USD",
             UpdatedAt = DateTime.UtcNow.ToString("o")
         });
@@ -140,18 +142,38 @@ await using (var db = await dbFactory.CreateDbContextAsync())
     Console.WriteLine("[startup] DB ready.");
 }
 
-// ── Dev admin user seeding ────────────────────────────────────────────────────
-var devAdminEmail = builder.Configuration["DEV_ADMIN_EMAIL"];
-var devAdminPassword = builder.Configuration["DEV_ADMIN_PASSWORD"];
-if (!string.IsNullOrEmpty(devAdminEmail) && !string.IsNullOrEmpty(devAdminPassword))
+// ── Roles + admin + demo subscribers ─────────────────────────────────────────
 {
     using var scope = app.Services.CreateScope();
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
-    if (await userManager.FindByEmailAsync(devAdminEmail) == null)
+    var userManager  = scope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>();
+    var roleManager  = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    var dbFactory2   = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+
+    // Ensure Administrator role exists
+    if (!await roleManager.RoleExistsAsync("Administrator"))
+        await roleManager.CreateAsync(new IdentityRole("Administrator"));
+
+    // Seed admin user from config
+    var devAdminEmail    = builder.Configuration["DEV_ADMIN_EMAIL"];
+    var devAdminPassword = builder.Configuration["DEV_ADMIN_PASSWORD"];
+    if (!string.IsNullOrEmpty(devAdminEmail) && !string.IsNullOrEmpty(devAdminPassword))
     {
-        var adminUser = new IdentityUser { UserName = devAdminEmail, Email = devAdminEmail, EmailConfirmed = true };
-        await userManager.CreateAsync(adminUser, devAdminPassword);
+        var adminUser = await userManager.FindByEmailAsync(devAdminEmail);
+        if (adminUser == null)
+        {
+            adminUser = new IdentityUser { UserName = devAdminEmail, Email = devAdminEmail, EmailConfirmed = true };
+            await userManager.CreateAsync(adminUser, devAdminPassword);
+            Console.WriteLine($"[seed] Created admin user: {devAdminEmail}");
+        }
+        if (!await userManager.IsInRoleAsync(adminUser, "Administrator"))
+            await userManager.AddToRoleAsync(adminUser, "Administrator");
     }
+
+    // Seed demo subscribers
+    Console.WriteLine("[seed] Seeding demo subscribers…");
+    await using var db2 = await dbFactory2.CreateDbContextAsync();
+    await DemoSubscriberSeeder.SeedAsync(db2, userManager);
+    Console.WriteLine("[seed] Demo subscribers ready.");
 }
 
 // ── Middleware ────────────────────────────────────────────────────────────────
@@ -206,6 +228,32 @@ if (app.Environment.IsDevelopment())
         return Results.Redirect("/");
     });
 }
+
+// ── Auth endpoints (Blazor Server can't set auth cookies mid-stream) ─────────
+app.MapPost("/login-submit", async (HttpContext ctx, SignInManager<IdentityUser> signIn) =>
+{
+    var email    = ctx.Request.Form["email"].ToString();
+    var password = ctx.Request.Form["password"].ToString();
+    var returnUrl = ctx.Request.Form["returnUrl"].ToString();
+
+    var result = await signIn.PasswordSignInAsync(email, password, isPersistent: true, lockoutOnFailure: true);
+
+    if (result.Succeeded)
+    {
+        var target = !string.IsNullOrWhiteSpace(returnUrl) ? returnUrl : "/";
+        ctx.Response.Redirect(target);
+    }
+    else if (result.IsLockedOut)
+        ctx.Response.Redirect("/login?error=locked");
+    else
+        ctx.Response.Redirect("/login?error=invalid");
+});
+
+app.MapPost("/logout", async (HttpContext ctx, SignInManager<IdentityUser> signIn) =>
+{
+    await signIn.SignOutAsync();
+    ctx.Response.Redirect("/login");
+});
 
 // ── Blazor ────────────────────────────────────────────────────────────────────
 app.MapStaticAssets();

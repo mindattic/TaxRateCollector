@@ -1,6 +1,6 @@
 # TaxRateCollector
 
-A Blazor Server application that builds and maintains an exhaustively researched, evidence-backed master table of US sales and excise tax rates for all jurisdictions (Country → State → County → City). Every tax rate row stores the raw source document — API response, PDF, or website capture — and a SHA-256 content hash to prove its veracity without requiring a live network call.
+A Blazor Server application that builds and maintains an exhaustively researched, evidence-backed master table of US sales and excise tax rates for every jurisdiction (Country → State → County → City). Every tax rate row stores the raw source document — API response, PDF, or website capture — and a SHA-256 content hash to prove its veracity without a live network call.
 
 ---
 
@@ -9,49 +9,61 @@ A Blazor Server application that builds and maintains an exhaustively researched
 1. [Architecture Overview](#architecture-overview)
 2. [Prerequisites](#prerequisites)
 3. [Project Structure](#project-structure)
-4. [Getting Started (Local Dev)](#getting-started-local-dev)
-5. [Database Migrations](#database-migrations)
-6. [Data Model](#data-model)
-7. [Evidence & Provenance System](#evidence--provenance-system)
-8. [Scraper Framework](#scraper-framework)
+4. [Getting Started](#getting-started)
+5. [How the Schema Gets Populated](#how-the-schema-gets-populated)
+   - [On Every Startup (automatic)](#on-every-startup-automatic)
+   - [Step 1 — SST Product/Service Taxonomy](#step-1--sst-productservice-taxonomy)
+   - [Step 2 — Census Jurisdictions (Counties & Cities)](#step-2--census-jurisdictions-counties--cities)
+   - [Step 3 — ZIP Code Crosswalks](#step-3--zip-code-crosswalks)
+   - [Step 4 — Tax Rate Scraping](#step-4--tax-rate-scraping)
+   - [Other Admin-Configured Tables](#other-admin-configured-tables)
+6. [SSUTA Membership & Non-Member States](#ssuta-membership--non-member-states)
+7. [Database Schema](#database-schema)
+8. [Data Source URLs](#data-source-urls)
 9. [Settings](#settings)
-10. [UI Pages](#ui-pages)
-11. [Exports (Master Table)](#exports-master-table)
-12. [NUnit Tests](#nunit-tests)
-13. [Planned: Roles & Subscriptions](#planned-roles--subscriptions)
-14. [Deploying to Azure](#deploying-to-azure)
-15. [Adding a New State Scraper](#adding-a-new-state-scraper)
+10. [Evidence & Provenance System](#evidence--provenance-system)
+11. [UI Pages](#ui-pages)
+12. [Exports](#exports)
+13. [Database Migrations](#database-migrations)
+14. [NUnit Tests](#nunit-tests)
+15. [Scraper Framework](#scraper-framework)
+16. [Adding a New State Scraper](#adding-a-new-state-scraper)
+17. [Roles & Subscriptions](#roles--subscriptions)
+18. [Deploying to Azure](#deploying-to-azure)
 
 ---
 
 ## Architecture Overview
 
 ```
-TaxRateCollector.Core           Domain entities, enums, interfaces, constants
-TaxRateCollector.Infrastructure EF Core, migrations, seeder, scrapers, services
-TaxRateCollector.Frontend       Blazor Server UI, pages, settings, exports
-TaxRateCollector.UnitTests      NUnit 4 — hierarchy, rate calculation, evidence hash
+TaxRateCollector.Core           Domain entities, enums, interfaces
+TaxRateCollector.Infrastructure EF Core, migrations, seeders, importers, scrapers, services
+TaxRateCollector.Frontend       Blazor Server UI, pages, exports
+TaxRateCollector.UnitTests      NUnit 4 — hierarchy, seeder correctness, DB population
 ```
 
 **Stack:**
 
 | Layer | Technology |
 |---|---|
-| UI | ASP.NET Core 10, Blazor Server (InteractiveServer) |
+| UI | ASP.NET Core 10, Blazor Server (`InteractiveServer`) |
 | ORM | EF Core 10 |
-| Database (dev) | SQLite |
-| Database (prod) | Azure SQL (planned) |
+| Database (dev) | SQL Server LocalDB |
+| Database (prod) | SQL Server / Azure SQL |
+| PDF extraction | UglyToad.PdfPig (custom build) |
 | XLSX export | ClosedXML 0.105 |
 | HTML scraping | HtmlAgilityPack |
 | CSV parsing | CsvHelper |
 | Logging | Serilog.AspNetCore |
-| Testing | NUnit 4, EF Core InMemory |
+| Auth | ASP.NET Core Identity |
+| Testing | NUnit 4, EF Core InMemory, SQL Server LocalDB |
 
 ---
 
 ## Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- SQL Server LocalDB (included with Visual Studio, or `sqllocaldb create MSSQLLocalDB`)
 - Git
 - (Optional) Visual Studio 2022 17.10+ or Rider 2024.1+
 
@@ -62,104 +74,461 @@ TaxRateCollector.UnitTests      NUnit 4 — hierarchy, rate calculation, evidenc
 ```
 TaxRateCollector/
 ├── TaxRateCollector.Core/
-│   ├── Constants/
-│   │   └── TaxRateConstants.cs         JurisdictionTier, TaxSourceType, TaxCategory string constants
 │   ├── Entities/
-│   │   ├── ChangeLogEntry.cs           Rate-change audit log
-│   │   ├── ExciseTaxRate.cs            Sin/excise tax (alcohol, tobacco, cannabis, etc.)
 │   │   ├── Jurisdiction.cs             Self-referential hierarchy node (Country/State/County/City)
-│   │   ├── JurisdictionData.cs         Canon-pattern domain models (JSON-first DTOs)
+│   │   ├── TaxRate.cs                  Rate row with IsCurrent, TaxCategoryId, evidence link
+│   │   ├── TaxCategory.cs              SST taxonomy node (hierarchical)
+│   │   ├── SourceDocument.cs           Evidence doc (SHA-256, raw content, SourceUrl)
+│   │   ├── StateTaxProfile.cs          State-level metadata (agency name/URL, SST membership)
+│   │   ├── ExciseTaxRate.cs            Sin/excise tax (alcohol, tobacco, cannabis, fuel, hotel)
 │   │   ├── ScrapeRun.cs                Scrape run metadata (status, timestamps, counts)
-│   │   ├── SourceDocument.cs           Evidence doc attached to a TaxRate row
-│   │   └── TaxRate.cs                  Tax rate row (rate, effective date, raw value, IsCurrent)
+│   │   ├── ZipCodeRecord.cs            ZIP → State/County/City junction
+│   │   └── ...billing, changelog, logs
 │   ├── Enums/
-│   │   ├── ChangeType.cs
-│   │   ├── JurisdictionType.cs         Country=0, State=1, County=2, City=3, District=4
-│   │   ├── ProductCategory.cs          Alcohol, Cigarettes, Cannabis, Fuel, Hotel, etc.
-│   │   ├── ScrapeStatus.cs             Running, Completed, Failed, Manual
-│   │   └── SourceType.cs               Api, Pdf, Csv, Website, Manual
+│   │   ├── JurisdictionType.cs         Country=0, State=1, County=2, City=3
+│   │   ├── CategoryTaxability.cs       Taxable, Exempt, Reduced, Varies
+│   │   ├── LocalTaxAuthorityType.cs    Piggyback, HomeRule, SstUniform, Independent
+│   │   └── ...ScrapeStatus, SourceType, ProductCategory
 │   └── Interfaces/
-│       ├── ICanonEntity.cs             Marker interface for canon-pattern domain objects
-│       ├── IDiffEngine.cs
 │       ├── IScrapeOrchestrator.cs
-│       ├── IScrapeStrategy.cs          Per-state scrape plug-in contract
-│       └── ITaxCalculator.cs
+│       ├── IScrapeStrategy.cs
+│       ├── ISstTaxonomyImportService.cs
+│       └── ...
 │
 ├── TaxRateCollector.Infrastructure/
 │   ├── Data/
-│   │   └── AppDbContext.cs             EF Core DbContext, fluent configuration
+│   │   └── AppDbContext.cs             EF Core DbContext, all 25 tables
 │   ├── Migrations/
-│   │   ├── 20260411172034_InitialCreate.*
-│   │   ├── 20260415000001_AddHierarchyAndSourceDocument.*
-│   │   ├── 20260415000002_AddExciseTaxRates.*
-│   │   └── AppDbContextModelSnapshot.cs
-│   ├── Scrapers/
-│   │   ├── ScrapeOrchestrator.cs       Loops jurisdictions, dispatches to matching IScrapeStrategy
-│   │   ├── Sanitizer.cs                Rate string cleaning / normalization
-│   │   └── Strategies/
-│   │       ├── IllinoisTableScraper.cs HTML table parser for tax.illinois.gov
-│   │       ├── CaliforniaCsvScraper.cs CSV parser for CDTFA rate file
-│   │       └── TexasExcelScraper.cs    XLSX parser for comptroller.texas.gov rate file
 │   ├── Seeding/
-│   │   └── JurisdictionSeeder.cs       Seeds ~700 jurisdictions with 2024 rates on first run
+│   │   ├── JurisdictionSeeder.cs       Seeds Country + 51 States on startup
+│   │   ├── TaxCategorySeeder.cs        Seeds SST taxonomy from hardcoded SstTaxonomyData
+│   │   ├── StateTaxProfileSeeder.cs    Seeds 51 state tax profiles (hardcoded, verified 2025-01-01)
+│   │   └── SstTaxonomyData.cs          Hardcoded SST category hierarchy definitions
 │   └── Services/
-│       ├── AlertService.cs             In-process alert bus (toast notifications)
-│       ├── DiffEngine.cs               Compares scraped rate to current; creates ChangeLogEntry
-│       ├── ScrapeSchedulerService.cs   IHostedService: runs scrapers on configurable cadence
-│       ├── SettingsService.cs          Reads/writes %APPDATA%\MindAttic\TaxRateCollector\settings.json
-│       └── TaxCalculator.cs            Walks ParentId chain to compute combined rate
+│       ├── CensusJurisdictionImportService.cs  Downloads Census ZIPs → creates ~3,200 counties + ~30,000 cities
+│       ├── ZipImportService.cs                 Downloads Census crosswalks → links ~33,000 ZIPs
+│       ├── SstTaxonomyImportService.cs         Downloads SSUTA PDF → refreshes TaxCategory descriptions
+│       ├── ScrapeOrchestrator.cs
+│       ├── ScrapeSchedulerService.cs           IHostedService background re-scrape
+│       ├── SettingsService.cs                  Reads/writes %APPDATA%\MindAttic\TaxRateCollector\settings.json
+│       └── ...DiffEngine, AlertService, TaxCalculator
 │
 ├── TaxRateCollector.Frontend/
-│   ├── Components/
-│   │   ├── App.razor                   Root component + theme init script
-│   │   ├── Layout/
-│   │   │   ├── MainLayout.razor        3-tab shell: Jurisdictions | Master Table | Settings
-│   │   │   └── NavMenu.razor
-│   │   └── Pages/
-│   │       ├── Jurisdictions.razor     Lazy-loading hierarchy tree, inline rate edit, evidence panel
-│   │       ├── MasterTable.razor       Full dataset table with filter, sort, and export
-│   │       └── Settings.razor          Theme, USPS API key, scraper preferences
-│   ├── wwwroot/
-│   │   ├── app.css                     CSS custom properties (light/dark tokens), page styles
-│   │   └── site.js                     applyTheme(), initTheme(), downloadBase64File()
-│   └── Program.cs                      DI registration, migrate+seed on startup
+│   ├── Components/Pages/
+│   │   ├── Jurisdictions.razor         Lazy-loading hierarchy tree, inline rate edit, evidence drop zones
+│   │   ├── Setup.razor                 6-step admin pipeline to populate the database
+│   │   ├── Settings.razor              Theme, URLs, PayPal/pricing config, DB backup
+│   │   ├── Glossary.razor              SST term definitions
+│   │   └── Logs.razor
+│   ├── Services/
+│   │   └── ViewAsService.cs            Admin preview roles (Actual / Subscriber / Guest)
+│   └── Program.cs                      DI registration, migrate → seed on startup
 │
 └── TaxRateCollector.UnitTests/
-    ├── EvidenceTests/
-    │   └── EvidenceValidationTests.cs  SHA-256 hashing, SourceDocument integrity, MIME mapping
-    └── JurisdictionTests/
-        └── HierarchyTests.cs           Combined rate calculation, hierarchy structure, rate uniqueness
+    └── SetupTests/
+        ├── SstTaxonomyStructureTests.cs
+        ├── TaxCategorySeederTests.cs
+        ├── AppSettingsTests.cs
+        ├── DatabaseBackupTests.cs
+        └── DatabasePopulationIntegrationTests.cs  (Category=Integration, needs LocalDB)
 ```
 
 ---
 
-## Getting Started (Local Dev)
+## Getting Started
 
 ```bash
-# 1. Clone the repo
+# 1. Clone
 git clone https://github.com/mindattic/TaxRateCollector.git
 cd TaxRateCollector
 
-# 2. Restore packages
+# 2. Restore
 dotnet restore
 
-# 3. Run the frontend (migrations + seeder run automatically on first launch)
+# 3. Run (migrations + seeders run automatically)
 dotnet run --project TaxRateCollector.Frontend
 
-# 4. Open in browser
-#    https://localhost:5001  (or whatever port the console prints)
+# 4. Open https://localhost:5001
+#    Log in as dev admin (set DEV_ADMIN_EMAIL / DEV_ADMIN_PASSWORD env vars)
+#    Navigate to Setup to run the data import pipeline
 ```
 
-The SQLite database file (`taxrates.db`) is created in the frontend content root on first run. All migrations are applied automatically and the jurisdiction seeder populates the initial dataset (~700 jurisdictions) if the Country node does not yet exist.
+On first launch, `Program.cs` automatically:
+1. Applies all pending EF Core migrations
+2. Seeds `TaxCategories` (SST taxonomy, ~200 nodes)
+3. Seeds `Jurisdictions` (Country + 51 States)
+4. Seeds `StateTaxProfiles` (51 profiles)
+5. Seeds `PricingConfig` (Id=1, $0.01/state)
+6. Seeds `PayPalConfig` (Id=1, sandbox mode)
+7. Creates the dev admin Identity user (if env vars are set)
+
+The rest of the data — counties, cities, ZIP codes, actual tax rates — is populated through the **Setup** pipeline described below.
+
+---
+
+## How the Schema Gets Populated
+
+This is the most important section. The database has ~25 tables that fill up in distinct phases.
+
+### On Every Startup (automatic)
+
+These run in `Program.cs` before the app accepts requests. They are all idempotent — they check before inserting and skip if data already exists.
+
+| Service | Source | Output | Notes |
+|---|---|---|---|
+| `TaxCategorySeeder` | `SstTaxonomyData.cs` (hardcoded) | ~200 `TaxCategory` rows | The SST product/service hierarchy (Goods → Food → Candy, etc.) |
+| `JurisdictionSeeder` | Hardcoded array in code | 1 Country + 51 States | Provides the root `ParentId` targets for Census imports |
+| `StateTaxProfileSeeder` | Hardcoded, verified 2025-01-01 | 51 `StateTaxProfile` rows | State rate, SST membership, revenue agency name + URL |
+| Config seeders | Hardcoded defaults | 1 `PricingConfig`, 1 `PayPalConfig` | Only inserts if table is empty |
+
+**`TaxCategorySeeder`** uses the hardcoded definitions in `SstTaxonomyData.cs` — the same set the `SstTaxonomyImportService` (Step 1 of Setup) can optionally refresh descriptions for from the live SSUTA PDF.
+
+**`StateTaxProfileSeeder`** contains all 50 states + DC with:
+- State code, state name, `GeneralSalesTaxRate`
+- `IsSstMember` (from the SST Governing Board member list)
+- `LocalTaxAuthorityType` (Piggyback / HomeRule / SstUniform / Independent)
+- State revenue agency name and official URL
+- Notes on local tax caps where applicable
+
+### Step 1 — SST Product/Service Taxonomy
+
+**Service:** `SstTaxonomyImportService`  
+**Trigger:** Setup → "Import SST Taxonomy" button (or "Run All")  
+**Source:** SSUTA Agreement PDF, Appendix C (downloaded at runtime)  
+**Default URL:** `https://www.streamlinedsalestax.org/docs/default-source/agreement/ssuta/ssuta-as-amended-through-12-20-24-with-hyperlinks-and-compiler-notes-at-end-clean-for-posting.pdf`
+
+**What it does:**
+1. Downloads the SSUTA Agreement PDF using `UglyToad.PdfPig`
+2. Locates Appendix C (pages between "Appendix C" and "Appendix D" headings)
+3. Extracts defined terms using the regex pattern `"Term" means <definition>`
+4. Maps extracted terms to the existing `TaxCategory` hierarchy
+5. Upserts `TaxCategory.Description` fields with the official PDF definitions
+6. Falls back to hardcoded `KnownDescription` for any term not found in the PDF
+
+This step is optional — the startup seeder already populates the category tree. This step just enriches descriptions from the authoritative PDF source and can be re-run whenever a new version of the SSUTA is published.
+
+### Step 2 — Census Jurisdictions (Counties & Cities)
+
+**Service:** `CensusJurisdictionImportService`  
+**Trigger:** Setup → "Import Census Jurisdictions" button (or "Run All")  
+**Sources:** US Census Bureau — all free, no API key required
+
+| File | URL | Contents |
+|---|---|---|
+| County Gazetteer | `2025_Gaz_counties_national.zip` | 3,143 county names + 5-digit FIPS codes |
+| Place Gazetteer | `2025_Gaz_place_national.zip` | ~30,000 city/place names + 7-digit FIPS codes |
+| ZCTA→County crosswalk | `tab20_zcta520_county20_natl.txt` | Resolves place→county via largest land-area intersection |
+| ZCTA→Place crosswalk | `tab20_zcta520_place20_natl.txt` | Used to re-parent cities to correct counties |
+
+**What it does:**
+1. Downloads and caches the four Census files to `%APPDATA%\MindAttic\TaxRateCollector\cache\`
+2. Parses county FIPS codes and names → creates `Jurisdiction` rows with `JurisdictionType=County`, parented to the correct State
+3. Parses place FIPS codes and names → creates `Jurisdiction` rows with `JurisdictionType=City`
+4. Uses the ZCTA crosswalks to derive the correct county for each city (majority land-area intersection)
+5. Creates placeholder `TaxRate` rows (0.000%) for all new jurisdictions across all `TaxCategory` leaves
+6. Records a `ScrapeRun` entry for the import
+
+**Result:** ~3,200 counties + ~30,000 cities, all correctly parented in the hierarchy.  
+**Duration:** 20–40 minutes on first run. Cached files speed up re-runs.
+
+### Step 3 — ZIP Code Crosswalks
+
+**Service:** `ZipImportService`  
+**Trigger:** Setup → "Import ZIP Codes" button (or "Run All")  
+**Sources:** Same Census ZCTA crosswalk files (already cached from Step 2)
+
+| File | URL | Contents |
+|---|---|---|
+| ZCTA→County crosswalk | `tab20_zcta520_county20_natl.txt` | ZIP → primary county FIPS |
+| ZCTA→Place crosswalk | `tab20_zcta520_place20_natl.txt` | ZIP → primary city FIPS |
+
+**What it does:**
+1. Reads the two crosswalk files (downloads if not cached)
+2. Selects the primary county for each ZIP by largest `AREALAND_PART` value
+3. Selects the primary city for each ZIP by largest `AREALAND_PART` value
+4. Unions ~33,000 unique ZIPs from both files
+5. Resolves each ZIP's `StateJurisdictionId`, `CountyJurisdictionId`, `CityJurisdictionId` by matching FIPS codes to `Jurisdiction` rows created in Step 2
+6. Bulk-inserts `ZipCodeRecord` rows (skips ZIPs already imported — idempotent)
+7. Optionally enriches city names via the USPS CityStateLookup API if `usps_api_key` is configured in Settings
+
+**Result:** ~33,000 `ZipCodeRecord` rows, each pointing at three jurisdiction rows.  
+**Duration:** 15–30 minutes on first run.
+
+**How ZIP lookup works at query time:**
+
+```
+Customer enters ZIP 90210
+    ↓
+ZipCodeRecord lookup → State=CA + County=06037 (LA County) + City=Beverly Hills
+    ↓
+Query TaxRates for those 3 JurisdictionIds (filtered by TaxCategoryId)
+    ↓
+Sum: 7.25% (CA) + 1.00% (LA County) + 0.00% (BH) = 8.25%
+    ↓
+Apply CategoryTaxability rule (e.g., Groceries in CA → Exempt → 0%)
+    ↓
+Final: ItemPrice × 0%  (CA exempts unprepared food)
+```
+
+ZIP codes carry no rates themselves — they are purely a lookup index into the jurisdiction hierarchy.
+
+### Step 4 — Tax Rate Scraping
+
+**Service:** `ScrapeOrchestrator` / `IScrapeStrategy` implementations  
+**Trigger:** Setup → "Run Scrape" button, or the `ScrapeSchedulerService` background service  
+**Sources:** Official `.gov` tax rate pages — one `IScrapeStrategy` per state/format
+
+Before scraping can run, each jurisdiction's `SourceUrl` must be set (the URL of that state's official tax rate page). Step 5 of Setup guides the admin through assigning these URLs. The Discovery card on the Setup page can auto-probe jurisdictions to suggest source URLs.
+
+**What it does:**
+1. Loops all `Jurisdiction` rows where `IsActive = true` and `SourceUrl` is set
+2. Calls `strategy.CanHandle(jurisdiction)` to find the right scraper plug-in
+3. Scraper downloads the source (HTML table, CSV, XLSX, API) and normalizes rates via `Sanitizer`
+4. `DiffEngine` compares the new rate to the current `IsCurrent = true` row
+5. If changed: sets old row `IsCurrent = false`, inserts new `TaxRate` row, writes `ChangeLogEntry`
+6. Attaches the raw source artifact as a `SourceDocument` with SHA-256 hash
+
+**Existing strategies:**
+
+| Strategy | Source format | Target |
+|---|---|---|
+| `IllinoisTableScraper` | HTML table | `tax.illinois.gov` |
+| `CaliforniaCsvScraper` | CSV download | `cdtfa.ca.gov` |
+| `TexasExcelScraper` | XLSX download | `comptroller.texas.gov` |
+
+### Other Admin-Configured Tables
+
+These tables are populated through the **Settings** page (`/settings`), not the Setup pipeline:
+
+| Table | How populated |
+|---|---|
+| `PricingConfigs` | Seeded with `PricePerState = $0.01` on startup. Editable in Settings → Pricing. |
+| `PayPalConfigs` | Seeded with empty credentials in sandbox mode. Fill in `ClientId`, `ClientSecret`, `WebhookId` in Settings → PayPal. |
+| `AspNetUsers` | Created via `/register` or by the dev admin seeder (`DEV_ADMIN_EMAIL` / `DEV_ADMIN_PASSWORD` env vars). |
+| `Subscribers` | Created when a user completes PayPal checkout. |
+| `SubscribedStates` | Added per-state when a subscriber selects states. |
+| `BillingRecords` | Created by the PayPal webhook handler on successful payment. |
+| `LogEntries` | Written automatically by Serilog as the app runs. |
+| `ChangeLog` | Written by `DiffEngine` whenever a scrape detects a rate change. |
+| `ScrapeRuns` | Created by `ScrapeOrchestrator` and the Census importer. A shared `Status=Manual` run is used for all UI-entered rates. |
+
+---
+
+## SSUTA Membership & Non-Member States
+
+The SST product taxonomy seeded in `TaxCategories` is the authoritative classification for **24 SSUTA member states**. It applies as a useful scaffold for all other states too, but taxability per category for non-members must come from each state's own statutes — not from the Taxability Matrix.
+
+### States with No Sales Tax
+
+Alaska, Delaware, Montana, New Hampshire, and Oregon levy no state sales tax. All five still appear in `Jurisdictions` and `StateTaxProfiles` (with `GeneralSalesTaxRate = 0`). No rate scraping is needed. Note: some Alaskan municipalities impose local sales taxes independently.
+
+### 24 SSUTA Full Member States
+
+AR, GA, IN, IA, KS, KY, MI, MN, NE, NV, NJ, NC, ND, OH, OK, RI, SD, TN, UT, VT, WA, WV, WI, WY
+
+For these states, SSUTA Appendix C definitions apply uniformly. Local jurisdictions within each member state must use the state's SST-derived taxability base (see `LocalTaxAuthorityType = SstUniform`).
+
+### ~21 Non-Member States (have sales tax, not in SSUTA)
+
+These states define their own taxability rules. The seeded `TaxCategory` tree is still used as a classification scaffold, but the `StateCategoryRule` rows for these states must be populated from each state's own statutes rather than from the SST Taxability Matrix.
+
+| State | Notable Difference |
+|---|---|
+| California | Defines "candy" and "dietary supplements" differently; complex district taxes layered on top of state rate |
+| Texas | Own definitions for food, software, and services; origin-based sourcing for intrastate sales |
+| Florida | No personal income tax; broad sales tax base with unique service exemptions |
+| New York | Clothing under $110 exempt; complex state + NYC + county layers; locality-specific rules |
+| Illinois | Two-tier structure: 1% rate on food & drugs, 6.25% general rate |
+| Pennsylvania | Clothing fully exempt, most food exempt; taxable items differ significantly from SST |
+| Arizona | Transaction privilege tax — technically a tax on the *seller's* privilege of doing business, not a sales tax |
+| Louisiana | State + parish (county) structure; unique food and drug definitions |
+| Colorado | ~70 home-rule cities each administer their own sales tax independently |
+| Virginia | Reduced 2.5% food rate; state definitions diverge from SST in several categories |
+
+---
+
+## Database Schema
+
+All 25 tables grouped by domain:
+
+### Tax Rates
+| Table | Description |
+|---|---|
+| `Jurisdictions` | Self-referential hierarchy: Country → State → County → City |
+| `TaxRates` | Rate rows — one `IsCurrent=true` per (JurisdictionId, TaxCategoryId) |
+| `SourceDocuments` | Evidence files attached to TaxRate rows |
+| `ExciseTaxRates` | Excise/specific taxes (alcohol, fuel, tobacco, hotel) |
+| `ExciseSourceDocuments` | Evidence for excise rates |
+| `ChangeLog` | Detected rate changes (old rate → new rate, timestamp) |
+| `ScrapeRuns` | Metadata for each scrape or import batch |
+
+### Product/Service Taxonomy
+| Table | Description |
+|---|---|
+| `TaxCategories` | SST taxonomy hierarchy (root: Goods / Services) |
+| `TaxCategoryRules` | Per-jurisdiction taxability overrides for a category |
+
+### Geographic Lookup
+| Table | Description |
+|---|---|
+| `ZipCodes` | ~33,000 ZIPs → (StateJurisdictionId, CountyJurisdictionId, CityJurisdictionId) |
+
+### State Profiles
+| Table | Description |
+|---|---|
+| `StateTaxProfiles` | State-level metadata: rate, SST membership, authority type, agency URL |
+| `StateCategoryRules` | State-specific taxability rules per category |
+
+### Subscription / Billing
+| Table | Description |
+|---|---|
+| `PricingConfigs` | Singleton (Id=1): PricePerState, Currency |
+| `PayPalConfigs` | Singleton (Id=1): ClientId, ClientSecret, Mode, WebhookId |
+| `Subscribers` | Customer accounts |
+| `SubscribedStates` | States subscribed to per customer |
+| `BillingRecords` | Invoice history |
+
+### Infrastructure
+| Table | Description |
+|---|---|
+| `LogEntries` | Serilog structured log output |
+| `AspNetUsers` / `AspNetRoles` / (5 more) | ASP.NET Core Identity tables |
+
+---
+
+## Data Source URLs
+
+All external URLs are stored in `%APPDATA%\MindAttic\TaxRateCollector\settings.json` and editable from Settings → Data Source URLs. The defaults point to the free 2025 Census Bureau files and the current SSUTA agreement.
+
+| Setting Key | Default URL | Used By |
+|---|---|---|
+| `census_county_gaz_url` | `https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2025_Gazetteer/2025_Gaz_counties_national.zip` | Step 2 Census importer |
+| `census_place_gaz_url` | `https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2025_Gazetteer/2025_Gaz_place_national.zip` | Step 2 Census importer |
+| `census_zcta_county_url` | `https://www2.census.gov/geo/docs/maps-data/data/rel2020/zcta520/tab20_zcta520_county20_natl.txt` | Steps 2 & 3 |
+| `census_zcta_place_url` | `https://www2.census.gov/geo/docs/maps-data/data/rel2020/zcta520/tab20_zcta520_place20_natl.txt` | Steps 2 & 3 |
+| `sst_agreement_url` | `https://www.streamlinedsalestax.org/docs/default-source/agreement/ssuta/ssuta-as-amended-through-12-20-24-with-hyperlinks-and-compiler-notes-at-end-clean-for-posting.pdf` | Step 1 SST importer |
+| `sst_taxability_matrix_url` | `https://sst.streamlinedsalestax.org/TM` | Validated in Setup Step 1 URL check |
+| `sst_member_states_url` | `https://www.streamlinedsalestax.org/about-us/state-information` | Validated in Setup Step 1 URL check |
+
+Setup → Step 1 "Validate Data Source URLs" runs HTTP HEAD checks against all of these before allowing the import pipeline to proceed.
+
+**Cache directory:** `%APPDATA%\MindAttic\TaxRateCollector\cache\`  
+The four Census files are cached locally after the first download. Use the "Clear cache" buttons in Setup if you need to force a fresh download.
+
+---
+
+## Settings
+
+Settings file: `%APPDATA%\MindAttic\TaxRateCollector\settings.json`  
+Managed by `SettingsService` (singleton). Created with defaults on first run.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `theme` | string | `"light"` | UI theme (`"light"`, `"dark"`, `"tutor"`, `"llm"`, `"samurai"`) |
+| `font` | string | `"outfit"` | Font family |
+| `font_size` | int | `14` | Base font size (px) |
+| `usps_api_key` | string | `""` | USPS CityStateLookup API key (optional — enriches ZIP city names) |
+| `default_update_frequency_days` | int | `90` | How often to re-scrape a jurisdiction |
+| `evidence_auto_fetch` | bool | `false` | Auto-capture evidence PDFs on rate save |
+| `wayback_machine_fallback` | bool | `true` | Use Wayback Machine if a source URL returns 404 |
+| `census_*_url` | string | (see above) | All four Census Bureau source URLs |
+| `sst_*_url` | string | (see above) | SSUTA PDF URL and SST web page URLs |
+
+Theme is also written to `localStorage` (key `trc-theme`) so it applies before Blazor's interactive mode initialises, preventing a flash of the wrong theme on page load.
+
+---
+
+## Evidence & Provenance System
+
+Every `TaxRate` row can link to a `SourceDocument` that stores the raw artifact used to establish the rate:
+
+1. **Capture** — raw source stored in `SourceDocument.RawContent` (API JSON, base64 PDF, or HTML)
+2. **Hash** — `ContentHash = SHA256(UTF8(RawContent))` as a 64-character lowercase hex string
+3. **Verify** — re-hashing `RawContent` and comparing to `ContentHash` proves the document has not been altered
+4. **Audit** — `FetchedAt` (ISO 8601 UTC) + `SourceUrl` make the rate independently verifiable without a live network call
+
+Admins can also manually drag-and-drop evidence files (`.pdf`, `.csv`, `.html`, `.xlsx`, `.json`) onto any jurisdiction's detail row or evidence panel. The file is hashed on upload and stored in `%APPDATA%\MindAttic\TaxRateCollector\evidence\`.
+
+| SourceType | MimeType | RawContent format |
+|---|---|---|
+| `Api` | `application/json` | Raw JSON response body |
+| `Pdf` | `application/pdf` | Base64-encoded PDF bytes |
+| `Csv` | `text/csv` | Raw CSV text |
+| `Website` | `text/html` | Raw HTML |
+| `Manual` | `text/plain` | Free-text note or uploaded file reference |
+
+---
+
+## UI Pages
+
+### `/` — Jurisdictions
+
+Lazy-loading hierarchy tree. States load on page init; counties load on state expand; cities load on county expand. Each node shows:
+- Tier badge, name, FIPS code
+- Current tax rate (editable inline — creates a new `IsCurrent=true` row, retires the old one)
+- Cumulative rate range (`∑ min% – max%`) on state/county nodes
+- Drag-and-drop evidence zones on each rate row and in the dedicated evidence panel
+
+**Product category picker** — Goods / Services tab bar at the top filters the entire tree to rates for that SST category. Switching tabs reloads all rates with a frosted-glass spinner overlay so stale data remains visible during the reload.
+
+**Role picker** — Fixed overlay (lower-right corner, admin only) to preview the UI as Visitor / Subscriber / Admin. Switching roles reloads the tree in the appropriate access level.
+
+### `/setup` — Setup
+
+Six-step admin pipeline for first-time database population:
+
+| Step | What it does |
+|---|---|
+| 1. Validate URLs | HTTP HEAD checks all Census + SST source URLs |
+| 2. Import SST Taxonomy | Downloads SSUTA PDF, refreshes `TaxCategory` descriptions from Appendix C |
+| 3. Import Census Jurisdictions | Downloads Census Gazetteer ZIPs → creates ~3,200 counties + ~30,000 cities |
+| 4. Import ZIP Code Crosswalks | Downloads Census ZCTA TXTs → links ~33,000 ZIPs to jurisdictions |
+| 5. Assign Source URLs | Manual: set `Jurisdiction.SourceUrl` for each state/county via the Jurisdictions page |
+| 6. Run Scrape | Runs `ScrapeOrchestrator` across all jurisdictions with source URLs assigned |
+
+"Run All Steps" executes steps 1–4 in sequence, skipping any already completed.
+
+### `/settings` — Settings
+
+- Theme, font, font size
+- All Census + SST source URLs (with per-URL "Test" button)
+- USPS API key
+- Scrape frequency and evidence auto-fetch toggles
+- PayPal credentials (ClientId, ClientSecret, Mode, WebhookId)
+- Pricing config (PricePerState)
+- Database backup (runs `sqlpackage /Action:Export` to produce a `.bacpac`)
+
+### `/glossary` — Glossary
+
+SST-defined terms from the `TaxCategory.Description` fields, displayed alphabetically.
+
+### `/logs` — Logs
+
+Recent `LogEntry` records from Serilog, filterable by level.
+
+---
+
+## Exports
+
+From the Jurisdictions page export dropdown:
+
+| Format | Description |
+|---|---|
+| CSV | Flat comma-separated, all columns |
+| XLSX | ClosedXML formatted workbook with styled header row |
+| SQL | `INSERT INTO` statements, portable to any RDBMS |
+| HTML | Standalone self-styled HTML table |
+
+All exports download via `downloadBase64File` JS interop — no temp files on the server.
 
 ---
 
 ## Database Migrations
 
-The EF Core tools target is `TaxRateCollector.Infrastructure`. Run all migration commands from the repo root:
+The EF Core tools target is `TaxRateCollector.Infrastructure`. Run from the repo root:
 
 ```bash
-# Apply migrations manually (not normally needed — Program.cs does this at startup)
+# Apply migrations (not normally needed — Program.cs does this at startup)
 dotnet ef database update \
   --project TaxRateCollector.Infrastructure \
   --startup-project TaxRateCollector.Frontend
@@ -169,12 +538,7 @@ dotnet ef migrations add <MigrationName> \
   --project TaxRateCollector.Infrastructure \
   --startup-project TaxRateCollector.Frontend
 
-# Roll back to a specific migration
-dotnet ef database update <MigrationName> \
-  --project TaxRateCollector.Infrastructure \
-  --startup-project TaxRateCollector.Frontend
-
-# Drop the database entirely (dev only)
+# Drop and recreate (dev only)
 dotnet ef database drop \
   --project TaxRateCollector.Infrastructure \
   --startup-project TaxRateCollector.Frontend
@@ -184,132 +548,93 @@ dotnet ef database drop \
 
 | Migration | Description |
 |---|---|
-| `20260411172034_InitialCreate` | Jurisdictions, TaxRates, ScrapeRuns, ChangeLog |
-| `20260415000001_AddHierarchyAndSourceDocument` | ParentId self-ref FK on Jurisdiction; SourceDocuments table |
-| `20260415000002_AddExciseTaxRates` | ExciseTaxRates and ExciseSourceDocuments tables |
+| `InitialCreate` | All core tables: Jurisdictions, TaxRates, TaxCategories, StateTaxProfiles, ZipCodes, Identity, billing, logs |
+| `AddPerCategoryRateIndex` | Filtered index on `TaxRates (JurisdictionId, TaxCategoryId)` where `IsCurrent=1` |
+| `AddTaxCategoryToTaxRate` | Added `TaxCategoryId` FK on `TaxRates` |
+| `ClearTaxCategories` | Clears taxonomy for re-import |
+| `AddStateTaxProfiles` | Adds `StateTaxProfiles` and `StateCategoryRules` tables |
 
 ---
 
-## Data Model
+## NUnit Tests
 
-### FIPS codes
+```bash
+# Unit tests only (no SQL Server required)
+dotnet test TaxRateCollector.UnitTests
 
-FIPS codes (Federal Information Processing Standards) are the US government's official numeric identifiers for geographic areas. Every `Jurisdiction` row stores a `FipsCode` that uniquely identifies it:
-
-| Tier | Format | Example |
-|---|---|---|
-| Country | 2-letter ISO | `US` |
-| State | 2-digit numeric | `06` = California |
-| County | 5-digit (state 2 + county 3) | `06037` = Los Angeles County, CA |
-| City / Place | 7-digit (state 2 + place 5) | `0644000` = Los Angeles city, CA |
-
-The first two digits of a county or city code always match the parent state's FIPS — so `06037` immediately tells you state `06` (CA) + county `037` (LA County). This makes FIPS codes safe as join keys across datasets (two cities can share a name in different states, but FIPS codes are always unique).
-
-`FipsCode` has a unique index in the database and is used by the Census Bureau importer, the ZIP-code crosswalk linker, and the USPS validator to match external records to internal `Jurisdiction` rows.
-
-### Jurisdiction hierarchy
-
-```
-Country (US, FipsCode="US")
-  └── State (IL, FipsCode="17")
-        └── County (Cook County, FipsCode="17031")
-              └── City (Chicago, FipsCode="1714000")
+# Integration tests (requires SQL Server LocalDB with migrations applied)
+dotnet test TaxRateCollector.UnitTests --filter Category=Integration
 ```
 
-Each `Jurisdiction` row has a nullable `ParentId` foreign key pointing to its parent. The root Country node has `ParentId = null`. The self-referential FK uses `DeleteBehavior.Restrict` to prevent accidental cascade-deletes of an entire subtree.
+### `SetupTests/SstTaxonomyStructureTests.cs`
+Pure unit tests against `SstTaxonomyData.Definitions` — no database needed.
 
-**Combined rate** for a purchase = sum of `TaxRate.Rate` for the city + its county + its state. The Country-level rate is always 0 (the US has no federal sales tax). The `TaxCalculator` service and the Master Table page both walk the `ParentId` chain to compute this sum.
+| Test | Verifies |
+|---|---|
+| `Roots_AreGoodsAndServices` | Exactly two root nodes named Goods and Services |
+| `AllLeaves_HaveParent` | No leaf category is a root |
+| `AllParents_Exist` | Every `ParentName` reference resolves to a definition |
+| `NoDuplicateNames` | No two definitions share the same name |
+| `NoCircularReferences` | Depth-first walk finds no cycles |
+| `AllHaveNonEmptyTopLevelType` | Every node has `TopLevelType = "Goods"` or `"Services"` |
+| `SortOrders_ArePositive` | All `SortOrder` values > 0 |
+| + 4 more | Leaf counts, parent counts, name length limits |
 
-### How the hierarchy and ZIP codes relate
+### `SetupTests/TaxCategorySeederTests.cs`
+EF Core InMemory database — fast, no SQL Server needed.
 
-The UI is organized as State → County → City — this is where **tax rates live**. Each node carries its own rate (e.g., California = 7.25%, Los Angeles County = +1%, Beverly Hills = +0%). Rates are managed and updated at each of these levels.
+| Test | Verifies |
+|---|---|
+| `SeedAsync_PopulatesCategories` | Count > 0 after seed |
+| `SeedAsync_CountMatchesDefinitions` | Count equals `SstTaxonomyData.Definitions.Length` |
+| `SeedAsync_HasExactlyTwoRoots` | Two rows with `ParentId = null` |
+| `SeedAsync_IsIdempotent` | Second call does not add rows |
+| `SeedAsync_AllLeaves_HaveParent` | No leaf without a parent row |
+| `SeedAsync_AllHaveValidTopLevelType` | Only "Goods" or "Services" |
+| `SeedAsync_AllHavePositiveSortOrder` | `SortOrder > 0` for all rows |
+| `SeedAsync_AllHaveNonEmptyNames` | No blank names |
 
-The ZIP code table is a **lookup index** — it answers "for ZIP 90210, which State, County, and City do I combine?" It stores no rates itself; it just points to the three jurisdiction rows whose rates need to be summed.
+### `SetupTests/AppSettingsTests.cs`
+Verifies `AppSettings` defaults and URL validity.
 
-**Tax calculation flow:**
+| Test group | Verifies |
+|---|---|
+| Default values | Theme="light", Font="outfit", FontSize=14, UpdateFrequency=90 |
+| All URLs non-empty and HTTPS | Seven source URLs are all `https://` |
+| Census URLs → census.gov | Hostname contains `census.gov` |
+| SST URLs → streamlinedsalestax.org | Hostname matches |
+| JSON round-trip | Serialize → deserialize preserves all values |
+| Unknown key ignored | Extra JSON key does not throw |
 
-```
-Customer enters ZIP 90210
-    ↓
-ZipCodeRecord lookup → CA (State) + 06037 (LA County) + Beverly Hills (City)
-    ↓
-Query TaxRates for those 3 jurisdiction IDs
-    ↓
-Sum: 7.25% + 1% + 0% = 8.25%
-    ↓
-Apply ProductCategory modifier (e.g., Groceries in CA → exempt → 0%)
-    ↓
-Final tax = ItemPrice × 0%   (CA exempts unprepared food)
-```
+### `SetupTests/DatabaseBackupTests.cs`
+Unit tests for connection string parsing in `Settings.razor CreateBackup()`.
 
-This is the same pattern Avalara and TaxJar use — **rates are jurisdiction-level, queries are ZIP-level**. The hierarchy page is where data is maintained; ZIP is the end-user-facing lookup key.
+| Test | Verifies |
+|---|---|
+| `Parse_LocalDbConnectionString` | Extracts `(localdb)\MSSQLLocalDB` and `TaxRateCollector` |
+| `Parse_DataSourceKeyword` | Recognises `Data Source=` alias for `Server=` |
+| `Parse_InitialCatalogKeyword` | Recognises `Initial Catalog=` alias for `Database=` |
+| `Parse_EmptyString` | Returns empty strings without throwing |
+| `Parse_KeysAreCaseInsensitive` | `SERVER=` and `server=` both work |
+| `Parse_TrailingSemicolon` | Handled cleanly |
+| `Parse_TestConnectionString` | `TestDbConnection.ConnectionString` has both keys |
+| `SqlPackage_IsAvailableOnPath` _(Integration)_ | `sqlpackage /version` exits 0 |
 
-### County and city coverage
+### `SetupTests/DatabasePopulationIntegrationTests.cs`
+Requires SQL Server LocalDB with migrations applied. Run with `--filter Category=Integration`.
 
-The seeder ships with a representative sample (~178 counties, ~450 cities). Full coverage — so that every ZIP code resolves to a real county and city row — requires importing all ~3,143 US counties and ~30,000 incorporated places. The data comes entirely from free Census Bureau sources (no API key needed):
-
-| Source | Contents | Format |
-|---|---|---|
-| Census Gazetteer — counties | 3,143 county names + FIPS codes | ZIP → pipe-delimited TXT |
-| Census Gazetteer — places | ~30,000 city/place names + FIPS | ZIP → pipe-delimited TXT |
-| Census ZCTA → county crosswalk | Maps each ZIP to its primary county | Pipe-delimited TXT |
-| Census ZCTA → place crosswalk | Maps each ZIP to its primary city | Pipe-delimited TXT |
-
-These are downloaded and imported via **ZIP Codes → Step 1: Import Counties & Cities** in the UI. After Step 1 completes, running **Step 2: Import ZIP Codes** links all ~33,000 ZIPs to the newly created county and city rows. The source URLs for all four files are admin-configurable in Settings → Census Data Source URLs.
-
-### Key entities
-
-**`Jurisdiction`** — a node in the hierarchy.  
-Fields: `JurisdictionName`, `JurisdictionType` (enum), `StateCode`, `FipsCode` (unique index), `SourceUrl`, `IsActive`, `ParentId`.
-
-**`TaxRate`** — a rate row tied to a jurisdiction and a scrape run.  
-Fields: `Rate` (decimal), `RateType` ("General", "Reduced", etc.), `RawValue` (original string from source, e.g. `"6.25%"`), `EffectiveDate`, `ScrapedAt`, `IsCurrent`, optional navigation to `SourceDocument`.  
-Only one row per jurisdiction should have `IsCurrent = true`. When a rate changes, the old row is set `IsCurrent = false` and a new row is inserted.
-
-**`SourceDocument`** — evidence attached to a `TaxRate`.  
-Fields: `SourceType` (Api/Pdf/Csv/Website/Manual), `SourceUrl`, `MimeType`, `FetchedAt`, `ContentHash` (SHA-256 hex), `RawContent` (full API JSON body or base64-encoded PDF/HTML).
-
-**`ExciseTaxRate`** — sin/excise rate keyed by `ProductCategory` enum.  
-Fields: `Rate`, `RateType` (`"percentage"` or `"flat"`), `Unit` (e.g. `"per pack"`), optional navigation to `ExciseSourceDocument`.
-
-**`ScrapeRun`** — tracks each automated or manual scrape batch.  
-`Status` enum: `Running`, `Completed`, `Failed`, `Manual`. All UI-entered rates reference a shared `ScrapeStatus.Manual` run created once by the seeder.
-
-**`ChangeLogEntry`** — written by `DiffEngine` when a newly scraped rate differs from the current stored rate.  
-Fields: `OldRate`, `NewRate`, `DetectedAt`, `ChangeType`, `Acknowledged`.
-
----
-
-## Evidence & Provenance System
-
-Every `TaxRate` row optionally links to a `SourceDocument` that stores the raw artifact used to establish the rate. The integrity guarantee works as follows:
-
-1. **Capture** — when a rate is scraped, the raw source (full API JSON response, base64 PDF, or raw HTML) is stored in `SourceDocument.RawContent`.
-2. **Hash** — `ContentHash` is set to `SHA256(UTF8(RawContent))` encoded as a lowercase 64-character hex string.
-3. **Verify** — at any time, re-hashing `RawContent` and comparing to `ContentHash` proves the stored document has not been altered. Mismatched hashes indicate tampering.
-4. **Audit** — `FetchedAt` (ISO 8601 UTC) records when the document was captured. `SourceUrl` records the origin. Together these make a rate independently verifiable by any third party without a live network call.
-
-The `TaxSourceProvenance` domain model (in `JurisdictionData.cs`) mirrors this for the JSON/DTO layer, with `RawResponse`, `DocumentHash`, `SourceUri`, `ContentType`, and `RetrievedAt`.
-
-### Evidence sources
-
-| `SourceType` | `MimeType` | `RawContent` format |
-|---|---|---|
-| `Api` | `application/json` | Raw JSON response body |
-| `Pdf` | `application/pdf` | Base64-encoded PDF bytes |
-| `Csv` | `text/csv` | Raw CSV text |
-| `Website` | `text/html` | Raw HTML or base64 PDF print |
-| `Manual` | `text/plain` | Free-text note |
-
-### Wayback Machine fallback (planned)
-
-When a live `.gov` URL returns 404, the scraper will query `https://web.archive.org/cdx/search/cdx` for the most recent cached snapshot, fetch that, and store it as evidence. Enable this in Settings → "Wayback Machine fallback".
+Covers:
+- `TaxCategories` populated, exactly two roots (Goods + Services), no leaf roots, valid `TopLevelType`
+- `StateTaxProfiles` exactly 51 rows, all have 2-char state codes, non-negative rates, non-empty state names
+- `Jurisdictions` has US country row, exactly 51 state rows
+- `PricingConfig` and `PayPalConfig` have at least one row each, `PricePerState > 0`
+- `TaxCategorySeeder.SeedAsync` and `StateTaxProfileSeeder.SeedAsync` are idempotent against the real DB
 
 ---
 
 ## Scraper Framework
 
-Each state has one or more `IScrapeStrategy` implementations registered in DI. The orchestrator loops over jurisdictions and calls `strategy.CanHandle(jurisdiction)` to find the right plug-in.
+Each state has one or more `IScrapeStrategy` implementations registered in DI:
 
 ```csharp
 public interface IScrapeStrategy
@@ -317,22 +642,13 @@ public interface IScrapeStrategy
     string StrategyKey { get; }
     bool CanHandle(Jurisdiction jurisdiction);
     Task<IReadOnlyList<RawScrapeResult>> ScrapeAsync(
-        Jurisdiction jurisdiction,
-        CancellationToken ct = default);
+        Jurisdiction jurisdiction, CancellationToken ct = default);
 }
 ```
 
-**Existing strategies:**
+The `Sanitizer` helper normalises raw rate strings like `"6.25%"`, `"0.0625"`, or `"$0.231/pack"` to `decimal?`.
 
-| Strategy | Source format | Target domain |
-|---|---|---|
-| `IllinoisTableScraper` | HTML table | `tax.illinois.gov` |
-| `CaliforniaCsvScraper` | CSV download | `cdtfa.ca.gov` |
-| `TexasExcelScraper` | XLSX download | `comptroller.texas.gov` |
-
-The `Sanitizer` helper normalises raw rate strings like `"6.25%"`, `"$0.231/pack"`, or `"0.0625"` to a nullable `decimal`.
-
-The `ScrapeSchedulerService` (`IHostedService`) checks each jurisdiction on its configured cadence (`DefaultUpdateFrequencyDays`) and triggers the orchestrator. After each run the `DiffEngine` compares the new rate to `IsCurrent = true` and writes a `ChangeLogEntry` if they differ.
+The `ScrapeSchedulerService` (`IHostedService`) re-scrapes each jurisdiction on the configured cadence (`default_update_frequency_days`). After each run, `DiffEngine` compares the new rate to `IsCurrent=true` and writes a `ChangeLogEntry` if they differ.
 
 ---
 
@@ -344,130 +660,28 @@ The `ScrapeSchedulerService` (`IHostedService`) checks each jurisdiction on its 
    ```csharp
    builder.Services.AddScoped<IScrapeStrategy, MyStateScraper>();
    ```
-4. Update `Jurisdiction.SourceUrl` for the target state row in `JurisdictionSeeder.cs` to point at the canonical `.gov` source URL
-5. Write a unit test in `TaxRateCollector.UnitTests` verifying the parser output against a fixture response
+4. Set `Jurisdiction.SourceUrl` for the state row to the canonical `.gov` source URL (via Settings → Jurisdictions or the Setup source-URL step)
+5. Write a unit test verifying parser output against a fixture response
 
 ---
 
-## Settings
+## Roles & Subscriptions
 
-Settings are persisted at `%APPDATA%\MindAttic\TaxRateCollector\settings.json` and managed by `SettingsService` (singleton).
+ASP.NET Core Identity is implemented with two roles: **Administrator** and **Subscriber**.
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `theme` | string | `"light"` | `"light"` or `"dark"` |
-| `usps_api_key` | string | `""` | USPS Address API key |
-| `default_update_frequency_days` | int | `90` | How often to re-scrape a jurisdiction |
-| `evidence_auto_fetch` | bool | `false` | Auto-capture evidence on rate save |
-| `wayback_machine_fallback` | bool | `true` | Fall back to archive.org if live URL 404s |
+- **Admin** — full read/write access to rates, evidence, setup pipeline, settings
+- **Subscriber** — read-only access to rate data, filtered by subscribed states
+- **Guest** — public view, rates redacted behind a "🔒 Locked" blur
 
-**Theme** is also persisted to `localStorage` (key `trc-theme`) so it takes effect before Blazor's interactive mode initialises, preventing a flash of the wrong theme on page load.
+The `ViewAsService` (singleton per user session) lets admins preview the UI as any role without logging out. The role picker overlay (lower-right corner, admin-only) switches between Visitor / Subscriber / Admin preview modes.
 
----
-
-## UI Pages
-
-### Jurisdictions (`/`)
-
-Lazy-loading hierarchy tree. States load on page init. Counties load when a state node is expanded. Cities load when a county node is expanded. Each node shows:
-
-- Tier badge (State / County / City)
-- Jurisdiction name and FIPS code
-- Current tax rate (editable inline — saves via the "Manual" ScrapeRun)
-- Evidence badge (green = has evidence, grey = none)
-- Expandable evidence panel: source type, URL, fetch timestamp, SHA-256 hash, raw content preview
-
-City nodes also show the **combined rate** (`∑ X.XXX%`), which is the actual effective sales tax rate for a purchase made there.
-
-Rate saves work as follows:
-1. Look up or create a `ScrapeRun` with `Status = Manual`
-2. Set `IsCurrent = false` on the existing rate for the jurisdiction
-3. Insert a new `TaxRate` row with `IsCurrent = true`
-
-### Master Table (`/master`)
-
-Full dataset table with:
-
-- Text search (name, FIPS, state code)
-- Filters: tier, state, evidence status
-- Sort on any column header
-- Export to CSV, XLSX, or SQL INSERT statements (all download via `downloadBase64File` JS interop — no temp files on server)
-
-### Settings (`/settings`)
-
-- Light / Dark theme toggle (writes both `settings.json` and `localStorage`)
-- USPS API key input
-- Scraping frequency (days between automated re-scrapes)
-- Evidence auto-fetch toggle
-- Wayback Machine fallback toggle
-
----
-
-## Exports (Master Table)
-
-| Format | Library | Description |
-|---|---|---|
-| CSV | System.Text / StringBuilder | Flat comma-separated, all columns |
-| XLSX | ClosedXML 0.105 | Formatted workbook with header row |
-| SQL | StringBuilder | `INSERT INTO TaxRates (...)` statements, portable to any RDBMS |
-
----
-
-## NUnit Tests
-
-```bash
-dotnet test TaxRateCollector.UnitTests
-```
-
-**`EvidenceTests/EvidenceValidationTests.cs`**
-
-| Test | What it verifies |
-|---|---|
-| `Hash_SameContent_ProducesSameHash` | Deterministic SHA-256 |
-| `Hash_DifferentContent_ProducesDifferentHash` | Different content → different hash |
-| `Hash_EmptyString_ProducesKnownHash` | Known `e3b0c...` value |
-| `Hash_64CharHexOutput` | Output is 64 lowercase hex chars |
-| `SourceDocument_HashMatchesContent_PassesVerification` | Re-hash of RawContent matches ContentHash |
-| `SourceDocument_TamperedContent_FailsVerification` | Changed content does not match original hash |
-| `SourceDocument_Base64Pdf_RoundTrips` | Base64 encode → store → decode → original bytes |
-| `SourceType_MimeMapping_IsConsistent` | Enum→MIME string switch is complete |
-| `SourceUrl_GovernmentDomains_AreValid` | .gov HTTPS URLs parse correctly |
-| `SourceUrl_InvalidUrls_FailValidation` | Empty, non-URL, ftp:// all rejected |
-| `ExciseTaxRate_FlatRate_RoundTrips` | Flat-rate properties survive round-trip |
-| `ExciseTaxRate_PercentageRate_IsInBounds` | Percentage rate in [0, 1] |
-| `TaxSourceProvenance_EmptyByDefault` | Default strings are empty, not null |
-| `TaxSourceProvenance_WithApiResponse_IsPopulated` | Hash length and round-trip verification |
-
-**`JurisdictionTests/HierarchyTests.cs`**
-
-| Test | What it verifies |
-|---|---|
-| `CombinedRate_City_SumsStatePlusCountyPlusCity` | IL 6.25% + Cook 1.75% + Chicago 2.25% = 10.25% |
-| `CombinedRate_StateOnly_ReturnsSingleRate` | TX 6.25% with no county/city |
-| `CombinedRate_ZeroRateCountyAndCity_EqualsStateRate` | Oregon all-zero scenario |
-| `Hierarchy_CountyParentIsState` | ParentId FK chain is correct |
-| `Hierarchy_SeederDoesNotSeedIfCountryExists` | Idempotency guard works |
-| `TaxRate_OnlyOneCurrentRatePerJurisdiction` | Rate retirement (IsCurrent=false) works |
-| `SeederConstants_KnownStateFipsCodes` | FIPS codes for CA/IL/TX match US Census values |
-| `RateRange_ValidValues_AreInExpectedBounds` | 0% – 15% accepted |
-| `RateRange_OutOfBoundsValues_FailValidation` | -1% and 50% rejected |
-
----
-
-## Planned: Roles & Subscriptions
-
-- **ASP.NET Core Identity** with two roles: `Administrator` (full write access) and `Subscriber` (read-only Master Table).
-- Admin credentials stored in `secrets.json` / `.env` for local development.
-- **PayPal subscription** at $0.01/month (test tier). On successful payment webhook, the user is granted the `Subscriber` role.
-- Reference the [StreetSamurai repo](https://github.com/mindattic/StreetSamurai) for the existing PayPal webhook + role-grant pattern.
+**Subscription model:** Pay-per-county at ~$0.01/county/month. Subscribers select states they need; billing is calculated from the county count in those states. PayPal handles checkout. `PricingConfig.PricePerState` is the admin-configurable unit price.
 
 ---
 
 ## Deploying to Azure
 
-> Full CI/CD pipeline is not yet implemented. These are the planned steps.
-
-### Dockerfile (to be created)
+### Dockerfile
 
 ```dockerfile
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
@@ -494,51 +708,9 @@ az appservice plan create --name asp-taxratecollector \
 az webapp create --name taxratecollector \
   --resource-group rg-taxratecollector \
   --plan asp-taxratecollector --runtime "DOTNETCORE:10.0"
-az webapp deploy --resource-group rg-taxratecollector \
-  --name taxratecollector --src-path ./publish.zip --type zip
 ```
 
-### GitHub Actions CI/CD
-
-Reference `.github/workflows/` in the StreetSamurai repo for the reusable pipeline template. Key stages:
-
-1. `dotnet restore && dotnet build`
-2. `dotnet test TaxRateCollector.UnitTests`
-3. `dotnet publish -c Release -o publish/`
-4. Upload artifact + deploy via `azure/webapps-deploy@v3`
-
-### Production database
-
-Swap `UseSqlite` for `UseSqlServer` in `Program.cs` and store the connection string in Azure Key Vault:
-
-```csharp
-builder.Services.AddDbContextFactory<AppDbContext>(opts =>
-    opts.UseSqlServer(builder.Configuration.GetConnectionString("AzureSql")));
-```
-
-### Evidence document storage
-
-Large `SourceDocument.RawContent` blobs (base64 PDFs, full HTML) can exceed SQL row-size limits. The long-term plan is to store raw content in **Azure Blob Storage** and keep only the blob URI + SHA-256 hash in the database row.
-
----
-
-## USPS Address Validation (planned)
-
-Every jurisdiction will be validated against the USPS Address API using the [USPSAddressValidator](https://github.com/mindattic/USPSAddressValidator) library (modern JSON endpoint). A background job will iterate all jurisdictions and set `Jurisdiction.UspsValidated = true` + `UspsValidatedAt` on success. A migration for these two columns has not been created yet — see [TODO.md](TODO.md) for the full backlog.
-
----
-
-## Target Corpus
-
-| Tier | Count |
-|---|---|
-| Country | 1 |
-| States + DC | 51 |
-| Counties | ~3,144 |
-| Cities / municipalities | ~10,000 |
-| **Total** | **~14,000** |
-
-The seeder currently covers ~700 jurisdictions (full state list + representative counties and cities). Expanding to complete coverage is the top data-completeness priority.
+Store the SQL Server connection string in Azure Key Vault and reference it via `builder.Configuration.GetConnectionString("DefaultConnection")`. The app already uses `UseSqlServer` — no code changes needed.
 
 ---
 

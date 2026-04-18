@@ -10,6 +10,7 @@
 @using TaxRateCollector.Infrastructure.Services
 @using ClosedXML.Excel
 @using System.Text
+@using TaxRateCollector.Frontend.Services
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject IScrapeOrchestrator Orchestrator
 @inject IJSRuntime JS
@@ -32,7 +33,6 @@
                 <option value="sql">SQL INSERTs</option>
                 <option value="html">HTML Table</option>
             </select>
-            @if (status is not null) { <span class="save-confirm">@status</span> }
         </div>
     </div>
 </div>
@@ -41,55 +41,83 @@
 <div class="category-picker">
     @if (allCategories.Count == 0)
     {
-        <div class="cat-empty-hint">
+        <div class="cat-page cat-empty-hint">
             No categories loaded — run <a href="/setup">Setup → SST Taxonomy</a> first.
         </div>
     }
     else
     {
-        <div class="cat-type-row">
-            <button class="cat-type-btn @(selectedTopLevel == "Goods"    ? "cat-type-active" : "")" @onclick='() => OnTopLevelClick("Goods")'>Goods</button>
+        <div class="cat-type-row cat-type-@(selectedTopLevel.ToLower())">
+            <button class="cat-type-btn @(selectedTopLevel == "Goods" ? "cat-type-active" : "")" @onclick='() => OnTopLevelClick("Goods")'>Goods</button>
             <button class="cat-type-btn @(selectedTopLevel == "Services" ? "cat-type-active" : "")" @onclick='() => OnTopLevelClick("Services")'>Services</button>
         </div>
-        @foreach (var (groupName, leaves) in categoryGroups)
-        {
-            <div class="cat-group">
-                <span class="cat-group-label">@groupName</span>
-                <div class="cat-chips">
-                    @foreach (var leaf in leaves)
-                    {
-                        <button class="cat-chip @(selectedCategoryId == leaf.Id ? "cat-chip-active" : "")"
-                                @onclick="() => SelectCategory(leaf.Id)">@leaf.Name</button>
-                    }
+        <div class="cat-page">
+            @foreach (var (groupName, leaves) in categoryGroups)
+            {
+                <div class="cat-group">
+                    <span class="cat-group-label">@groupName</span>
+                    <div class="cat-chips">
+                        @foreach (var leaf in leaves)
+                        {
+                            var catLocked = !isAdmin && !IsGuestMode && !subscribedCategoryIds.Contains(leaf.Id);
+                            @if (catLocked)
+                            {
+                                <button class="cat-chip cat-chip-locked" title="Subscribe to this category to access rates"
+                                        @onclick="() => ShowCategoryLockedHint()">
+                                    🔒 @leaf.Name
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="cat-chip @(selectedCategoryId == leaf.Id ? "cat-chip-active" : "")"
+                                        @onclick="() => SelectCategory(leaf.Id)">
+                                    @leaf.Name
+                                </button>
+                            }
+                        }
+                    </div>
                 </div>
-            </div>
-        }
+            }
+        </div>
     }
 </div>
 
 @if (!isSubscribed)
 {
     <div class="subscribe-banner">
-        🔒 <strong>Tax rates and evidence documents are unlocked for subscribers.</strong>
-        Subscribe by state — starting at $0.01 / state / month.
+        👁 <strong>You're viewing sample data.</strong>
+        Subscribe by state and category to access verified real-time tax rates — from $0.01 / state / month.
         <a href="/subscribe" class="banner-cta" style="text-decoration:none">View Plans →</a>
     </div>
 }
-
-@if (loading)
+else if (!isAdmin && HasUnsubscribedContent)
 {
-    <div class="loading-state">Loading states…</div>
+    <div class="subscribe-banner subscribe-banner-remind">
+        Some states or product categories are not included in your current subscription.
+        <a href="/subscribe" class="banner-cta" style="text-decoration:none">Adjust subscription →</a>
+    </div>
 }
-else
-{
+
+<div class="tree-container">
+    @if (loading)
+    {
+        <div class="cat-loading-overlay">
+            <div class="export-spinner-card">
+                <div class="spinner"></div>
+                <span>Loading rates…</span>
+            </div>
+        </div>
+    }
     <div class="tree-root">
-        @if (states.Count == 0)
+        @if (!loading && states.Count == 0)
         {
             <div class="loading-state muted">No jurisdictions found — run <a href="/setup">Setup → Import Jurisdictions</a> to populate.</div>
         }
         @foreach (var state in states)
         {
-            <!-- ── State row ── -->
+            @if (IsStateSubscribed(state.StateCode))
+            {
+            <!-- ── State row (subscribed) ── -->
             <div class="jnode state-node" @onclick="() => ToggleState(state.Id)">
                 <span class="expand-icon">@(IsExpanded(state.Id) ? "▼" : "▶")</span>
                 <span class="tier-badge tier-state">State</span>
@@ -164,18 +192,27 @@ else
                     }
                 }
             }
+            }
+            else
+            {
+            <!-- ── State row (locked / not subscribed) ── -->
+            <div class="jnode state-node state-node-locked">
+                <span class="expand-spacer"></span>
+                <span class="tier-badge tier-state">State</span>
+                <span class="jname">@state.Name</span>
+                <span class="fips mono">(FIPS: @state.FipsCode)</span>
+                <span class="jnode-spacer"></span>
+                <a href="/subscribe" class="subscribe-state-link" @onclick:stopPropagation="true">Modify subscription →</a>
+            </div>
+            }
         }
     </div>
-}
+</div>
 
-<!-- ── Fixed role picker overlay (lower-right, admin only) ──────────────────── -->
-@if (isAdmin)
+<!-- ── Toast notification ────────────────────────────────────────────────────── -->
+@if (status is not null)
 {
-    <div class="role-picker-overlay">
-<button class="role-btn @(previewRole == "visitor"    ? "role-btn-active role-visitor-active"    : "")" @onclick='() => SetRole("visitor")'>Visitor</button>
-        <button class="role-btn @(previewRole == "subscriber" ? "role-btn-active role-subscriber-active" : "")" @onclick='() => SetRole("subscriber")'>Subscriber</button>
-        <button class="role-btn @(previewRole == "admin"      ? "role-btn-active role-admin-active"      : "")" @onclick='() => SetRole("admin")'>Admin</button>
-    </div>
+    <div class="toast @(status!.StartsWith("✗") ? "toast-err" : "toast-ok")">@status</div>
 }
 
 <!-- ── Export spinner overlay ────────────────────────────────────────────────── -->
@@ -189,9 +226,159 @@ else
     </div>
 }
 
+<!-- ── Evidence reader modal ─────────────────────────────────────────────────── -->
+@if (evidenceReaderFile != null)
+{
+    <div class="evidence-reader-backdrop" id="evidence-reader-overlay">
+        <div class="evidence-reader-modal">
+            <div class="evidence-reader-header">
+                <span class="ev-icon">@FileIcon(evidenceReaderFile.EvidenceType)</span>
+                <span class="evidence-reader-breadcrumb">
+                    <span class="evidence-reader-jurisdiction">@evidenceReaderJurisdiction</span>
+                    <span class="evidence-reader-sep"> › </span>
+                    <span class="evidence-reader-filename">@EvidenceDisplayName(evidenceReaderFile)</span>
+                </span>
+                <button class="evidence-reader-close" @onclick="CloseEvidenceReader" title="Close">✕</button>
+            </div>
+            <div class="evidence-reader-body" id="evidence-reader-body">
+                @if (evidenceReaderLoading)
+                {
+                    <div class="evidence-reader-loading">
+                        <div class="spinner"></div>
+                        <span>Loading…</span>
+                    </div>
+                }
+                else if (evidenceReaderContent != null)
+                {
+                    @if (IsUrl(evidenceReaderContent.Trim()))
+                    {
+                        <div class="evidence-url-view">
+                            <p class="muted small">This evidence links to an external source:</p>
+                            <p class="evidence-url-value">@evidenceReaderContent.Trim()</p>
+                            <a href="@evidenceReaderContent.Trim()" target="_blank" rel="noopener noreferrer" class="btn-primary">
+                                Open in Browser →
+                            </a>
+                        </div>
+                    }
+                    else
+                    {
+                        <pre class="evidence-reader-text">@evidenceReaderContent</pre>
+                    }
+                }
+                else if (evidenceReaderFile.EvidenceType == "xlsx")
+                {
+                    <div class="evidence-reader-nopreview">
+                        <span style="font-size:2rem">📊</span>
+                        <p>Spreadsheet preview is not available.</p>
+                    </div>
+                }
+                else
+                {
+                    <iframe src="/evidence/@evidenceReaderFile.FileName"
+                            class="evidence-reader-frame"
+                            id="evidence-reader-frame"
+                            allow="fullscreen"
+                            referrerpolicy="no-referrer">
+                    </iframe>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ── Add Evidence modal ────────────────────────────────────────────────────── -->
+@if (evidenceModalOpen && evidenceModalNode != null)
+{
+    <div class="evidence-modal-backdrop" @onclick="CloseEvidenceModal">
+        <div class="evidence-modal-panel" @onclick:stopPropagation="true">
+            <div class="evidence-modal-header">
+                <span>Add Evidence — <strong>@evidenceModalNode.Name</strong></span>
+                <button class="evidence-reader-close" @onclick="CloseEvidenceModal" title="Close">✕</button>
+            </div>
+            <div class="evidence-modal-body">
+                <div class="ev-upload-tabs">
+                    <button class='ev-upload-tab @(evidenceModalTab == "file" ? "ev-upload-tab-active" : "")' @onclick='() => evidenceModalTab = "file"'>📎 File</button>
+                    <button class='ev-upload-tab @(evidenceModalTab == "url"  ? "ev-upload-tab-active" : "")' @onclick='() => evidenceModalTab = "url"'>🔗 URL</button>
+                    <button class='ev-upload-tab @(evidenceModalTab == "raw"  ? "ev-upload-tab-active" : "")' @onclick='() => evidenceModalTab = "raw"'>📝 Raw Text</button>
+                </div>
+                @if (evidenceModalTab == "file")
+                {
+                    <div class="drop-zone @(ModalDropDragging ? "drop-zone-active" : "")"
+                         @ondragenter="OnModalDragEnter"
+                         @ondragleave="OnModalDragLeave"
+                         @ondrop="OnModalDrop"
+                         @ondragover:preventDefault="true">
+                        <span class="dz-icon">⬆</span>
+                        <span class="dz-text">Drop files here or click to browse</span>
+                        <span class="dz-hint">.pdf · .txt · .csv · .html · .xlsx · .json</span>
+                        <InputFile OnChange="OnModalFileChange"
+                                   accept=".pdf,.txt,.csv,.html,.xlsx,.json"
+                                   multiple class="dz-input" />
+                    </div>
+                }
+                else if (evidenceModalTab == "url")
+                {
+                    <div class="ev-upload-url-row">
+                        <input class="ev-url-input" type="text"
+                               placeholder="https://tax.state.gov/…"
+                               value="@evidenceModalUrl"
+                               @oninput="e => evidenceModalUrl = e.Value?.ToString() ?? string.Empty"
+                               @onkeydown="OnUrlKeyDown" />
+                        <button class="btn-primary" @onclick="AddUrlToQueue"
+                                disabled="@string.IsNullOrWhiteSpace(evidenceModalUrl)">Add</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="ev-upload-raw">
+                        <textarea class="ev-raw-textarea" rows="5"
+                                  placeholder="Paste notes, excerpts, or any text…"
+                                  value="@evidenceModalRaw"
+                                  @oninput="e => evidenceModalRaw = e.Value?.ToString() ?? string.Empty"></textarea>
+                        <button class="btn-primary" style="font-size:.82rem;align-self:flex-end"
+                                @onclick="AddRawToQueue"
+                                disabled="@string.IsNullOrWhiteSpace(evidenceModalRaw)">Add</button>
+                    </div>
+                }
+                @if (stagedItems.Count > 0)
+                {
+                    <div class="ev-queue">
+                        <div class="ev-queue-header">Queued (@stagedItems.Count)</div>
+                        <ul class="ev-queue-list">
+                            @foreach (var (item, idx) in stagedItems.Select((x, i) => (x, i)))
+                            {
+                                <li class="ev-queue-item">
+                                    <span class="ev-icon">@QueueItemIcon(item)</span>
+                                    <span class="ev-queue-name">@item.DisplayName</span>
+                                    <button class="btn-danger-tiny" @onclick="() => stagedItems.RemoveAt(idx)" title="Remove">✕</button>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                }
+            </div>
+            <div class="evidence-modal-footer">
+                <button class="btn-secondary" @onclick="CloseEvidenceModal">Cancel</button>
+                <button class="btn-primary" @onclick="SaveAllStaged"
+                        disabled="@(stagedItems.Count == 0 || savingStaged)">
+                    @(savingStaged ? "Saving…" : $"Add Evidence ({stagedItems.Count})")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     // ── Data model ─────────────────────────────────────────────────────────────
-    private sealed record EvidenceFile(int Id, string FileName, string SourceType, string FetchedAt, string SourceUrl);
+    private sealed record EvidenceFile(int Id, string FileName, string OriginalFileName, string EvidenceType, string SourceUrl, string RawContent, string SourceType, string FetchedAt);
+
+    private sealed class StagedItem
+    {
+        public string Kind { get; init; } = ""; // "file" | "url" | "raw"
+        public IBrowserFile? File { get; init; }
+        public string Text { get; init; } = "";
+        public string DisplayName { get; init; } = "";
+    }
     private sealed record JNode(int Id, string Name, string StateCode, string FipsCode,
         JurisdictionType Tier, decimal? Rate, int? RateId, List<EvidenceFile> Evidence,
         decimal ParentCumulative = 0,
@@ -205,8 +392,18 @@ else
     private bool exporting;
     private string exportFormat = "";
     private bool isAdmin;
-    private string previewRole = "admin"; // "visitor" | "subscriber" | "admin"
-    private bool isSubscribed => previewRole != "visitor";
+    private HashSet<string> subscribedStateCodes = new(StringComparer.OrdinalIgnoreCase);
+
+    private HashSet<int> subscribedCategoryIds = new();
+    private int totalCategoryCount;
+
+    private bool isSubscribed => isAdmin || subscribedStateCodes.Count > 0;
+    private bool IsStateSubscribed(string stateCode) =>
+        isAdmin || IsGuestMode || subscribedStateCodes.Contains(stateCode);
+    private bool IsGuestMode => !isAdmin && subscribedStateCodes.Count == 0;
+    private bool HasUnsubscribedContent =>
+        (subscribedStateCodes.Count < states.Count && states.Count > 0) ||
+        (subscribedCategoryIds.Count < totalCategoryCount && totalCategoryCount > 0);
     private string? status;
     private int? manualRunId;
 
@@ -221,6 +418,22 @@ else
     // Evidence panel
     private int? evidenceOpen;
     private bool uploading;
+    private readonly Dictionary<int, int> dropDepths = new();
+    private bool IsDropDragging(int id) => dropDepths.GetValueOrDefault(id) > 0;
+    private void OnDragEnter(int id) => dropDepths[id] = dropDepths.GetValueOrDefault(id) + 1;
+    private void OnDragLeave(int id) { var d = dropDepths.GetValueOrDefault(id) - 1; dropDepths[id] = d < 0 ? 0 : d; }
+    private void OnDropZoneDrop(int id) => dropDepths[id] = 0;
+
+    // Add Evidence modal
+    private bool evidenceModalOpen;
+    private JNode? evidenceModalNode;
+    private string evidenceModalTab = "file";
+    private string evidenceModalUrl = "";
+    private string evidenceModalRaw = "";
+    private readonly List<StagedItem> stagedItems = new();
+    private bool savingStaged;
+    private int modalDropDepth;
+    private bool ModalDropDragging => modalDropDepth > 0;
 
     // Category picker
     private string selectedTopLevel = "Goods";
@@ -239,17 +452,42 @@ else
     protected override async Task OnInitializedAsync()
     {
         var auth = await AuthStateProvider.GetAuthenticationStateAsync();
-        isAdmin = auth.User.Identity?.IsAuthenticated == true;
-        if (!isAdmin) previewRole = "visitor";
+        isAdmin = auth.User.IsInRole("Administrator");
 
         await using var db = await DbFactory.CreateDbContextAsync();
+
+        if (!isAdmin && auth.User.Identity?.IsAuthenticated == true)
+        {
+            var userId = auth.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (userId != null)
+            {
+                var codes = await db.SubscribedStates
+                    .Where(ss => ss.Subscriber.UserId == userId && ss.IsActive)
+                    .Select(ss => ss.StateCode)
+                    .ToListAsync();
+                subscribedStateCodes = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+
+                var catIds = await db.SubscribedCategories
+                    .Where(sc => sc.Subscriber.UserId == userId && sc.IsActive)
+                    .Select(sc => sc.CategoryId)
+                    .ToListAsync();
+                subscribedCategoryIds = new HashSet<int>(catIds);
+            }
+        }
 
         allCategories = await db.TaxCategories
             .OrderBy(c => c.SortOrder)
             .Select(c => new CategoryItem(c.Id, c.Name, c.TopLevelType, c.ParentId, c.IsLeaf, c.SortOrder))
             .ToListAsync();
 
-        selectedCategoryId = categoryGroups.SelectMany(g => g.Leaves).FirstOrDefault()?.Id;
+        totalCategoryCount = allCategories.Count(c => c.IsLeaf);
+
+        var leafCategories = categoryGroups.SelectMany(g => g.Leaves).ToList();
+        var firstAccessible = isAdmin || IsGuestMode
+            ? leafCategories.FirstOrDefault()
+            : leafCategories.FirstOrDefault(c => subscribedCategoryIds.Contains(c.Id))
+              ?? leafCategories.FirstOrDefault();
+        selectedCategoryId = firstAccessible?.Id;
 
         states = await BuildNodes(db, JurisdictionType.State, parentType: JurisdictionType.Country);
         loading = false;
@@ -294,15 +532,35 @@ else
         var jurisdictions = await q.OrderBy(j => j.JurisdictionName).ToListAsync();
 
         if (!isSubscribed)
+        {
             return jurisdictions.Select(j =>
-                new JNode(j.Id, j.JurisdictionName, j.StateCode, j.FipsCode, type, null, null, [], parentCumulative)
-            ).ToList();
+            {
+                var fakeRate = type switch
+                {
+                    JurisdictionType.State  => 0.03m  + (j.Id % 70) * 0.001m,
+                    JurisdictionType.County => 0.010m + (j.Id % 30) * 0.0005m,
+                    _                       => 0.003m + (j.Id % 25) * 0.0002m
+                };
+                var fakeCum = parentCumulative + fakeRate;
+                var fakeEvidence = new List<EvidenceFile>
+                {
+                    new(-j.Id, "revenue-schedule.pdf", "Revenue Schedule 2024.pdf", "pdf", "", "", "GovernmentPublication", "2024-11-01T00:00:00Z")
+                };
+                return new JNode(j.Id, j.JurisdictionName, j.StateCode, j.FipsCode, type,
+                    fakeRate, -(j.Id), fakeEvidence, parentCumulative,
+                    fakeCum, fakeCum + (j.Id % 5) * 0.002m);
+            }).ToList();
+        }
 
         var ids = jurisdictions.Select(j => j.Id).ToList();
 
+        var subscribedIds = (!isAdmin && subscribedStateCodes.Count > 0 && type == JurisdictionType.State)
+            ? jurisdictions.Where(j => subscribedStateCodes.Contains(j.StateCode)).Select(j => j.Id).ToList()
+            : ids;
+
         var catId = selectedCategoryId;
         var rates = await db.TaxRates
-            .Where(r => ids.Contains(r.JurisdictionId) && r.IsCurrent && r.TaxCategoryId == catId)
+            .Where(r => subscribedIds.Contains(r.JurisdictionId) && r.IsCurrent && r.TaxCategoryId == catId)
             .Select(r => new { r.JurisdictionId, r.Rate, r.Id })
             .ToListAsync();
 
@@ -310,7 +568,7 @@ else
 
         var docs = await db.SourceDocuments
             .Where(d => rateIds.Contains(d.TaxRateId) && d.IsActive)
-            .Select(d => new { d.TaxRateId, d.Id, d.FileName, d.SourceType, d.FetchedAt, d.SourceUrl })
+            .Select(d => new { d.TaxRateId, d.Id, d.FileName, d.OriginalFileName, d.EvidenceType, d.SourceUrl, d.RawContent, d.SourceType, d.FetchedAt })
             .ToListAsync();
 
         var rateMap = rates
@@ -320,8 +578,8 @@ else
 
         // Compute child ranges
         Dictionary<int, (decimal Min, decimal Max)> subRangeMap = [];
-        if (type == JurisdictionType.State && ids.Count > 0)
-            subRangeMap = await ComputeStateSubRangesAsync(db, ids);
+        if (type == JurisdictionType.State && subscribedIds.Count > 0)
+            subRangeMap = await ComputeStateSubRangesAsync(db, subscribedIds);
         else if (type == JurisdictionType.County && ids.Count > 0)
             subRangeMap = await ComputeCountySubRangesAsync(db, ids);
 
@@ -329,7 +587,7 @@ else
         {
             var rate = rateMap.GetValueOrDefault(j.Id);
             var evidence = rate is null ? [] : docMap.GetValueOrDefault(rate.Id, [])
-                .Select(d => new EvidenceFile(d.Id, d.FileName, d.SourceType.ToString(), d.FetchedAt, d.SourceUrl))
+                .Select(d => new EvidenceFile(d.Id, d.FileName, d.OriginalFileName, d.EvidenceType, d.SourceUrl, d.RawContent, d.SourceType.ToString(), d.FetchedAt))
                 .ToList();
 
             var myRate = rate?.Rate ?? 0m;
@@ -367,7 +625,8 @@ else
         var counties = await db.Jurisdictions
             .Where(co => co.JurisdictionType == JurisdictionType.County && co.IsActive
                          && co.ParentId.HasValue && stateIds.Contains(co.ParentId.Value))
-            .Select(co => new {
+            .Select(co => new
+            {
                 CountyId = co.Id,
                 StateId = co.ParentId!.Value,
                 Rate = (decimal?)db.TaxRates
@@ -383,7 +642,8 @@ else
         var cities = await db.Jurisdictions
             .Where(ci => ci.JurisdictionType == JurisdictionType.City && ci.IsActive
                          && ci.ParentId.HasValue && countyIds.Contains(ci.ParentId.Value))
-            .Select(ci => new {
+            .Select(ci => new
+            {
                 CountyId = ci.ParentId!.Value,
                 Rate = (decimal?)db.TaxRates
                     .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent && r.TaxCategoryId == catId)
@@ -421,7 +681,8 @@ else
         var cities = await db.Jurisdictions
             .Where(ci => ci.JurisdictionType == JurisdictionType.City && ci.IsActive
                          && ci.ParentId.HasValue && countyIds.Contains(ci.ParentId.Value))
-            .Select(ci => new {
+            .Select(ci => new
+            {
                 CountyId = ci.ParentId!.Value,
                 Rate = (decimal?)db.TaxRates
                     .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent && r.TaxCategoryId == catId)
@@ -473,32 +734,32 @@ else
     private RenderFragment DetailPanel(JNode node, bool showCombined = false) => __builder =>
     {
         <div @onclick:stopPropagation="true">
-            <!-- top row: label + rate + combined pill + upload -->
             <div class="detail-top-row">
-                <span class="detail-label">Tax Rate</span>
-                @RateCell(node)
-                @if (showCombined && isSubscribed && (node.MinCumulative ?? 0) > 0)
-                {
-                    <span class="combined-pill" title="State + County + City">
-                        ∑ @((node.MinCumulative!.Value * 100).ToString("F3"))%
-                    </span>
-                }
+                <div class="detail-field">
+                    <span class="detail-label">Tax Rate</span>
+                    @RateCell(node)
+                    @if (showCombined && (node.MinCumulative ?? 0) > 0)
+                    {
+                        <span class="combined-pill" title="State + County + City">
+                            ∑ @((node.MinCumulative!.Value * 100).ToString("F3"))%
+                        </span>
+                    }
+                </div>
                 @if (isAdmin)
                 {
-                    @if (node.RateId.HasValue)
-                    {
-                        <label class="btn-secondary upload-label-sm" title="Upload evidence file (.pdf, .txt, .csv, .html, .xlsx, .json)">
-                            ↑ Upload Evidence
-                            <InputFile OnChange="e => UploadEvidence(node, e)"
-                                       accept=".pdf,.txt,.csv,.html,.xlsx,.json"
-                                       disabled="@uploading" style="display:none" />
-                        </label>
-                        @if (uploading) { <span class="muted small">Saving…</span> }
-                    }
-                    else
-                    {
-                        <span class="muted small" style="margin-left:.75rem">Save a rate first to attach evidence</span>
-                    }
+                    <div class="detail-field">
+                        <span class="detail-label">Evidence</span>
+                    </div>
+                    <div class="detail-field">
+                        @if (!node.RateId.HasValue)
+                        {
+                            <span class="muted small">Save a rate first to attach evidence</span>
+                        }
+                        else
+                        {
+                            <button class="btn-add-evidence" @onclick='() => OpenEvidenceModal(node)'>+ Add Evidence</button>
+                        }
+                    </div>
                 }
             </div>
             <!-- inline evidence list -->
@@ -508,12 +769,17 @@ else
                     @foreach (var f in node.Evidence)
                     {
                         <li class="evidence-item">
-                            <span class="ev-icon">@FileIcon(f.FileName)</span>
-                            <a href="/evidence/@f.FileName" target="_blank" class="ev-name" title="@f.FileName">@f.FileName</a>
+                            <span class="ev-icon">@FileIcon(f.EvidenceType)</span>
+                            <button class="ev-name ev-name-btn" @onclick="() => OpenEvidenceReader(node, f)" title="View @EvidenceDisplayName(f)">@EvidenceDisplayName(f)</button>
                             <span class="ev-type muted small">@f.SourceType</span>
                             <span class="ev-date muted small">@(f.FetchedAt?.Length >= 10 ? f.FetchedAt[..10] : f.FetchedAt ?? "")</span>
-                            <button class="btn-danger-tiny" @onclick="() => DisassociateEvidence(node, f.Id)"
-                                    title="Disassociate (file kept for audit)">✕</button>
+                            @if (isAdmin && f.Id > 0)
+                            {
+                                <button class="btn-danger-tiny" @onclick="() => DisassociateEvidence(node, f.Id)"
+                                        title="Disassociate (file kept for audit)">
+                                    ✕
+                                </button>
+                            }
                         </li>
                     }
                 </ul>
@@ -521,41 +787,51 @@ else
         </div>
     };
 
+    private void ShowCategoryLockedHint() =>
+        SetStatus("✗ Subscribe to this product category to view rates — Adjust subscription →");
+
     // ── Rate cell ─────────────────────────────────────────────────────────────
     private RenderFragment RateCell(JNode node) => __builder =>
     {
         <span @onclick:stopPropagation="true" class="rate-cell-wrap">
-        @if (!isSubscribed)
-        {
-            var fake = node.Tier switch {
-                JurisdictionType.State  => "6.250%",
-                JurisdictionType.County => "1.750%",
-                _                       => "0.875%"
-            };
-            <div class="rate-redacted">
-                <span class="redacted-blur">@fake</span>
-                <span class="lock-pill">🔒 Locked</span>
-            </div>
-        }
-        else if (editActive.Contains(node.Id))
-        {
-            <input class="rate-input"
-                   type="number" step="0.001" min="0" max="30"
-                   value="@(editValues.TryGetValue(node.Id, out var v) ? v : FormatRate(node.Rate))"
-                   @onchange="e => OnRateChange(node.Id, e.Value?.ToString() ?? string.Empty)"
-                   @onkeydown="e => OnRateKey(e, node.Id)" />
-            <span class="muted small">%</span>
-            <button class="rate-action-btn rate-save-btn" @onclick="() => SaveRate(node.Id)" title="Save">✓</button>
-            <button class="rate-action-btn rate-cancel-btn" @onclick="() => CancelEdit(node.Id)" title="Cancel">✕</button>
-        }
-        else
-        {
-            <span class="rate-val @(node.Rate.HasValue ? string.Empty : "no-rate")"
-                  @onclick="() => StartEdit(node.Id, node.Rate)"
-                  title="Click to edit">
-                @(node.Rate.HasValue ? $"{node.Rate.Value * 100:F3}%" : "—")
-            </span>
-        }
+            @if (IsGuestMode && editActive.Contains(node.Id))
+            {
+                <input class="rate-input"
+                       type="number" step="0.001" min="0" max="30"
+                       value="@(editValues.TryGetValue(node.Id, out var fv) ? fv : FormatRate(node.Rate))"
+                       @onchange="e => OnRateChange(node.Id, e.Value?.ToString() ?? string.Empty)"
+                       @onkeydown="e => OnFakeRateKey(e, node.Id)" />
+                <span class="muted small">%</span>
+                <button class="rate-action-btn rate-save-btn" @onclick="() => FakeSaveAttempt(node.Id)" title="Save">✓</button>
+                <button class="rate-action-btn rate-cancel-btn" @onclick="() => CancelEdit(node.Id)" title="Cancel">✕</button>
+            }
+            else if (IsGuestMode)
+            {
+                <span class="rate-val @(node.Rate.HasValue ? string.Empty : "no-rate")"
+                      @onclick="() => StartEdit(node.Id, node.Rate)"
+                      title="Click to edit">
+                    @(node.Rate.HasValue ? $"{node.Rate.Value * 100:F3}%" : "—")
+                </span>
+            }
+            else if (isAdmin && editActive.Contains(node.Id))
+            {
+                <input class="rate-input"
+                       type="number" step="0.001" min="0" max="30"
+                       value="@(editValues.TryGetValue(node.Id, out var av) ? av : FormatRate(node.Rate))"
+                       @onchange="e => OnRateChange(node.Id, e.Value?.ToString() ?? string.Empty)"
+                       @onkeydown="e => OnRateKey(e, node.Id)" />
+                <span class="muted small">%</span>
+                <button class="rate-action-btn rate-save-btn" @onclick="() => SaveRate(node.Id)" title="Save">✓</button>
+                <button class="rate-action-btn rate-cancel-btn" @onclick="() => CancelEdit(node.Id)" title="Cancel">✕</button>
+            }
+            else
+            {
+                <span class="rate-val @(node.Rate.HasValue ? string.Empty : "no-rate") @(!isAdmin ? "rate-readonly" : "")"
+                      @onclick="() => TryStartEdit(node.Id, node.Rate)"
+                      title="@(isAdmin ? "Click to edit" : "")">
+                    @(node.Rate.HasValue ? $"{node.Rate.Value * 100:F3}%" : "—")
+                </span>
+            }
         </span>
     };
 
@@ -599,11 +875,15 @@ else
 
             db.TaxRates.Add(new TaxRate
             {
-                JurisdictionId = jurisdictionId, TaxCategoryId = catId,
-                Rate = rate, RateType = "General",
+                JurisdictionId = jurisdictionId,
+                TaxCategoryId = catId,
+                Rate = rate,
+                RateType = "General",
                 EffectiveDate = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd"),
-                ScrapedAt = DateTime.UtcNow.ToString("o"), ScrapeRunId = manualRunId.Value,
-                RawValue = $"{pct:F3}%", IsCurrent = true
+                ScrapedAt = DateTime.UtcNow.ToString("o"),
+                ScrapeRunId = manualRunId.Value,
+                RawValue = $"{pct:F3}%",
+                IsCurrent = true
             });
             await db.SaveChangesAsync();
 
@@ -617,7 +897,6 @@ else
     // ── Range display ──────────────────────────────────────────────────────────
     private RenderFragment RangeDisplay(JNode node) => __builder =>
     {
-        if (!isSubscribed) return;
 
         if (node.MinCumulative.HasValue)
         {
@@ -625,16 +904,16 @@ else
             var hi = (node.MaxCumulative ?? node.MinCumulative.Value) * 100m;
 
             <span class="rate-range">
-            @if (Math.Abs(hi - lo) < 0.0005m)
-            {
-                <span class="rate-range-single">@lo.ToString("F3")%</span>
-            }
-            else
-            {
-                <span class="rate-range-low">@lo.ToString("F3")%</span>
-                <span class="rate-range-sep"> – </span>
-                <span class="rate-range-high">@hi.ToString("F3")%</span>
-            }
+                @if (Math.Abs(hi - lo) < 0.0005m)
+                {
+                    <span class="rate-range-single">@lo.ToString("F3")%</span>
+                }
+                else
+                {
+                    <span class="rate-range-low">@lo.ToString("F3")%</span>
+                    <span class="rate-range-sep"> – </span>
+                    <span class="rate-range-high">@hi.ToString("F3")%</span>
+                }
             </span>
         }
         else
@@ -647,42 +926,39 @@ else
     private RenderFragment EvidenceToggle(JNode node) => __builder =>
     {
         <span @onclick:stopPropagation="true">
-        @if (!isSubscribed)
-        {
-            <span class="evidence-badge evidence-redacted" title="Subscribe to view evidence">
-                <span class="redacted-blur">📎 ●</span>
-            </span>
-        }
-        else
-        {
-            var count = node.Evidence.Count;
-            var isOpen = evidenceOpen == node.Id;
-            if (isOpen)
-            {
-                <button class="evidence-badge evidence-hide" @onclick="() => ToggleEvidence(node.Id)"
-                        title="Hide evidence panel">
-                    ▲ Hide
-                </button>
+            @{
+                var count = node.Evidence.Count;
+                var isOpen = evidenceOpen == node.Id;
+                if (isOpen)
+                {
+                    <button class="evidence-badge evidence-hide" @onclick="() => ToggleEvidence(node.Id)"
+                            title="Hide evidence panel">
+                        ▲ Hide
+                    </button>
+                }
+                else if (count > 0)
+                {
+                    <button class="evidence-badge evidence-ok" @onclick="() => ToggleEvidence(node.Id)"
+                            title="@count evidence file(s) attached — click to view">
+                        📎 @count
+                    </button>
+                }
+                else if (node.RateId.HasValue && isAdmin)
+                {
+                    <button class="evidence-badge evidence-missing" @onclick="() => ToggleEvidence(node.Id)"
+                            title="No evidence — click to add">
+                        ＋ Add
+                    </button>
+                }
+                else if (node.RateId.HasValue)
+                {
+                    <span class="evidence-badge evidence-none" title="No evidence attached">—</span>
+                }
+                else
+                {
+                    <span class="evidence-badge evidence-none" title="Save a rate first">—</span>
+                }
             }
-            else if (count > 0)
-            {
-                <button class="evidence-badge evidence-ok" @onclick="() => ToggleEvidence(node.Id)"
-                        title="@count evidence file(s) attached — click to view">
-                    📎 @count
-                </button>
-            }
-            else if (node.RateId.HasValue)
-            {
-                <button class="evidence-badge evidence-missing" @onclick="() => ToggleEvidence(node.Id)"
-                        title="No evidence — click to add">
-                    ＋ Add
-                </button>
-            }
-            else
-            {
-                <span class="evidence-badge evidence-none" title="Save a rate first">—</span>
-            }
-        }
         </span>
     };
 
@@ -707,51 +983,105 @@ else
                     @foreach (var f in node.Evidence)
                     {
                         <li class="evidence-item">
-                            <span class="ev-icon">@FileIcon(f.FileName)</span>
-                            <a href="/evidence/@f.FileName" target="_blank" class="ev-name" title="@f.FileName">
-                                @f.FileName
-                            </a>
+                            <span class="ev-icon">@FileIcon(f.EvidenceType)</span>
+                            <button class="ev-name ev-name-btn" @onclick="() => OpenEvidenceReader(node, f)" title="View @EvidenceDisplayName(f)">
+                                @EvidenceDisplayName(f)
+                            </button>
                             <span class="ev-type muted small">@f.SourceType</span>
                             <span class="ev-date muted small">@(f.FetchedAt?.Length >= 10 ? f.FetchedAt[..10] : f.FetchedAt ?? "")</span>
-                            <button class="btn-danger-tiny" @onclick="() => DisassociateEvidence(node, f.Id)"
-                                    title="Disassociate (record kept for audit)">✕</button>
+                            @if (isAdmin && f.Id > 0)
+                            {
+                                <button class="btn-danger-tiny" @onclick="() => DisassociateEvidence(node, f.Id)"
+                                        title="Disassociate (record kept for audit)">
+                                    ✕
+                                </button>
+                            }
                         </li>
                     }
                 </ul>
             }
 
-            @if (!node.RateId.HasValue)
+            @if (isAdmin)
             {
-                <p class="muted small">Save a tax rate first before attaching evidence.</p>
-            }
-            else
-            {
-                <div class="evidence-upload">
-                    <label class="btn-secondary upload-label" title="Upload a file (pdf, txt, csv, etc.)">
-                        ＋ Attach File
-                        <InputFile OnChange="e => UploadEvidence(node, e)" accept=".pdf,.txt,.csv,.html,.xlsx,.json"
-                                   disabled="@uploading" style="display:none" />
-                    </label>
-                    @if (uploading) { <span class="muted small">Saving…</span> }
-                </div>
+                @if (!node.RateId.HasValue)
+                {
+                    <p class="muted small">Save a tax rate first before attaching evidence.</p>
+                }
+                else
+                {
+                    <div class="drop-zone @(IsDropDragging(node.Id) ? "drop-zone-active" : "")"
+                         @ondragenter="() => OnDragEnter(node.Id)"
+                         @ondragleave="() => OnDragLeave(node.Id)"
+                         @ondrop="() => OnDropZoneDrop(node.Id)"
+                         @ondragover:preventDefault="true">
+                        <span class="dz-icon">⬆</span>
+                        <span class="dz-text">Drop files here or click to browse</span>
+                        <span class="dz-hint">.pdf · .txt · .csv · .html · .xlsx · .json</span>
+                        <InputFile OnChange="e => UploadEvidence(node, e)"
+                                   accept=".pdf,.txt,.csv,.html,.xlsx,.json"
+                                   multiple disabled="@uploading"
+                                   class="dz-input" />
+                    </div>
+                    @if (uploading)
+                    {
+                        <span class="muted small" style="margin-top:.25rem">Saving…</span>
+                    }
+                }
             }
         </div>
     };
 
-    private static string FileIcon(string fileName) => Path.GetExtension(fileName).ToLowerInvariant() switch
+    private static string EvidenceDisplayName(EvidenceFile f) =>
+        string.IsNullOrEmpty(f.OriginalFileName) ? f.FileName : f.OriginalFileName;
+
+    private static bool IsUrl(string s) =>
+        s.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+        s.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+    private static string FileIcon(string evidenceType) => evidenceType.ToLowerInvariant() switch
     {
-        ".pdf" => "📄",
-        ".txt" => "📝",
-        ".csv" => "📊",
-        ".html" or ".htm" => "🌐",
-        ".xlsx" or ".xls" => "📊",
-        ".json" => "{ }",
-        _ => "📎"
+        "pdf"              => "📄",
+        "txt" or "raw"     => "📝",
+        "csv"              => "📊",
+        "html" or "htm"    => "🌐",
+        "xlsx" or "xls"    => "📊",
+        "json"             => "{ }",
+        "url"              => "🔗",
+        _                  => "📎"
     };
+
+    private string BuildJurisdictionPath(JNode node)
+    {
+        if (node.Tier == JurisdictionType.State)
+            return node.Name;
+
+        if (node.Tier == JurisdictionType.County)
+        {
+            var parent = states.FirstOrDefault(s =>
+                children.TryGetValue(s.Id, out var counties) && counties.Any(c => c.Id == node.Id));
+            return parent != null ? $"{parent.Name} › {node.Name}" : node.Name;
+        }
+
+        if (node.Tier == JurisdictionType.City)
+        {
+            foreach (var state in states)
+            {
+                if (!children.TryGetValue(state.Id, out var counties)) continue;
+                foreach (var county in counties)
+                {
+                    if (!children.TryGetValue(county.Id, out var cities)) continue;
+                    if (cities.Any(c => c.Id == node.Id))
+                        return $"{state.Name} › {county.Name} › {node.Name}";
+                }
+            }
+        }
+
+        return node.Name;
+    }
 
     private async Task UploadEvidence(JNode node, InputFileChangeEventArgs e)
     {
-        if (!isAdmin) { SetStatus("✗ Sign in to upload evidence"); return; }
+        if (!isAdmin) { SetStatus("✗ Admin access required to upload evidence"); return; }
         if (!node.RateId.HasValue || e.FileCount == 0) return;
         uploading = true;
         StateHasChanged();
@@ -805,6 +1135,8 @@ else
                     FetchedAt = DateTime.UtcNow.ToString("o"),
                     ContentHash = contentHash,
                     FileName = fileName,
+                    OriginalFileName = file.Name,
+                    EvidenceType = ext.TrimStart('.'),
                     RawContent = string.Empty
                 });
                 await db.SaveChangesAsync();
@@ -821,7 +1153,7 @@ else
 
     private async Task DisassociateEvidence(JNode node, int docId)
     {
-        if (!isAdmin) { SetStatus("✗ Sign in to remove evidence"); return; }
+        if (!isAdmin) { SetStatus("✗ Admin access required to remove evidence"); return; }
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
@@ -848,7 +1180,7 @@ else
 
         var evidence = rate is null ? [] : await db.SourceDocuments
             .Where(d => d.TaxRateId == rate.Id && d.IsActive)
-            .Select(d => new EvidenceFile(d.Id, d.FileName, d.SourceType.ToString(), d.FetchedAt, d.SourceUrl))
+            .Select(d => new EvidenceFile(d.Id, d.FileName, d.OriginalFileName, d.EvidenceType, d.SourceUrl, d.RawContent, d.SourceType.ToString(), d.FetchedAt))
             .ToListAsync();
 
         UpdateNodeInplace(jurisdictionId, rate?.Rate, rate?.Id, evidence);
@@ -885,20 +1217,255 @@ else
         finally { scraping = false; StateHasChanged(); }
     }
 
-    // ── Subscription demo toggle ──────────────────────────────────────────────
-    private async Task SetRole(string role)
+
+    // ── Add Evidence modal ────────────────────────────────────────────────────
+    private void OpenEvidenceModal(JNode node)
     {
-        if (previewRole == role) return;
-        previewRole = role;
-        loading = true;
-        children.Clear();
-        expanded.Clear();
-        evidenceOpen = null;
-        StateHasChanged();
-        await using var db = await DbFactory.CreateDbContextAsync();
-        states = await BuildNodes(db, JurisdictionType.State, parentType: JurisdictionType.Country);
-        loading = false;
+        evidenceModalNode = node;
+        evidenceModalOpen = true;
+        evidenceModalTab = "file";
+        evidenceModalUrl = "";
+        evidenceModalRaw = "";
+        stagedItems.Clear();
     }
+
+    private void CloseEvidenceModal()
+    {
+        evidenceModalOpen = false;
+        evidenceModalNode = null;
+        stagedItems.Clear();
+    }
+
+    private void OnModalDragEnter() => modalDropDepth++;
+    private void OnModalDragLeave() { var d = modalDropDepth - 1; modalDropDepth = d < 0 ? 0 : d; }
+    private void OnModalDrop() => modalDropDepth = 0;
+
+    private void OnModalFileChange(InputFileChangeEventArgs e)
+    {
+        foreach (var file in e.GetMultipleFiles(20))
+            stagedItems.Add(new StagedItem { Kind = "file", File = file, DisplayName = file.Name });
+    }
+
+    private void OnUrlKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AddUrlToQueue();
+    }
+
+    private void AddUrlToQueue()
+    {
+        var url = evidenceModalUrl.Trim();
+        if (string.IsNullOrEmpty(url)) return;
+        var displayName = Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            ? $"{uri.Host.Replace("www.", string.Empty)}.txt"
+            : "link.txt";
+        stagedItems.Add(new StagedItem { Kind = "url", Text = url, DisplayName = displayName });
+        evidenceModalUrl = "";
+    }
+
+    private void AddRawToQueue()
+    {
+        var text = evidenceModalRaw.Trim();
+        if (string.IsNullOrEmpty(text)) return;
+        stagedItems.Add(new StagedItem { Kind = "raw", Text = text, DisplayName = $"Note {DateTime.UtcNow:yyyy-MM-dd HH-mm}.txt" });
+        evidenceModalRaw = "";
+    }
+
+    private static string QueueItemIcon(StagedItem item) => item.Kind switch
+    {
+        "url" => "🔗",
+        "raw" => "📝",
+        _ => FileIcon(Path.GetExtension(item.DisplayName).TrimStart('.'))
+    };
+
+    private async Task SaveAllStaged()
+    {
+        if (evidenceModalNode is null || !evidenceModalNode.RateId.HasValue || stagedItems.Count == 0) return;
+        savingStaged = true;
+        StateHasChanged();
+
+        var node = evidenceModalNode;
+        int saved = 0;
+
+        try
+        {
+            Directory.CreateDirectory(SettingsService.EvidenceDirectory);
+
+            foreach (var item in stagedItems.ToList())
+            {
+                try
+                {
+                    if (item.Kind == "file" && item.File != null)
+                    {
+                        var ext = Path.GetExtension(item.File.Name).ToLowerInvariant();
+                        var fileName = $"{Guid.CreateVersion7():N}{ext}";
+                        var fullPath = Path.Combine(SettingsService.EvidenceDirectory, fileName);
+
+                        string contentHash;
+                        await using (var fs = File.Create(fullPath))
+                        await using (var stream = item.File.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024))
+                        {
+                            using var sha = SHA256.Create();
+                            using var cs = new CryptoStream(fs, sha, CryptoStreamMode.Write);
+                            await stream.CopyToAsync(cs);
+                            cs.FlushFinalBlock();
+                            contentHash = Convert.ToHexString(sha.Hash!).ToLowerInvariant();
+                        }
+
+                        var mime = ext switch
+                        {
+                            ".pdf"  => "application/pdf",
+                            ".csv"  => "text/csv",
+                            ".html" or ".htm" => "text/html",
+                            ".json" => "application/json",
+                            ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            _       => "text/plain"
+                        };
+                        var sourceType = ext switch
+                        {
+                            ".pdf"  => SourceType.Pdf,
+                            ".csv"  => SourceType.Csv,
+                            ".html" or ".htm" => SourceType.Website,
+                            _       => SourceType.Manual
+                        };
+
+                        await using var db = await DbFactory.CreateDbContextAsync();
+                        db.SourceDocuments.Add(new SourceDocument
+                        {
+                            TaxRateId = node.RateId.Value, SourceType = sourceType,
+                            SourceUrl = string.Empty, MimeType = mime,
+                            FetchedAt = DateTime.UtcNow.ToString("o"), ContentHash = contentHash,
+                            FileName = fileName, OriginalFileName = item.File.Name,
+                            EvidenceType = ext.TrimStart('.'), RawContent = string.Empty
+                        });
+                        await db.SaveChangesAsync();
+                        saved++;
+                    }
+                    else
+                    {
+                        var bytes = System.Text.Encoding.UTF8.GetBytes(item.Text);
+                        var fileName = $"{Guid.CreateVersion7():N}.txt";
+                        await File.WriteAllBytesAsync(Path.Combine(SettingsService.EvidenceDirectory, fileName), bytes);
+
+                        using var sha = SHA256.Create();
+                        var contentHash = Convert.ToHexString(sha.ComputeHash(bytes)).ToLowerInvariant();
+
+                        await using var db = await DbFactory.CreateDbContextAsync();
+                        db.SourceDocuments.Add(new SourceDocument
+                        {
+                            TaxRateId = node.RateId.Value, SourceType = SourceType.Manual,
+                            SourceUrl = item.Kind == "url" ? item.Text : string.Empty,
+                            MimeType = "text/plain", FetchedAt = DateTime.UtcNow.ToString("o"),
+                            ContentHash = contentHash, FileName = fileName,
+                            OriginalFileName = item.DisplayName, EvidenceType = "txt",
+                            RawContent = string.Empty, IsActive = true
+                        });
+                        await db.SaveChangesAsync();
+                        saved++;
+                    }
+                }
+                catch (Exception ex) { SetStatus($"✗ {item.DisplayName}: {ex.Message}"); }
+            }
+
+            if (saved > 0)
+            {
+                await using var db2 = await DbFactory.CreateDbContextAsync();
+                await RefreshNode(db2, node.Id);
+                SetStatus($"✓ {saved} evidence item{(saved == 1 ? "" : "s")} added");
+                CloseEvidenceModal();
+            }
+        }
+        catch (Exception ex) { SetStatus($"✗ {ex.Message}"); }
+        finally { savingStaged = false; StateHasChanged(); }
+    }
+
+    // ── Evidence reader ────────────────────────────────────────────────────────
+    private EvidenceFile? evidenceReaderFile;
+    private string evidenceReaderJurisdiction = "";
+    private string? evidenceReaderContent;
+    private bool evidenceReaderLoading;
+    private bool pendingReaderOpen;
+
+    private async Task OpenEvidenceReader(JNode node, EvidenceFile file)
+    {
+        evidenceReaderFile = file;
+        evidenceReaderJurisdiction = BuildJurisdictionPath(node);
+        evidenceReaderContent = null;
+        evidenceReaderLoading = true;
+        pendingReaderOpen = false;
+        StateHasChanged();
+
+        switch (file.EvidenceType)
+        {
+            case "txt" or "csv" or "json" or "raw":
+                if (file.Id < 0)
+                    evidenceReaderContent = BuildFakeEvidenceText(EvidenceDisplayName(file));
+                else if (!string.IsNullOrEmpty(file.RawContent))
+                    evidenceReaderContent = file.RawContent;
+                else
+                    evidenceReaderContent = await JS.InvokeAsync<string?>("evidenceReader.fetchText", $"/evidence/{file.FileName}");
+                break;
+            // "pdf", "html" — shown in iframe below
+        }
+
+        evidenceReaderLoading = false;
+        pendingReaderOpen = true;
+        StateHasChanged();
+    }
+
+    private async Task CloseEvidenceReader()
+    {
+        await JS.InvokeVoidAsync("evidenceReader.close");
+        evidenceReaderFile = null;
+        evidenceReaderContent = null;
+        evidenceReaderLoading = false;
+    }
+
+    private static string BuildFakeEvidenceText(string fileName) =>
+        $"""
+        DEPARTMENT OF REVENUE — SAMPLE DOCUMENT
+        ========================================
+        Document: {fileName}
+        Issued:   November 1, 2024
+
+        This is sample data for demonstration purposes only.
+        Actual rates may differ. Subscribe to access verified data.
+
+        SECTION 1 — GENERAL SALES TAX
+        Base rate: see applicable schedule
+        Exemptions: food, medicine (see applicable statutes)
+
+        SECTION 2 — SPECIAL DISTRICT LEVIES
+        Contact the county assessor's office for current district levies.
+
+        © Department of Revenue. All rights reserved.
+        """;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (pendingReaderOpen && evidenceReaderFile != null)
+        {
+            pendingReaderOpen = false;
+            await JS.InvokeVoidAsync("evidenceReader.open", "evidence-reader-overlay");
+        }
+    }
+
+    // ── Rate edit helpers ──────────────────────────────────────────────────────
+    private void TryStartEdit(int id, decimal? rate) { if (isAdmin) StartEdit(id, rate); }
+
+    private async Task OnFakeRateKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, int id)
+    {
+        if (e.Key is "Enter" or "Tab") FakeSaveAttempt(id);
+        if (e.Key == "Escape") CancelEdit(id);
+        await Task.CompletedTask;
+    }
+
+    private void FakeSaveAttempt(int id)
+    {
+        editActive.Remove(id);
+        editValues.Remove(id);
+        SetStatus("✗ Subscribe to save rate changes");
+    }
+
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     private void SetStatus(string? msg)
@@ -922,7 +1489,12 @@ else
             .Where(j => j.IsActive)
             .Select(j => new
             {
-                j.Id, j.ParentId, j.JurisdictionType, j.StateCode, j.JurisdictionName, j.FipsCode,
+                j.Id,
+                j.ParentId,
+                j.JurisdictionType,
+                j.StateCode,
+                j.JurisdictionName,
+                j.FipsCode,
                 Rate = (decimal?)db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent).Select(r => r.Rate).FirstOrDefault(),
                 EffectiveDate = db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent).Select(r => r.EffectiveDate).FirstOrDefault() ?? "",
                 RateId = (int?)db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent).Select(r => r.Id).FirstOrDefault()
@@ -973,9 +1545,9 @@ else
         exportFormat = "";
         switch (fmt)
         {
-            case "csv":  await ExportCsv();  break;
+            case "csv": await ExportCsv(); break;
             case "xlsx": await ExportXlsx(); break;
-            case "sql":  await ExportSql();  break;
+            case "sql": await ExportSql(); break;
             case "html": await ExportHtml(); break;
         }
     }
@@ -1104,7 +1676,7 @@ else
             sb.AppendLine("</tr></thead><tbody>");
             foreach (var r in rows)
             {
-                var rate     = r.Rate.HasValue     ? $"{r.Rate.Value * 100:F3}%"         : "—";
+                var rate = r.Rate.HasValue ? $"{r.Rate.Value * 100:F3}%" : "—";
                 var combined = r.CombinedRate.HasValue ? $"{r.CombinedRate.Value * 100:F3}%" : "—";
                 var validated = r.HasEvidence
                     ? "<span class=\"ok\">● Validated</span>"

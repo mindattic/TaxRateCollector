@@ -7,6 +7,7 @@ public class PricingConfig
 {
     public int Id { get; set; }
     public decimal PricePerState { get; set; } = 0.01m;
+    public decimal PricePerCategory { get; set; } = 0.01m;
     public string Currency { get; set; } = "USD";
     public string UpdatedAt { get; set; } = "";
 }

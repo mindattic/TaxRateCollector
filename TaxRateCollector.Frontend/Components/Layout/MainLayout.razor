@@ -1,9 +1,6 @@
 @inherits LayoutComponentBase
-@using Microsoft.AspNetCore.Identity
-@using TaxRateCollector.Frontend.Services
-@inject SignInManager<IdentityUser> SignIn
 @inject NavigationManager Nav
-@inject ViewAsService ViewAs
+@rendermode InteractiveServer
 
 <div class="app-shell">
     <header class="app-header">
@@ -14,10 +11,21 @@
         <div class="user-nav">
             <AuthorizeView>
                 <Authorized>
-                    <a href="/account" class="user-nav-link" title="My Account">
-                        👤 @context.User.Identity?.Name
-                    </a>
-                    <button class="btn-tiny" @onclick="Logout">Log Out</button>
+                    <div class="user-dropdown @(dropdownOpen ? "user-dropdown-open" : "")">
+                        <button class="user-nav-link" @onclick="ToggleDropdown" @onclick:stopPropagation="true">
+                            👤 @context.User.Identity?.Name ▾
+                        </button>
+                        @if (dropdownOpen)
+                        {
+                            <div class="user-dropdown-menu" @onclick:stopPropagation="true">
+                                <a href="/settings" class="user-dropdown-item" @onclick="CloseDropdown">⚙ Settings</a>
+                                <form method="post" action="/logout" style="margin:0">
+                            <AntiforgeryToken />
+                            <button type="submit" class="user-dropdown-item user-dropdown-item-danger">⏻ Log Out</button>
+                        </form>
+                            </div>
+                        }
+                    </div>
                 </Authorized>
                 <NotAuthorized>
                     <a href="/login" class="user-nav-link">Log In</a>
@@ -37,27 +45,21 @@
             <span class="tab-label">Glossary</span>
         </NavLink>
 
-        <!-- Authenticated-only tabs -->
         <AuthorizeView>
             <Authorized>
                 <NavLink class="tab" href="logs">
                     <span class="tab-icon">◎</span>
                     <span class="tab-label">Logs</span>
                 </NavLink>
-                <NavLink class="tab" href="settings">
-                    <span class="tab-icon">⚙</span>
-                    <span class="tab-label">Settings</span>
-                </NavLink>
+            </Authorized>
+        </AuthorizeView>
 
-                <!-- Admin-only tabs (hidden in subscriber/guest preview) -->
-                @if (ViewAs.Role == ViewAsRole.Actual)
-                {
-                    <NavLink class="tab tab-admin" href="setup">
-                        <span class="tab-icon">⚒</span>
-                        <span class="tab-label">Setup</span>
-                        <span class="tab-role-badge">Admin</span>
-                    </NavLink>
-                }
+        <AuthorizeView Roles="Administrator">
+            <Authorized>
+                <NavLink class="tab tab-admin" href="setup">
+                    <span class="tab-icon">⚒</span>
+                    <span class="tab-label">Setup</span>
+                </NavLink>
             </Authorized>
         </AuthorizeView>
     </nav>
@@ -67,25 +69,6 @@
     </main>
 </div>
 
-<!-- ── Role picker overlay — fixed, always on top, outside all page content ── -->
-<AuthorizeView>
-    <Authorized>
-        <div class="show-as-bar">
-            <span class="show-as-label">View as</span>
-            <button class="show-as-btn @(ViewAs.Role == ViewAsRole.Actual ? "show-as-active" : "")"
-                    @onclick="() => SetViewAs(ViewAsRole.Actual)">Admin</button>
-            <button class="show-as-btn @(ViewAs.Role == ViewAsRole.Subscriber ? "show-as-active" : "")"
-                    @onclick="() => SetViewAs(ViewAsRole.Subscriber)">Subscriber</button>
-            <button class="show-as-btn @(ViewAs.Role == ViewAsRole.Guest ? "show-as-active" : "")"
-                    @onclick="() => SetViewAs(ViewAsRole.Guest)">Guest</button>
-            @if (ViewAs.Role != ViewAsRole.Actual)
-            {
-                <span class="show-as-preview-tag">Previewing @ViewAs.Role</span>
-            }
-        </div>
-    </Authorized>
-</AuthorizeView>
-
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
     <a href="." class="reload">Reload</a>
@@ -93,15 +76,8 @@
 </div>
 
 @code {
-    private void SetViewAs(ViewAsRole role)
-    {
-        ViewAs.Role = role;
-        Nav.NavigateTo(Nav.Uri, forceLoad: false);
-    }
+    private bool dropdownOpen;
 
-    private async Task Logout()
-    {
-        await SignIn.SignOutAsync();
-        Nav.NavigateTo("/", forceLoad: true);
-    }
+    private void ToggleDropdown() => dropdownOpen = !dropdownOpen;
+    private void CloseDropdown() => dropdownOpen = false;
 }

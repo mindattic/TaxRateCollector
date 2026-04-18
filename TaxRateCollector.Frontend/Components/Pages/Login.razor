@@ -1,8 +1,4 @@
 @page "/login"
-@using Microsoft.AspNetCore.Identity
-@inject SignInManager<IdentityUser> SignIn
-@inject NavigationManager Nav
-@rendermode InteractiveServer
 
 <PageTitle>Log In — TaxRateCollector</PageTitle>
 
@@ -11,25 +7,30 @@
         <div class="auth-logo">◈ TaxRateCollector</div>
         <h2 class="auth-title">Log in to your account</h2>
 
-        @if (error is not null)
+        @if (Error == "invalid")
         {
-            <div class="auth-error">@error</div>
+            <div class="auth-error">Invalid email or password.</div>
+        }
+        else if (Error == "locked")
+        {
+            <div class="auth-error">Account locked. Try again later.</div>
         }
 
-        <div class="auth-field">
-            <label>Email</label>
-            <input type="email" class="setting-input" placeholder="you@example.com"
-                   @bind="email" @bind:event="oninput" @onkeydown="OnKey" />
-        </div>
-        <div class="auth-field">
-            <label>Password</label>
-            <input type="password" class="setting-input" placeholder="••••••••"
-                   @bind="password" @bind:event="oninput" @onkeydown="OnKey" />
-        </div>
+        <form method="post" action="/login-submit">
+            <AntiforgeryToken />
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
 
-        <button class="btn-primary auth-btn" @onclick="Submit" disabled="@busy">
-            @(busy ? "Logging in…" : "Log In")
-        </button>
+            <div class="auth-field">
+                <label>Email</label>
+                <input type="email" name="email" class="setting-input" placeholder="you@example.com" autocomplete="username" />
+            </div>
+            <div class="auth-field">
+                <label>Password</label>
+                <input type="password" name="password" class="setting-input" placeholder="••••••••" autocomplete="current-password" />
+            </div>
+
+            <button type="submit" class="btn-primary auth-btn">Log In</button>
+        </form>
 
         <div class="auth-links">
             <span class="muted">Don't have an account?</span>
@@ -40,35 +41,5 @@
 
 @code {
     [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
-
-    private string email = "";
-    private string password = "";
-    private string? error;
-    private bool busy;
-
-    private async Task OnKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
-    {
-        if (e.Key == "Enter") await Submit();
-    }
-
-    private async Task Submit()
-    {
-        error = null;
-        busy = true;
-        StateHasChanged();
-
-        var result = await SignIn.PasswordSignInAsync(email, password, isPersistent: true, lockoutOnFailure: true);
-
-        if (result.Succeeded)
-        {
-            var target = !string.IsNullOrWhiteSpace(ReturnUrl) ? ReturnUrl : "/";
-            Nav.NavigateTo(target, forceLoad: true);
-        }
-        else if (result.IsLockedOut)
-            error = "Account locked. Try again later.";
-        else
-            error = "Invalid email or password.";
-
-        busy = false;
-    }
+    [SupplyParameterFromQuery] private string? Error { get; set; }
 }

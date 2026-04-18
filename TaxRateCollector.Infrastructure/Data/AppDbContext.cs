@@ -36,6 +36,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     public DbSet<PayPalConfig> PayPalConfigs => Set<PayPalConfig>();
     public DbSet<Subscriber> Subscribers => Set<Subscriber>();
     public DbSet<SubscribedState> SubscribedStates => Set<SubscribedState>();
+    public DbSet<SubscribedCategory> SubscribedCategories => Set<SubscribedCategory>();
     public DbSet<BillingRecord> BillingRecords => Set<BillingRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -136,6 +137,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
              .WithOne(ss => ss.Subscriber)
              .HasForeignKey(ss => ss.SubscriberId)
              .OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(s => s.SubscribedCategories)
+             .WithOne(sc => sc.Subscriber)
+             .HasForeignKey(sc => sc.SubscriberId)
+             .OnDelete(DeleteBehavior.Cascade);
             e.HasMany(s => s.BillingRecords)
              .WithOne(b => b.Subscriber)
              .HasForeignKey(b => b.SubscriberId)
@@ -145,6 +150,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
         modelBuilder.Entity<SubscribedState>(e =>
         {
             e.HasIndex(ss => new { ss.SubscriberId, ss.StateCode });
+        });
+
+        modelBuilder.Entity<SubscribedCategory>(e =>
+        {
+            e.HasIndex(sc => new { sc.SubscriberId, sc.CategoryId });
         });
 
         modelBuilder.Entity<BillingRecord>(e =>
@@ -160,6 +170,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
         modelBuilder.Entity<PricingConfig>(e =>
         {
             e.Property(p => p.PricePerState).HasPrecision(18, 2);
+            e.Property(p => p.PricePerCategory).HasPrecision(18, 2);
         });
 
         // PricingConfig and PayPalConfig have no navigation properties — no extra config needed.

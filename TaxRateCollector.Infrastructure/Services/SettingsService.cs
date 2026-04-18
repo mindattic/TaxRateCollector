@@ -47,6 +47,7 @@ public class AppSettings
     [JsonPropertyName("sst_member_states_url")]
     public string SstMemberStatesUrl { get; set; } =
         "https://www.streamlinedsalestax.org/about-us/state-information";
+
 }
 
 public class SettingsService
