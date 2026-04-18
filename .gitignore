@@ -64,3 +64,4 @@ logs/
 ## Environment / secrets
 .env
 *.env
+/TaxRateCollector.bacpac
