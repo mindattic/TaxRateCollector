@@ -5,12 +5,14 @@
 @using TaxRateCollector.Core.Interfaces
 @using TaxRateCollector.Infrastructure.Data
 @using TaxRateCollector.Infrastructure.Services
+@using TaxRateCollector.Frontend.Services
 @inject SettingsService settings
 @inject IDbContextFactory<AppDbContext> DbFactory
-@inject ICensusJurisdictionImportService censusSvc
-@inject IZipImportService zipSvc
 @inject IJSRuntime JS
+@inject IHttpClientFactory HttpClientFactory
 @inject AuthenticationStateProvider AuthStateProvider
+@inject ViewAsService ViewAs
+@inject IConfiguration Configuration
 @rendermode InteractiveServer
 
 <PageTitle>Settings — TaxRateCollector</PageTitle>
@@ -21,7 +23,7 @@
 
 <div class="settings-grid">
 
-    <!-- ── Appearance ─────────────────────────────────────────────────────── -->
+    <!-- ── Appearance — visible to all ──────────────────────────────────────── -->
     <section class="settings-section">
         <h2>Appearance</h2>
         <div class="setting-row">
@@ -55,7 +57,7 @@
         </div>
     </section>
 
-    @if (isAdmin)
+    @if (effectiveIsAdmin)
     {
 
         <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -63,6 +65,28 @@
             <span>Admin Configuration</span>
         </div>
         <!-- ═══════════════════════════════════════════════════════════════════ -->
+
+        <!-- ── Data Source Alert Banner ──────────────────────────────────────── -->
+        @if (FailedSources.Count > 0)
+        {
+            <div class="ds-alert ds-alert-error">
+                <strong>@FailedSources.Count data source(s) unreachable</strong> —
+                URLs marked ✗ below could not be reached. Update them before running imports.
+            </div>
+        }
+        else if (UncheckedSources.Count > 0)
+        {
+            <div class="ds-alert ds-alert-warn">
+                <strong>Data sources not yet validated</strong> —
+                Click <em>Check All Sources</em> in any data source section to verify URLs are reachable.
+            </div>
+        }
+        else
+        {
+            <div class="ds-alert ds-alert-ok">
+                All @UrlKeys.Count data sources reachable.
+            </div>
+        }
 
         <!-- ── USPS ──────────────────────────────────────────────────────────── -->
         <section class="settings-section">
@@ -103,28 +127,84 @@
                 Update these when the Census Bureau moves files to a new year or path.
                 Changes take effect on the next import run (clear cache first to force re-download).
             </p>
-            <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem">
+            <div class="setting-row ds-url-row" style="flex-direction:column;align-items:flex-start;gap:.4rem">
                 <label class="setting-label">County Gazetteer (ZIP)</label>
-                <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
-                       @bind="settings.Current.CensusCountyGazUrl" />
+                <div class="ds-url-input-wrap">
+                    <input class="setting-input" style="font-size:.82rem;font-family:monospace"
+                           @bind="settings.Current.CensusCountyGazUrl" />
+                    <span class="ds-url-status @UrlStatusClass("CensusCountyGaz")">@UrlStatusIcon("CensusCountyGaz")</span>
+                </div>
             </div>
-            <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
+            <div class="setting-row ds-url-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
                 <label class="setting-label">Place Gazetteer (ZIP)</label>
-                <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
-                       @bind="settings.Current.CensusPlaceGazUrl" />
+                <div class="ds-url-input-wrap">
+                    <input class="setting-input" style="font-size:.82rem;font-family:monospace"
+                           @bind="settings.Current.CensusPlaceGazUrl" />
+                    <span class="ds-url-status @UrlStatusClass("CensusPlaceGaz")">@UrlStatusIcon("CensusPlaceGaz")</span>
+                </div>
             </div>
-            <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
+            <div class="setting-row ds-url-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
                 <label class="setting-label">ZCTA → County crosswalk (TXT)</label>
-                <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
-                       @bind="settings.Current.CensusZctaCountyUrl" />
+                <div class="ds-url-input-wrap">
+                    <input class="setting-input" style="font-size:.82rem;font-family:monospace"
+                           @bind="settings.Current.CensusZctaCountyUrl" />
+                    <span class="ds-url-status @UrlStatusClass("CensusZctaCounty")">@UrlStatusIcon("CensusZctaCounty")</span>
+                </div>
             </div>
-            <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
+            <div class="setting-row ds-url-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
                 <label class="setting-label">ZCTA → Place crosswalk (TXT)</label>
-                <input class="setting-input" style="width:100%;font-size:.82rem;font-family:monospace"
-                       @bind="settings.Current.CensusZctaPlaceUrl" />
+                <div class="ds-url-input-wrap">
+                    <input class="setting-input" style="font-size:.82rem;font-family:monospace"
+                           @bind="settings.Current.CensusZctaPlaceUrl" />
+                    <span class="ds-url-status @UrlStatusClass("CensusZctaPlace")">@UrlStatusIcon("CensusZctaPlace")</span>
+                </div>
             </div>
-            <div class="settings-actions" style="margin-top:.8rem">
+            <div class="settings-actions" style="margin-top:.8rem;gap:.6rem">
                 <button class="btn-primary" @onclick="Save">Save Settings</button>
+                <button class="btn-secondary" @onclick="CheckAllSources" disabled="@checkingUrls">
+                    @(checkingUrls ? "Checking…" : "Check All Sources")
+                </button>
+                @if (saved) { <span class="save-confirm">✓ Saved</span> }
+            </div>
+        </section>
+
+        <!-- ── Streamlined Sales Tax (SST) source URLs ───────────────────────── -->
+        <section class="settings-section">
+            <h2>Streamlined Sales Tax (SST) Source URLs</h2>
+            <p class="section-note">
+                The SST Governing Board publishes the SSUTA agreement and supporting materials.
+                Update these URLs when the Board publishes a new amendment. The Agreement PDF
+                (Appendix C) is the authoritative source for the product/service taxonomy.
+            </p>
+            <div class="setting-row ds-url-row" style="flex-direction:column;align-items:flex-start;gap:.4rem">
+                <label class="setting-label">SSUTA Agreement (PDF) — Appendix C: Product/Service Taxonomy</label>
+                <div class="ds-url-input-wrap">
+                    <input class="setting-input" style="font-size:.82rem;font-family:monospace"
+                           @bind="settings.Current.SstAgreementUrl" />
+                    <span class="ds-url-status @UrlStatusClass("SstAgreement")">@UrlStatusIcon("SstAgreement")</span>
+                </div>
+            </div>
+            <div class="setting-row ds-url-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
+                <label class="setting-label">SST Taxability Matrix (web)</label>
+                <div class="ds-url-input-wrap">
+                    <input class="setting-input" style="font-size:.82rem;font-family:monospace"
+                           @bind="settings.Current.SstTaxabilityMatrixUrl" />
+                    <span class="ds-url-status @UrlStatusClass("SstTaxabilityMatrix")">@UrlStatusIcon("SstTaxabilityMatrix")</span>
+                </div>
+            </div>
+            <div class="setting-row ds-url-row" style="flex-direction:column;align-items:flex-start;gap:.4rem;margin-top:.75rem">
+                <label class="setting-label">SST Member States &amp; News (web)</label>
+                <div class="ds-url-input-wrap">
+                    <input class="setting-input" style="font-size:.82rem;font-family:monospace"
+                           @bind="settings.Current.SstMemberStatesUrl" />
+                    <span class="ds-url-status @UrlStatusClass("SstMemberStates")">@UrlStatusIcon("SstMemberStates")</span>
+                </div>
+            </div>
+            <div class="settings-actions" style="margin-top:.8rem;gap:.6rem">
+                <button class="btn-primary" @onclick="Save">Save Settings</button>
+                <button class="btn-secondary" @onclick="CheckAllSources" disabled="@checkingUrls">
+                    @(checkingUrls ? "Checking…" : "Check All Sources")
+                </button>
                 @if (saved) { <span class="save-confirm">✓ Saved</span> }
             </div>
         </section>
@@ -141,76 +221,9 @@
 
 </div>
 
-@if (isAdmin)
+@if (effectiveIsAdmin)
 {
 <div class="settings-grid">
-
-    <!-- ── Data Import ──────────────────────────────────────────────────── -->
-    <section class="settings-section">
-        <h2>Data Import</h2>
-        <p class="section-note">
-            Import jurisdiction and ZIP code data from the US Census Bureau.
-            Step 1 must complete before Step 2 so that ZIP codes can resolve to real county and city rows.
-        </p>
-
-        <!-- Step 1 -->
-        <div class="setting-row" style="align-items:flex-start;flex-direction:column;gap:.4rem">
-            <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-                <label class="setting-label" style="min-width:0">
-                    Step 1 — Counties &amp; Cities
-                    <span class="muted" style="font-weight:400;margin-left:.4rem">(@countyCount.ToString("N0") counties · @cityCount.ToString("N0") cities)</span>
-                </label>
-                <button class="btn-secondary" style="font-size:.82rem" @onclick="RunCensusImport"
-                        disabled="@(importBusy)">
-                    @if (censusRunning)
-                    {
-                        <span>Running…</span>
-                    }
-                    else
-                    {
-                        <span>↺ Re-import</span>
-                    }
-                </button>
-                <button class="btn-secondary" style="font-size:.82rem" @onclick="ClearCensusCache"
-                        disabled="@importBusy">
-                    Clear cache
-                </button>
-            </div>
-            @if (!string.IsNullOrEmpty(importMsg))
-            {
-                <span class="muted small">@importMsg</span>
-            }
-        </div>
-
-        <!-- Step 2 -->
-        <div class="setting-row" style="align-items:flex-start;flex-direction:column;gap:.4rem;margin-top:.75rem">
-            <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-                <label class="setting-label" style="min-width:0">
-                    Step 2 — ZIP Codes
-                    <span class="muted" style="font-weight:400;margin-left:.4rem">(@zipCount.ToString("N0") ZIPs imported)</span>
-                </label>
-                <button class="btn-secondary" style="font-size:.82rem" @onclick="RunZipImport"
-                        disabled="@(importBusy || countyCount == 0)">
-                    @if (zipRunning)
-                    {
-                        <span>Running…</span>
-                    }
-                    else
-                    {
-                        <span>↺ Re-import</span>
-                    }
-                </button>
-                <button class="btn-secondary" style="font-size:.82rem" @onclick="ClearZipCache"
-                        disabled="@importBusy">
-                    Clear cache
-                </button>
-            </div>
-            @if (countyCount == 0)
-            {
-                <span class="muted small">Complete Step 1 first.</span>
-            }
-        </div>
-    </section>
 
     <!-- ── Pricing ───────────────────────────────────────────────────────── -->
     <section class="settings-section">
@@ -300,6 +313,52 @@
         }
     </section>
 
+    <!-- ── Database Backup ──────────────────────────────────────────────── -->
+    <section class="settings-section">
+        <h2>Database Backup</h2>
+        <p class="section-note">
+            Exports the database to a <code>.bacpac</code> file using <code>sqlpackage</code>.
+            Install it once with: <code>dotnet tool install -g microsoft.sqlpackage</code>
+        </p>
+        <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:.4rem">
+            <label class="setting-label">Output path</label>
+            <input class="setting-input" style="font-size:.85rem;font-family:monospace"
+                   placeholder="C:\Users\…\TaxRateCollector.bacpac"
+                   @bind="backupPath" />
+        </div>
+        <div class="settings-actions" style="margin-top:.8rem;gap:.6rem">
+            <button class="btn-primary" @onclick="CreateBackup" disabled="@backupBusy">
+                @(backupBusy ? "Exporting…" : "Create Backup")
+            </button>
+            @if (!string.IsNullOrEmpty(backupMsg))
+            {
+                <span class="@(backupMsg.StartsWith("✗") ? "text-error" : "save-confirm")">@backupMsg</span>
+            }
+        </div>
+    </section>
+
+    <!-- ── Danger Zone ────────────────────────────────────────────────────── -->
+    <section class="settings-section settings-section-danger">
+        <h2>Danger Zone</h2>
+        <p class="section-note">
+            Permanently delete all collected data from the database. The schema (tables, indexes, migrations)
+            is preserved. Login credentials and payment configuration are NOT cleared.
+        </p>
+        <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+            <button class="btn-danger" @onclick="TruncateAll" disabled="@truncateBusy">
+                @(truncateBusy ? "Truncating…" : "Truncate All Data")
+            </button>
+            @if (!string.IsNullOrEmpty(truncateMsg))
+            {
+                <span class="@(truncateMsg.StartsWith("✗") ? "text-error" : "save-confirm")">@truncateMsg</span>
+            }
+        </div>
+        <p class="section-note" style="margin-top:.5rem;color:var(--color-error,#c0392b)">
+            Clears: Jurisdictions · TaxRates · ZipCodes · TaxCategories · TaxCategoryRules ·
+            ExciseTaxRates · ScrapeRuns · ChangeLog · SourceDocuments · Subscribers · BillingRecords · LogEntries
+        </p>
+    </section>
+
 </div>
 }
 
@@ -307,78 +366,210 @@
     private bool saved;
     private bool adminBusy;
     private bool isAdmin;
+    private bool effectiveIsAdmin;
     private string? adminStatus;
     private PricingConfig? pricing;
     private PayPalConfig? paypal;
 
-    // ── Import state ──────────────────────────────────────────────────────────
-    private int countyCount, cityCount, zipCount;
-    private bool importBusy;
-    private bool censusRunning, zipRunning;
-    private string? importMsg;
+    // ── URL validation state ──────────────────────────────────────────────────
+    private bool checkingUrls;
+    private readonly Dictionary<string, bool?> urlStatus = new();
+
+    private Dictionary<string, Func<string>> UrlMap => new()
+    {
+        ["CensusCountyGaz"]     = () => settings.Current.CensusCountyGazUrl,
+        ["CensusPlaceGaz"]      = () => settings.Current.CensusPlaceGazUrl,
+        ["CensusZctaCounty"]    = () => settings.Current.CensusZctaCountyUrl,
+        ["CensusZctaPlace"]     = () => settings.Current.CensusZctaPlaceUrl,
+        ["SstAgreement"]        = () => settings.Current.SstAgreementUrl,
+        ["SstTaxabilityMatrix"] = () => settings.Current.SstTaxabilityMatrixUrl,
+        ["SstMemberStates"]     = () => settings.Current.SstMemberStatesUrl,
+    };
+
+    private List<string> UrlKeys => UrlMap.Keys.ToList();
+    private List<string> FailedSources => UrlKeys.Where(k => urlStatus.TryGetValue(k, out var s) && s == false).ToList();
+    private List<string> UncheckedSources => UrlKeys.Where(k => !urlStatus.ContainsKey(k)).ToList();
+
+    private string UrlStatusIcon(string key) =>
+        urlStatus.TryGetValue(key, out var s) ? (s == true ? "✓" : (s == false ? "✗" : "?")) : "?";
+
+    private string UrlStatusClass(string key) =>
+        urlStatus.TryGetValue(key, out var s)
+            ? (s == true ? "ds-url-ok" : (s == false ? "ds-url-fail" : "ds-url-unknown"))
+            : "ds-url-unknown";
+
+    // ── Backup state ──────────────────────────────────────────────────────────
+    private bool backupBusy;
+    private string? backupMsg;
+    private string backupPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        $"TaxRateCollector_{DateTime.Now:yyyyMMdd}.bacpac");
+
+    // ── Truncate state ────────────────────────────────────────────────────────
+    private bool truncateBusy;
+    private string? truncateMsg;
 
     protected override async Task OnInitializedAsync()
     {
         var auth = await AuthStateProvider.GetAuthenticationStateAsync();
         isAdmin = auth.User.Identity?.IsAuthenticated == true;
+        effectiveIsAdmin = ViewAs.EffectiveIsAdmin(isAdmin);
 
         await using var db = await DbFactory.CreateDbContextAsync();
         pricing = await db.PricingConfigs.FirstOrDefaultAsync();
         paypal = await db.PayPalConfigs.FirstOrDefaultAsync();
-        await RefreshImportCounts();
     }
 
-    private async Task RefreshImportCounts()
+    protected override void OnParametersSet()
     {
-        var cov = await censusSvc.GetCoverageAsync();
-        countyCount = cov.SeededCounties;
-        cityCount = cov.SeededCities;
-        zipCount = await zipSvc.GetImportedCountAsync();
+        effectiveIsAdmin = ViewAs.EffectiveIsAdmin(isAdmin);
     }
 
-    private async Task RunCensusImport()
+    private async Task CheckAllSources()
     {
-        importBusy = censusRunning = true;
-        importMsg = "Importing counties & cities…";
+        checkingUrls = true;
         StateHasChanged();
+
+        var map = UrlMap;
+        using var http = HttpClientFactory.CreateClient();
+        http.Timeout = TimeSpan.FromSeconds(10);
+
+        var tasks = map.Select(async kv =>
+        {
+            var url = kv.Value();
+            if (string.IsNullOrWhiteSpace(url)) return (kv.Key, false);
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Head, url);
+                using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+                return (kv.Key, resp.IsSuccessStatusCode || (int)resp.StatusCode < 400);
+            }
+            catch
+            {
+                return (kv.Key, false);
+            }
+        });
+
+        var results = await Task.WhenAll(tasks);
+        foreach (var (key, ok) in results)
+            urlStatus[key] = ok;
+
+        checkingUrls = false;
+        StateHasChanged();
+    }
+
+    private async Task CreateBackup()
+    {
+        if (string.IsNullOrWhiteSpace(backupPath)) return;
+        backupBusy = true;
+        backupMsg = null;
+        StateHasChanged();
+
         try
         {
-            var p = new Progress<CensusImportProgress>(snap =>
+            var connStr = Configuration.GetConnectionString("DefaultConnection") ?? "";
+            var server = "";
+            var database = "";
+            foreach (var part in connStr.Split(';', StringSplitOptions.RemoveEmptyEntries))
             {
-                importMsg = $"{snap.Stage}: {snap.Created:N0} created";
-                InvokeAsync(StateHasChanged);
-            });
-            var r = await censusSvc.ImportAsync(p);
-            importMsg = $"✓ {r.CountiesCreated:N0} counties · {r.CitiesCreated:N0} cities created in {r.Elapsed:m\\:ss}";
-            await RefreshImportCounts();
+                var kv = part.Split('=', 2);
+                if (kv.Length < 2) continue;
+                var key = kv[0].Trim();
+                var val = kv[1].Trim();
+                if (key.Equals("Server", StringComparison.OrdinalIgnoreCase) ||
+                    key.Equals("Data Source", StringComparison.OrdinalIgnoreCase))
+                    server = val;
+                else if (key.Equals("Database", StringComparison.OrdinalIgnoreCase) ||
+                         key.Equals("Initial Catalog", StringComparison.OrdinalIgnoreCase))
+                    database = val;
+            }
+
+            var dir = Path.GetDirectoryName(backupPath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            using var proc = new System.Diagnostics.Process();
+            proc.StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "sqlpackage",
+                Arguments = $"/Action:Export /SourceServerName:\"{server}\" /SourceDatabaseName:\"{database}\" /TargetFile:\"{backupPath}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            proc.Start();
+            await proc.WaitForExitAsync();
+            sw.Stop();
+
+            if (proc.ExitCode == 0)
+                backupMsg = $"✓ Saved to {backupPath} ({sw.Elapsed.TotalSeconds:F1}s)";
+            else
+            {
+                var err = await proc.StandardError.ReadToEndAsync();
+                backupMsg = $"✗ sqlpackage exited {proc.ExitCode}: {err.Split('\n').FirstOrDefault()?.Trim()}";
+            }
         }
-        catch (Exception ex) { importMsg = $"✗ {ex.Message}"; }
-        finally { importBusy = censusRunning = false; StateHasChanged(); }
+        catch (Exception ex)
+        {
+            backupMsg = $"✗ {ex.Message}";
+        }
+        finally
+        {
+            backupBusy = false;
+            StateHasChanged();
+        }
     }
 
-    private async Task RunZipImport()
+    private async Task TruncateAll()
     {
-        importBusy = zipRunning = true;
-        importMsg = "Importing ZIP codes…";
+        var confirmed = await JS.InvokeAsync<bool>("confirm",
+            "TRUNCATE ALL DATA?\n\n" +
+            "This permanently deletes:\n" +
+            "  • All jurisdictions, tax rates, ZIP codes\n" +
+            "  • All tax categories and rules\n" +
+            "  • All scrape runs, source documents, change log\n" +
+            "  • All subscribers, billing records, log entries\n\n" +
+            "Login credentials and payment config are preserved.\n\n" +
+            "This cannot be undone. Continue?");
+        if (!confirmed) return;
+
+        truncateBusy = true;
+        truncateMsg = null;
         StateHasChanged();
+
         try
         {
-            zipSvc.ClearCache();
-            var p = new Progress<ZipImportProgress>(snap =>
-            {
-                importMsg = $"ZIP: {snap.Imported:N0} imported";
-                InvokeAsync(StateHasChanged);
-            });
-            var r = await zipSvc.ImportAsync(p);
-            importMsg = $"✓ {r.Imported:N0} ZIPs imported in {r.Elapsed:m\\:ss}";
-            await RefreshImportCounts();
-        }
-        catch (Exception ex) { importMsg = $"✗ {ex.Message}"; }
-        finally { importBusy = zipRunning = false; StateHasChanged(); }
-    }
+            await using var db = await DbFactory.CreateDbContextAsync();
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM BillingRecords");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM SubscribedStates");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM Subscribers");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM LogEntries");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM ChangeLog");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM ExciseSourceDocuments");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM ExciseTaxRates");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM SourceDocuments");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM TaxRates");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM ScrapeRuns");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM ZipCodes");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM TaxCategoryRules");
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE TaxCategories NOCHECK CONSTRAINT ALL");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM TaxCategories");
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE TaxCategories WITH CHECK CHECK CONSTRAINT ALL");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM Jurisdictions");
 
-    private void ClearCensusCache() { censusSvc.ClearCache(); importMsg = "Census cache cleared."; StateHasChanged(); }
-    private void ClearZipCache() { zipSvc.ClearCache(); importMsg = "ZIP cache cleared."; StateHasChanged(); }
+            truncateMsg = "✓ All data cleared.";
+        }
+        catch (Exception ex)
+        {
+            truncateMsg = $"✗ {ex.Message}";
+        }
+        finally
+        {
+            truncateBusy = false;
+            StateHasChanged();
+        }
+    }
 
     private async Task SetTheme(string theme)
     {
@@ -391,13 +582,6 @@
     {
         settings.Current.Font = font;
         await JS.InvokeVoidAsync("applyFont", font, settings.Current.FontSize);
-        StateHasChanged();
-    }
-
-    private async Task SetFontSize(int size)
-    {
-        settings.Current.FontSize = size;
-        await JS.InvokeVoidAsync("applyFont", settings.Current.Font, size);
         StateHasChanged();
     }
 

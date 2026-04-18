@@ -29,9 +29,16 @@ public class TaxRate
 
     public bool IsCurrent { get; set; }
 
+    /// <summary>
+    /// Product category this rate applies to (e.g. Goods > Food).
+    /// Null = general/legacy rate not tied to a specific category.
+    /// </summary>
+    public int? TaxCategoryId { get; set; }
+
     // Navigation
     public Jurisdiction Jurisdiction { get; set; } = null!;
     public ScrapeRun ScrapeRun { get; set; } = null!;
+    public TaxCategory? TaxCategory { get; set; }
 
     /// <summary>
     /// Evidence documents attached to this rate. Each file is stored on the

@@ -1,7 +1,9 @@
 @inherits LayoutComponentBase
 @using Microsoft.AspNetCore.Identity
+@using TaxRateCollector.Frontend.Services
 @inject SignInManager<IdentityUser> SignIn
 @inject NavigationManager Nav
+@inject ViewAsService ViewAs
 
 <div class="app-shell">
     <header class="app-header">
@@ -30,28 +32,59 @@
             <span class="tab-icon">◈</span>
             <span class="tab-label">Jurisdictions</span>
         </NavLink>
-        <NavLink class="tab" href="logs">
-            <span class="tab-icon">◎</span>
-            <span class="tab-label">Logs</span>
+        <NavLink class="tab" href="glossary">
+            <span class="tab-icon">☰</span>
+            <span class="tab-label">Glossary</span>
         </NavLink>
-        <NavLink class="tab" href="discovery">
-            <span class="tab-icon">⌕</span>
-            <span class="tab-label">Discovery</span>
-        </NavLink>
-        <NavLink class="tab" href="zip-codes">
-            <span class="tab-icon">✉</span>
-            <span class="tab-label">ZIP Codes</span>
-        </NavLink>
-        <NavLink class="tab" href="settings">
-            <span class="tab-icon">⚙</span>
-            <span class="tab-label">Settings</span>
-        </NavLink>
+
+        <!-- Authenticated-only tabs -->
+        <AuthorizeView>
+            <Authorized>
+                <NavLink class="tab" href="logs">
+                    <span class="tab-icon">◎</span>
+                    <span class="tab-label">Logs</span>
+                </NavLink>
+                <NavLink class="tab" href="settings">
+                    <span class="tab-icon">⚙</span>
+                    <span class="tab-label">Settings</span>
+                </NavLink>
+
+                <!-- Admin-only tabs (hidden in subscriber/guest preview) -->
+                @if (ViewAs.Role == ViewAsRole.Actual)
+                {
+                    <NavLink class="tab tab-admin" href="setup">
+                        <span class="tab-icon">⚒</span>
+                        <span class="tab-label">Setup</span>
+                        <span class="tab-role-badge">Admin</span>
+                    </NavLink>
+                }
+            </Authorized>
+        </AuthorizeView>
     </nav>
 
     <main class="tab-content">
         @Body
     </main>
 </div>
+
+<!-- ── Role picker overlay — fixed, always on top, outside all page content ── -->
+<AuthorizeView>
+    <Authorized>
+        <div class="show-as-bar">
+            <span class="show-as-label">View as</span>
+            <button class="show-as-btn @(ViewAs.Role == ViewAsRole.Actual ? "show-as-active" : "")"
+                    @onclick="() => SetViewAs(ViewAsRole.Actual)">Admin</button>
+            <button class="show-as-btn @(ViewAs.Role == ViewAsRole.Subscriber ? "show-as-active" : "")"
+                    @onclick="() => SetViewAs(ViewAsRole.Subscriber)">Subscriber</button>
+            <button class="show-as-btn @(ViewAs.Role == ViewAsRole.Guest ? "show-as-active" : "")"
+                    @onclick="() => SetViewAs(ViewAsRole.Guest)">Guest</button>
+            @if (ViewAs.Role != ViewAsRole.Actual)
+            {
+                <span class="show-as-preview-tag">Previewing @ViewAs.Role</span>
+            }
+        </div>
+    </Authorized>
+</AuthorizeView>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -60,6 +93,12 @@
 </div>
 
 @code {
+    private void SetViewAs(ViewAsRole role)
+    {
+        ViewAs.Role = role;
+        Nav.NavigateTo(Nav.Uri, forceLoad: false);
+    }
+
     private async Task Logout()
     {
         await SignIn.SignOutAsync();

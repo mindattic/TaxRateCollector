@@ -137,30 +137,54 @@ public static class JurisdictionSeeder
         db.Jurisdictions.AddRange(cityPairs.Select(p => p.Entity));
         await db.SaveChangesAsync();
 
-        AddRate(db, country.Id, countryRate, today, nowIso, seedRun.Id);
-        foreach (var (s, sEntity)      in statePairs)  AddRate(db, sEntity.Id,  s.Rate,    today, nowIso, seedRun.Id);
-        foreach (var (c, _, cEntity)   in countyPairs) AddRate(db, cEntity.Id,  c.Rate,    today, nowIso, seedRun.Id);
-        foreach (var (city, _, citEnt) in cityPairs)   AddRate(db, citEnt.Id,   city.Rate, today, nowIso, seedRun.Id);
+        var leafCats = await db.TaxCategories.Where(c => c.IsLeaf).ToListAsync();
 
-        seedRun.TotalScraped = 1 + statePairs.Count + countyPairs.Count + cityPairs.Count;
+        AddRatesForCategories(db, country.Id, countryRate, today, nowIso, seedRun.Id, leafCats);
+        foreach (var (s, sEntity)      in statePairs)  AddRatesForCategories(db, sEntity.Id,  s.Rate,    today, nowIso, seedRun.Id, leafCats);
+        foreach (var (c, _, cEntity)   in countyPairs) AddRatesForCategories(db, cEntity.Id,  c.Rate,    today, nowIso, seedRun.Id, leafCats);
+        foreach (var (city, _, citEnt) in cityPairs)   AddRatesForCategories(db, citEnt.Id,   city.Rate, today, nowIso, seedRun.Id, leafCats);
+
+        int jurisdictionCount = 1 + statePairs.Count + countyPairs.Count + cityPairs.Count;
+        int catCount = leafCats.Count > 0 ? leafCats.Count : 1;
+        seedRun.TotalScraped = jurisdictionCount * catCount;
         db.ScrapeRuns.Update(seedRun);
         await db.SaveChangesAsync();
     }
 
-    private static void AddRate(AppDbContext db, int jurisdictionId, decimal rate,
-        string effectiveDate, string scrapedAt, int scrapeRunId)
+    private static void AddRatesForCategories(AppDbContext db, int jurisdictionId, decimal rate,
+        string effectiveDate, string scrapedAt, int scrapeRunId, IReadOnlyList<TaxCategory> leafCats)
     {
-        db.TaxRates.Add(new TaxRate
+        if (leafCats.Count == 0)
         {
-            JurisdictionId = jurisdictionId,
-            Rate = rate,
-            RateType = "General",
-            EffectiveDate = effectiveDate,
-            ScrapedAt = scrapedAt,
-            ScrapeRunId = scrapeRunId,
-            RawValue = $"{rate * 100:F3}%",
-            IsCurrent = true
-        });
+            db.TaxRates.Add(new TaxRate
+            {
+                JurisdictionId = jurisdictionId,
+                Rate = rate,
+                RateType = "General",
+                EffectiveDate = effectiveDate,
+                ScrapedAt = scrapedAt,
+                ScrapeRunId = scrapeRunId,
+                RawValue = $"{rate * 100:F3}%",
+                IsCurrent = true
+            });
+            return;
+        }
+
+        foreach (var cat in leafCats)
+        {
+            db.TaxRates.Add(new TaxRate
+            {
+                JurisdictionId = jurisdictionId,
+                TaxCategoryId = cat.Id,
+                Rate = rate,
+                RateType = "General",
+                EffectiveDate = effectiveDate,
+                ScrapedAt = scrapedAt,
+                ScrapeRunId = scrapeRunId,
+                RawValue = $"{rate * 100:F3}%",
+                IsCurrent = true
+            });
+        }
     }
 
     // ── United States ───────────────────────────────────────────────────────────

@@ -24,6 +24,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     public DbSet<TaxCategory> TaxCategories => Set<TaxCategory>();
     public DbSet<TaxCategoryRule> TaxCategoryRules => Set<TaxCategoryRule>();
 
+    // ── State tax profiles ────────────────────────────────────────────────────
+    public DbSet<StateTaxProfile> StateTaxProfiles => Set<StateTaxProfile>();
+    public DbSet<StateCategoryRule> StateCategoryRules => Set<StateCategoryRule>();
+
     // ── Application logs ──────────────────────────────────────────────────────
     public DbSet<LogEntry> LogEntries => Set<LogEntry>();
 
@@ -54,6 +58,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
         // ── Tax rates ─────────────────────────────────────────────────────────
         modelBuilder.Entity<TaxRate>(e =>
         {
+            e.Property(t => t.Rate).HasPrecision(18, 2);
             e.HasOne(t => t.Jurisdiction)
              .WithMany(j => j.TaxRates)
              .HasForeignKey(t => t.JurisdictionId);
@@ -66,6 +71,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
              .WithOne(d => d.TaxRate)
              .HasForeignKey(d => d.TaxRateId)
              .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(t => t.TaxCategory)
+             .WithMany()
+             .HasForeignKey(t => t.TaxCategoryId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(t => new { t.JurisdictionId, t.TaxCategoryId })
+             .IsUnique()
+             .HasFilter("[IsCurrent] = 1 AND [TaxCategoryId] IS NOT NULL")
+             .HasDatabaseName("IX_TaxRates_JurisdictionId_TaxCategoryId_Current");
         });
 
         modelBuilder.Entity<SourceDocument>(e =>
@@ -80,6 +96,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
              .WithMany(j => j.ChangeLogEntries)
              .HasForeignKey(c => c.JurisdictionId);
             e.Property(c => c.ChangeType).HasConversion<string>();
+            e.Property(c => c.OldRate).HasPrecision(18, 2);
+            e.Property(c => c.NewRate).HasPrecision(18, 2);
         });
 
         modelBuilder.Entity<ScrapeRun>(e =>
@@ -90,6 +108,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
         modelBuilder.Entity<ExciseTaxRate>(e =>
         {
             e.Property(x => x.ProductCategory).HasConversion<string>();
+            e.Property(x => x.Rate).HasPrecision(18, 2);
             e.HasOne(x => x.Jurisdiction)
              .WithMany()
              .HasForeignKey(x => x.JurisdictionId)
@@ -131,6 +150,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
         modelBuilder.Entity<BillingRecord>(e =>
         {
             e.Property(b => b.Status).HasConversion<string>();
+            e.Property(b => b.PricePerState).HasPrecision(18, 2);
+            e.Property(b => b.Subtotal).HasPrecision(18, 2);
+            e.Property(b => b.TaxRate).HasPrecision(18, 2);
+            e.Property(b => b.TaxAmount).HasPrecision(18, 2);
+            e.Property(b => b.Total).HasPrecision(18, 2);
+        });
+
+        modelBuilder.Entity<PricingConfig>(e =>
+        {
+            e.Property(p => p.PricePerState).HasPrecision(18, 2);
         });
 
         // PricingConfig and PayPalConfig have no navigation properties — no extra config needed.
@@ -158,6 +187,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
         modelBuilder.Entity<TaxCategoryRule>(e =>
         {
             e.HasIndex(r => new { r.TaxCategoryId, r.JurisdictionId }).IsUnique();
+            e.Property(r => r.OverrideRate).HasPrecision(18, 2);
             e.HasOne(r => r.TaxCategory)
              .WithMany(c => c.Rules)
              .HasForeignKey(r => r.TaxCategoryId)
@@ -166,6 +196,31 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
              .WithMany()
              .HasForeignKey(r => r.JurisdictionId)
              .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── State tax profiles ────────────────────────────────────────────────────
+        modelBuilder.Entity<StateTaxProfile>(e =>
+        {
+            e.HasIndex(p => p.StateCode).IsUnique();
+            e.Property(p => p.LocalTaxAuthorityType).HasConversion<string>();
+            e.Property(p => p.GeneralSalesTaxRate).HasPrecision(18, 2);
+            e.Property(p => p.LocalRateCap).HasPrecision(18, 2);
+        });
+
+        modelBuilder.Entity<StateCategoryRule>(e =>
+        {
+            e.HasIndex(r => new { r.StateTaxProfileId, r.TaxCategoryId }).IsUnique();
+            e.Property(r => r.StateRate).HasPrecision(18, 2);
+            e.Property(r => r.Taxability).HasConversion<string>();
+            e.HasOne(r => r.StateTaxProfile)
+             .WithMany(p => p.CategoryRules)
+             .HasForeignKey(r => r.StateTaxProfileId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(r => r.TaxCategory)
+             .WithMany()
+             .HasForeignKey(r => r.TaxCategoryId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── Application logs ──────────────────────────────────────────────────

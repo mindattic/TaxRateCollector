@@ -17,7 +17,7 @@ public class AppSettings
     [JsonPropertyName("evidence_auto_fetch")] public bool EvidenceAutoFetch { get; set; } = false;
     [JsonPropertyName("wayback_machine_fallback")] public bool WaybackMachineFallback { get; set; } = true;
 
-    // ── Census data source URLs (admin-configurable so they can be updated when Census moves files) ──
+    // ── Census data source URLs ───────────────────────────────────────────────
     [JsonPropertyName("census_county_gaz_url")]
     public string CensusCountyGazUrl { get; set; } =
         "https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2025_Gazetteer/2025_Gaz_counties_national.zip";
@@ -33,6 +33,20 @@ public class AppSettings
     [JsonPropertyName("census_zcta_place_url")]
     public string CensusZctaPlaceUrl { get; set; } =
         "https://www2.census.gov/geo/docs/maps-data/data/rel2020/zcta520/tab20_zcta520_place20_natl.txt";
+
+    // ── Streamlined Sales Tax (SST) source URLs ───────────────────────────────
+    // Update these when the SST Governing Board publishes a new amendment to the SSUTA.
+    [JsonPropertyName("sst_agreement_url")]
+    public string SstAgreementUrl { get; set; } =
+        "https://www.streamlinedsalestax.org/docs/default-source/agreement/ssuta/ssuta-as-amended-through-12-20-24-with-hyperlinks-and-compiler-notes-at-end-clean-for-posting.pdf";
+
+    [JsonPropertyName("sst_taxability_matrix_url")]
+    public string SstTaxabilityMatrixUrl { get; set; } =
+        "https://sst.streamlinedsalestax.org/TM";
+
+    [JsonPropertyName("sst_member_states_url")]
+    public string SstMemberStatesUrl { get; set; } =
+        "https://www.streamlinedsalestax.org/about-us/state-information";
 }
 
 public class SettingsService

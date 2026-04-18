@@ -22,7 +22,7 @@
     <div class="page-header-row">
         <div>
             <h1 class="page-title">Jurisdictions</h1>
-            <p class="page-sub">Expand any tier to view or edit rates and attach evidence documents.</p>
+            <p class="page-sub">Select a product category, then expand any tier to view or edit rates and attach evidence.</p>
         </div>
         <div class="header-actions">
             <select class="btn-export-select" value="@exportFormat" @onchange="OnExportChange" disabled="@exporting">
@@ -35,6 +35,36 @@
             @if (status is not null) { <span class="save-confirm">@status</span> }
         </div>
     </div>
+</div>
+
+<!-- ── Product category picker ───────────────────────────────────────────────── -->
+<div class="category-picker">
+    @if (allCategories.Count == 0)
+    {
+        <div class="cat-empty-hint">
+            No categories loaded — run <a href="/setup">Setup → SST Taxonomy</a> first.
+        </div>
+    }
+    else
+    {
+        <div class="cat-type-row">
+            <button class="cat-type-btn @(selectedTopLevel == "Goods"    ? "cat-type-active" : "")" @onclick='() => OnTopLevelClick("Goods")'>Goods</button>
+            <button class="cat-type-btn @(selectedTopLevel == "Services" ? "cat-type-active" : "")" @onclick='() => OnTopLevelClick("Services")'>Services</button>
+        </div>
+        @foreach (var (groupName, leaves) in categoryGroups)
+        {
+            <div class="cat-group">
+                <span class="cat-group-label">@groupName</span>
+                <div class="cat-chips">
+                    @foreach (var leaf in leaves)
+                    {
+                        <button class="cat-chip @(selectedCategoryId == leaf.Id ? "cat-chip-active" : "")"
+                                @onclick="() => SelectCategory(leaf.Id)">@leaf.Name</button>
+                    }
+                </div>
+            </div>
+        }
+    }
 </div>
 
 @if (!isSubscribed)
@@ -53,6 +83,10 @@
 else
 {
     <div class="tree-root">
+        @if (states.Count == 0)
+        {
+            <div class="loading-state muted">No jurisdictions found — run <a href="/setup">Setup → Import Jurisdictions</a> to populate.</div>
+        }
         @foreach (var state in states)
         {
             <!-- ── State row ── -->
@@ -163,6 +197,7 @@ else
         decimal ParentCumulative = 0,
         decimal? MinCumulative = null,
         decimal? MaxCumulative = null);
+    private sealed record CategoryItem(int Id, string Name, string TopLevelType, int? ParentId, bool IsLeaf, int SortOrder);
 
     // ── State ──────────────────────────────────────────────────────────────────
     private bool loading = true;
@@ -187,6 +222,19 @@ else
     private int? evidenceOpen;
     private bool uploading;
 
+    // Category picker
+    private string selectedTopLevel = "Goods";
+    private int? selectedCategoryId;
+    private List<CategoryItem> allCategories = [];
+
+    private List<(string GroupName, List<CategoryItem> Leaves)> categoryGroups =>
+        allCategories
+            .Where(c => c.TopLevelType == selectedTopLevel && !c.IsLeaf && c.ParentId != null)
+            .OrderBy(c => c.SortOrder)
+            .Select(g => (g.Name, allCategories.Where(c => c.ParentId == g.Id && c.IsLeaf).OrderBy(c => c.SortOrder).ToList()))
+            .Where(g => g.Item2.Count > 0)
+            .ToList();
+
     // ── Init ───────────────────────────────────────────────────────────────────
     protected override async Task OnInitializedAsync()
     {
@@ -194,6 +242,40 @@ else
         isAdmin = auth.User.Identity?.IsAuthenticated == true;
         if (!isAdmin) previewRole = "visitor";
 
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        allCategories = await db.TaxCategories
+            .OrderBy(c => c.SortOrder)
+            .Select(c => new CategoryItem(c.Id, c.Name, c.TopLevelType, c.ParentId, c.IsLeaf, c.SortOrder))
+            .ToListAsync();
+
+        selectedCategoryId = categoryGroups.SelectMany(g => g.Leaves).FirstOrDefault()?.Id;
+
+        states = await BuildNodes(db, JurisdictionType.State, parentType: JurisdictionType.Country);
+        loading = false;
+    }
+
+    private async Task OnTopLevelClick(string topLevel)
+    {
+        if (selectedTopLevel == topLevel) return;
+        selectedTopLevel = topLevel;
+        StateHasChanged();
+        var first = categoryGroups.SelectMany(g => g.Leaves).FirstOrDefault();
+        if (first != null)
+            await SelectCategory(first.Id);
+    }
+
+    private async Task SelectCategory(int categoryId)
+    {
+        if (selectedCategoryId == categoryId) return;
+        selectedCategoryId = categoryId;
+        loading = true;
+        children.Clear();
+        expanded.Clear();
+        editActive.Clear();
+        editValues.Clear();
+        evidenceOpen = null;
+        StateHasChanged();
         await using var db = await DbFactory.CreateDbContextAsync();
         states = await BuildNodes(db, JurisdictionType.State, parentType: JurisdictionType.Country);
         loading = false;
@@ -218,8 +300,9 @@ else
 
         var ids = jurisdictions.Select(j => j.Id).ToList();
 
+        var catId = selectedCategoryId;
         var rates = await db.TaxRates
-            .Where(r => ids.Contains(r.JurisdictionId) && r.IsCurrent)
+            .Where(r => ids.Contains(r.JurisdictionId) && r.IsCurrent && r.TaxCategoryId == catId)
             .Select(r => new { r.JurisdictionId, r.Rate, r.Id })
             .ToListAsync();
 
@@ -280,6 +363,7 @@ else
     private async Task<Dictionary<int, (decimal Min, decimal Max)>> ComputeStateSubRangesAsync(
         AppDbContext db, List<int> stateIds)
     {
+        var catId = selectedCategoryId;
         var counties = await db.Jurisdictions
             .Where(co => co.JurisdictionType == JurisdictionType.County && co.IsActive
                          && co.ParentId.HasValue && stateIds.Contains(co.ParentId.Value))
@@ -287,7 +371,7 @@ else
                 CountyId = co.Id,
                 StateId = co.ParentId!.Value,
                 Rate = (decimal?)db.TaxRates
-                    .Where(r => r.JurisdictionId == co.Id && r.IsCurrent)
+                    .Where(r => r.JurisdictionId == co.Id && r.IsCurrent && r.TaxCategoryId == catId)
                     .Select(r => r.Rate).FirstOrDefault()
             })
             .ToListAsync();
@@ -302,7 +386,7 @@ else
             .Select(ci => new {
                 CountyId = ci.ParentId!.Value,
                 Rate = (decimal?)db.TaxRates
-                    .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent)
+                    .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent && r.TaxCategoryId == catId)
                     .Select(r => r.Rate).FirstOrDefault()
             })
             .ToListAsync();
@@ -333,13 +417,14 @@ else
     private async Task<Dictionary<int, (decimal Min, decimal Max)>> ComputeCountySubRangesAsync(
         AppDbContext db, List<int> countyIds)
     {
+        var catId = selectedCategoryId;
         var cities = await db.Jurisdictions
             .Where(ci => ci.JurisdictionType == JurisdictionType.City && ci.IsActive
                          && ci.ParentId.HasValue && countyIds.Contains(ci.ParentId.Value))
             .Select(ci => new {
                 CountyId = ci.ParentId!.Value,
                 Rate = (decimal?)db.TaxRates
-                    .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent)
+                    .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent && r.TaxCategoryId == catId)
                     .Select(r => r.Rate).FirstOrDefault()
             })
             .ToListAsync();
@@ -426,7 +511,7 @@ else
                             <span class="ev-icon">@FileIcon(f.FileName)</span>
                             <a href="/evidence/@f.FileName" target="_blank" class="ev-name" title="@f.FileName">@f.FileName</a>
                             <span class="ev-type muted small">@f.SourceType</span>
-                            <span class="ev-date muted small">@f.FetchedAt[..10]</span>
+                            <span class="ev-date muted small">@(f.FetchedAt?.Length >= 10 ? f.FetchedAt[..10] : f.FetchedAt ?? "")</span>
                             <button class="btn-danger-tiny" @onclick="() => DisassociateEvidence(node, f.Id)"
                                     title="Disassociate (file kept for audit)">✕</button>
                         </li>
@@ -488,6 +573,7 @@ else
     private async Task SaveRate(int jurisdictionId)
     {
         if (!isAdmin) { SetStatus("✗ Sign in to edit rates"); return; }
+        if (selectedCategoryId is null) { SetStatus("✗ Select a category first"); return; }
         editActive.Remove(jurisdictionId);
         if (!editValues.TryGetValue(jurisdictionId, out var valStr)) return;
         editValues.Remove(jurisdictionId);
@@ -506,12 +592,15 @@ else
                 manualRunId = run.Id;
             }
 
-            var old = await db.TaxRates.FirstOrDefaultAsync(r => r.JurisdictionId == jurisdictionId && r.IsCurrent);
+            var catId = selectedCategoryId;
+            var old = await db.TaxRates.FirstOrDefaultAsync(
+                r => r.JurisdictionId == jurisdictionId && r.IsCurrent && r.TaxCategoryId == catId);
             if (old is not null) old.IsCurrent = false;
 
             db.TaxRates.Add(new TaxRate
             {
-                JurisdictionId = jurisdictionId, Rate = rate, RateType = "General",
+                JurisdictionId = jurisdictionId, TaxCategoryId = catId,
+                Rate = rate, RateType = "General",
                 EffectiveDate = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd"),
                 ScrapedAt = DateTime.UtcNow.ToString("o"), ScrapeRunId = manualRunId.Value,
                 RawValue = $"{pct:F3}%", IsCurrent = true
@@ -623,7 +712,7 @@ else
                                 @f.FileName
                             </a>
                             <span class="ev-type muted small">@f.SourceType</span>
-                            <span class="ev-date muted small">@f.FetchedAt[..10]</span>
+                            <span class="ev-date muted small">@(f.FetchedAt?.Length >= 10 ? f.FetchedAt[..10] : f.FetchedAt ?? "")</span>
                             <button class="btn-danger-tiny" @onclick="() => DisassociateEvidence(node, f.Id)"
                                     title="Disassociate (record kept for audit)">✕</button>
                         </li>
@@ -751,8 +840,9 @@ else
     // ── Node refresh ──────────────────────────────────────────────────────────
     private async Task RefreshNode(AppDbContext db, int jurisdictionId)
     {
+        var catId = selectedCategoryId;
         var rate = await db.TaxRates
-            .Where(r => r.JurisdictionId == jurisdictionId && r.IsCurrent)
+            .Where(r => r.JurisdictionId == jurisdictionId && r.IsCurrent && r.TaxCategoryId == catId)
             .Select(r => new { r.Rate, r.Id })
             .FirstOrDefaultAsync();
 
@@ -839,7 +929,6 @@ else
             })
             .ToListAsync();
 
-        // Use a subquery to avoid SQLite's 999-variable limit when Contains is used with large lists
         var evidencedRateIds = await db.SourceDocuments
             .Where(d => d.IsActive && db.TaxRates.Any(r => r.Id == d.TaxRateId && r.IsCurrent))
             .Select(d => d.TaxRateId)

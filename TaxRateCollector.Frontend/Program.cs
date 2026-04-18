@@ -11,6 +11,7 @@ using TaxRateCollector.Infrastructure.Services;
 using TaxRateCollector.Infrastructure.Seeding;
 using TaxRateCollector.Frontend.Components;
 using TaxRateCollector.Frontend.Logging;
+using TaxRateCollector.Frontend.Services;
 
 // Lazy reference to the DI container — filled after app.Build()
 IServiceProvider? serviceProvider = null;
@@ -32,12 +33,11 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddCascadingAuthenticationState();
 
-// ── EF Core + SQLite ──────────────────────────────────────────────────────────
-var dbPath = Path.Combine(builder.Environment.ContentRootPath, "taxrates.db");
-var connStr = $"Data Source={dbPath}";
+// ── EF Core + SQL Server ──────────────────────────────────────────────────────
+var connStr = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
-// Factory for Blazor components (scoped per-use)
-builder.Services.AddDbContextFactory<AppDbContext>(opts => opts.UseSqlite(connStr));
+builder.Services.AddDbContextFactory<AppDbContext>(opts => opts.UseSqlServer(connStr));
 // Scoped registration required by ASP.NET Core Identity stores
 builder.Services.AddScoped<AppDbContext>(sp =>
     sp.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext());
@@ -85,6 +85,9 @@ builder.Services.AddScoped<IDiscoveryService, DiscoveryService>();
 builder.Services.AddScoped<IWebDirectoryScanner, WebDirectoryScanner>();
 builder.Services.AddScoped<IZipImportService, ZipImportService>();
 builder.Services.AddScoped<ICensusJurisdictionImportService, CensusJurisdictionImportService>();
+builder.Services.AddScoped<ISstTaxonomyImportService, SstTaxonomyImportService>();
+builder.Services.AddScoped<ViewAsService>();
+builder.Services.AddHostedService<ConsoleHeartbeatService>();
 
 // ── App settings (singleton — %APPDATA%\MindAttic\TaxRateCollector\settings.json) ──
 var settings = new SettingsService();
@@ -101,16 +104,23 @@ serviceProvider = app.Services;
 var dbFactory = app.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
 await using (var db = await dbFactory.CreateDbContextAsync())
 {
+    Console.WriteLine("[startup] Applying migrations…");
     await db.Database.MigrateAsync();
-    await JurisdictionSeeder.SeedAsync(db);
+
+    Console.WriteLine("[startup] Seeding SST taxonomy…");
     await TaxCategorySeeder.SeedAsync(db);
 
-    // Seed singleton admin config rows if they don't exist yet
+    Console.WriteLine("[startup] Seeding jurisdictions…");
+    await JurisdictionSeeder.SeedAsync(db);
+
+    Console.WriteLine("[startup] Seeding state tax profiles…");
+    await StateTaxProfileSeeder.SeedAsync(db);
+
+    Console.WriteLine("[startup] Seeding config…");
     if (!await db.PricingConfigs.AnyAsync())
     {
         db.PricingConfigs.Add(new PricingConfig
         {
-            Id = 1,
             PricePerState = 0.01m,
             Currency = "USD",
             UpdatedAt = DateTime.UtcNow.ToString("o")
@@ -121,12 +131,13 @@ await using (var db = await dbFactory.CreateDbContextAsync())
     {
         db.PayPalConfigs.Add(new PayPalConfig
         {
-            Id = 1,
             Mode = "sandbox",
             UpdatedAt = DateTime.UtcNow.ToString("o")
         });
         await db.SaveChangesAsync();
     }
+
+    Console.WriteLine("[startup] DB ready.");
 }
 
 // ── Dev admin user seeding ────────────────────────────────────────────────────

@@ -1,0 +1,263 @@
+@page "/glossary"
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+<PageTitle>Glossary — TaxRateCollector</PageTitle>
+
+<div class="page-header">
+    <h1 class="page-title">Glossary</h1>
+    <p class="page-sub">Definitions for every term, standard, and acronym used in this application.</p>
+</div>
+
+<div class="glossary-search-bar">
+    <input class="setting-input" placeholder="Filter terms…"
+           @bind="search" @bind:event="oninput" />
+</div>
+
+@foreach (var grp in Sections.Where(s => s.Terms.Any(t => Matches(t))))
+{
+    <div class="glossary-section">
+        <h2 class="glossary-section-title">@grp.Title</h2>
+        <dl class="glossary-list">
+            @foreach (var term in grp.Terms.Where(t => Matches(t)))
+            {
+                <div class="glossary-entry" id="@Slug(term.Name)">
+                    <dt class="glossary-term">
+                        @term.Name
+                        @if (!string.IsNullOrEmpty(term.Abbr))
+                        {
+                            <span class="glossary-abbr">(@term.Abbr)</span>
+                        }
+                        @if (!string.IsNullOrEmpty(term.Badge))
+                        {
+                            <span class="glossary-badge @term.BadgeClass">@term.Badge</span>
+                        }
+                    </dt>
+                    <dd class="glossary-def">@((MarkupString)term.Html)</dd>
+                </div>
+            }
+        </dl>
+    </div>
+}
+
+@if (!Sections.Any(s => s.Terms.Any(t => Matches(t))))
+{
+    <div class="empty-state">No terms match "<strong>@search</strong>".</div>
+}
+
+@code {
+    private string search = "";
+
+    private bool Matches(GlossaryTerm t) =>
+        string.IsNullOrEmpty(search) ||
+        t.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+        (t.Abbr?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+        t.Html.Contains(search, StringComparison.OrdinalIgnoreCase);
+
+    private static string Slug(string name) =>
+        name.ToLowerInvariant().Replace(" ", "-").Replace("/", "-").Replace("(", "").Replace(")", "");
+
+    private record GlossaryTerm(string Name, string Html, string Abbr = "", string Badge = "", string BadgeClass = "");
+    private record GlossarySection(string Title, List<GlossaryTerm> Terms);
+
+    private static readonly List<GlossarySection> Sections =
+    [
+        new("The SST Initiative",
+        [
+            new("Streamlined Sales Tax",
+                "A multi-state initiative launched in 2000 to simplify and modernize sales and use tax collection and administration. " +
+                "Member states agree to adopt uniform definitions, simplified tax bases, and consistent administration rules so that " +
+                "out-of-state sellers can more easily comply with sales tax laws in all participating states.",
+                "SST"),
+
+            new("Streamlined Sales Tax and Use Tax Agreement",
+                "The binding legal document that governs SST membership. States that ratify the SSUTA agree to adopt its definitions, " +
+                "exemptions, and simplified rules verbatim. <strong>Appendix C</strong> of the SSUTA contains the official product and service " +
+                "taxonomy — the definitive source for how goods and services are classified for tax purposes in member states. " +
+                "The agreement is amended periodically; the current version is managed by the SST Governing Board.",
+                "SSUTA"),
+
+            new("SST Governing Board",
+                "The administrative body formed by SST member states. It maintains the SSUTA, publishes amendments, and operates " +
+                "the Taxability Matrix portal (<em>sst.streamlinedsalestax.org/TM</em>) where each member state discloses how it " +
+                "treats every product and service category defined in Appendix C.",
+                "SSTGB"),
+
+            new("SST Member State",
+                "A state that has fully ratified the SSUTA and is bound by its uniform definitions. As of 2025 there are " +
+                "<strong>24 full members</strong>: AR, GA, IN, IA, KS, KY, MI, MN, NE, NV, NJ, NC, ND, OH, OK, RI, SD, TN, UT, VT, WA, WV, WI, WY. " +
+                "Major states including CA, TX, NY, FL, and PA are <em>not</em> members and define their own taxability rules independently.",
+                Badge: "24 states", BadgeClass: "badge-sst"),
+
+            new("SST Taxability Matrix",
+                "A state-by-state disclosure table published at <em>sst.streamlinedsalestax.org/TM</em>. Each SST member state " +
+                "declares whether each Appendix C product/service category is <em>Taxable</em>, <em>Exempt</em>, or subject to a " +
+                "<em>Special Rule</em> in that state. This is the primary machine-queryable source for category-level taxability data."),
+
+            new("SSUTA Appendix C",
+                "The product and service taxonomy appendix to the SSUTA agreement. It defines the official categories and subcategories " +
+                "used by all SST member states for classifying goods and services: Food &amp; Food Ingredients, Prepared Food, Candy, " +
+                "Clothing, Drugs, Digital Goods, etc. This is the authoritative source for the <strong>TaxCategories</strong> table " +
+                "in this application. The PDF is linked in <a href='/settings'>Settings → SST Source URLs</a>."),
+
+            new("Multistate Tax Commission",
+                "A separate intergovernmental body (not part of SST) that also works on multi-state tax uniformity, particularly for " +
+                "income and corporate taxes. Relevant here primarily for context — the MTC and SSTGB overlap in some policy areas " +
+                "but govern different tax types.",
+                "MTC"),
+        ]),
+
+        new("Tax Fundamentals",
+        [
+            new("Sales Tax",
+                "A consumption tax levied at the point of sale on the transfer of goods (and sometimes services) to the end consumer. " +
+                "Collected by the seller and remitted to the state/local tax authority. 45 U.S. states plus D.C. impose a general sales tax; " +
+                "Alaska, Delaware, Montana, New Hampshire, and Oregon do not (though some Alaskan municipalities have local sales taxes)."),
+
+            new("Use Tax",
+                "The companion tax to sales tax. When a buyer purchases goods without paying sales tax (e.g., from an out-of-state seller " +
+                "that didn't collect it), the buyer is legally required to self-remit <em>use tax</em> at the same rate. Post-<em>Wayfair</em>, " +
+                "most online sellers are required to collect and remit for all states where they exceed economic nexus thresholds, " +
+                "reducing uncollected use tax significantly."),
+
+            new("Excise Tax",
+                "A tax on the manufacture, sale, or use of a specific product — typically motor fuel, tobacco, and alcohol. " +
+                "Unlike sales tax, excise tax is usually applied upstream (at the manufacturer or distributor level) and is embedded " +
+                "in the final retail price. Tracked separately in the <strong>ExciseTaxRates</strong> table."),
+
+            new("Nexus",
+                "The legal connection between a seller and a state that creates an obligation to collect and remit sales tax in that state. " +
+                "Two types: <strong>Physical nexus</strong> (store, warehouse, employee, or property in the state) and " +
+                "<strong>Economic nexus</strong> (exceeding a dollar/transaction threshold — typically $100,000 in sales or 200 transactions — " +
+                "with customers in that state)."),
+
+            new("Economic Nexus",
+                "Post-<em>South Dakota v. Wayfair</em> (2018) doctrine allowing states to require tax collection from out-of-state sellers " +
+                "based purely on sales volume, without any physical presence. Most states set the threshold at $100,000 in annual sales " +
+                "or 200 separate transactions into that state."),
+
+            new("Taxability",
+                "Whether a particular product or service is subject to sales tax in a given jurisdiction. Not the rate — just the yes/no/reduced " +
+                "question. A product can be <em>Taxable</em> (full rate applies), <em>Exempt</em> (no tax), <em>Reduced Rate</em> " +
+                "(a special lower rate, e.g., Tennessee's 4% food rate), or <em>Special Rule</em> (depends on additional conditions like " +
+                "preparation method or transaction context)."),
+
+            new("Destination-Based Sourcing",
+                "The majority rule: sales tax is owed to the jurisdiction where the buyer <em>receives</em> the goods, not where the " +
+                "seller is located. This is why a company in California selling to a customer in Texas owes Texas sales tax (once nexus is established), " +
+                "not California tax."),
+
+            new("Origin-Based Sourcing",
+                "The minority rule used by a few states (and for intrastate sales in some others): tax is owed based on where the " +
+                "<em>seller</em> is located. California, Texas, and Arizona use origin sourcing for sales within the state but " +
+                "destination sourcing for remote sales."),
+
+            new("General Rate",
+                "The standard sales tax rate applied to fully taxable goods with no special category treatment. " +
+                "The base rate from which exemptions and reduced rates are carved out."),
+
+            new("Effective Rate",
+                "The total rate a customer actually pays at a given location: <code>State Rate + County Rate + City Rate + Special District Rate</code>. " +
+                "Varies by the exact delivery address. A purchase in Austin, TX at 8.25% is: 6.25% (TX state) + 2% (combined local)."),
+        ]),
+
+        new("Jurisdictions & Geography",
+        [
+            new("Jurisdiction",
+                "Any governmental entity with authority to levy a sales tax. In this application the hierarchy is: " +
+                "<strong>Country → State → County → City</strong>. " +
+                "Each level can add its own rate on top of all parent levels."),
+
+            new("FIPS Code",
+                "Federal Information Processing Standards geographic code. States are 2-digit (e.g., 48 = Texas), counties are 5-digit " +
+                "(state + 3-digit county, e.g., 48201 = Harris County, TX), places (cities) are 7-digit. " +
+                "Used as the unique key for each jurisdiction row.",
+                "FIPS"),
+
+            new("Special District",
+                "A sub-county taxing authority created for a specific purpose: transit authorities (MTA, BART), stadium districts, " +
+                "improvement districts, etc. Can levy fractional additional sales tax rates. Not modeled as a separate tier in this " +
+                "application — the combined effective rate from the source document captures their contribution."),
+
+            new("Home Rule",
+                "Legal doctrine in some states (most notably Colorado) allowing municipalities to administer their own sales tax " +
+                "independently of the state. Home-rule cities write their own taxability definitions, rates, exemptions, and filing " +
+                "procedures. This makes Colorado the most complex state for sales tax compliance — each of ~70 home-rule cities " +
+                "is effectively its own mini tax authority.",
+                Badge: "CO model", BadgeClass: "badge-warn"),
+
+            new("Piggyback Tax",
+                "A local tax that uses exactly the same tax base as the state tax. The local jurisdiction just adds a rate percentage " +
+                "on top; it cannot independently exempt or tax categories differently than the state. Common in most non-home-rule states."),
+
+            new("SST Uniform",
+                "The local authority model in SST member states. Local jurisdictions within an SST state must follow the state's " +
+                "SSUTA-derived taxability definitions exactly — they cannot create independent exemptions or taxability rules. " +
+                "This is a core SST membership requirement and what makes SST states simpler to manage."),
+
+            new("Gazetteer",
+                "The US Census Bureau's reference files listing all jurisdictions (counties, cities, places) with their names, " +
+                "FIPS codes, land area, and coordinates. Published annually. The <strong>2025 Gazetteer</strong> is this application's " +
+                "source for the Jurisdictions table. URLs are configurable in Settings."),
+
+            new("ZCTA",
+                "ZIP Code Tabulation Area — a Census Bureau construct that approximates USPS ZIP codes for statistical purposes. " +
+                "Used in the crosswalk files to map ZIP codes to counties and cities for rate lookup.",
+                "ZCTA"),
+
+            new("Crosswalk File",
+                "A Census Bureau tab-delimited file that maps ZCTAs to counties or places (cities). Two files are used: " +
+                "<em>ZCTA→County</em> and <em>ZCTA→Place</em>. Together they let any 5-digit ZIP code resolve to its " +
+                "state/county/city jurisdiction chain and therefore its effective tax rate."),
+        ]),
+
+        new("This Application",
+        [
+            new("StateTaxProfile",
+                "A record describing the <em>structural</em> characteristics of a state's sales tax system — independent of whether " +
+                "jurisdiction rows have been imported. Captures: general rate, SST membership, local authority type (SstUniform / Piggyback / " +
+                "HomeRule / Independent), local rate cap, and the state revenue agency URL. " +
+                "One row per state; StateCode is the unique key."),
+
+            new("StateCategoryRule",
+                "A state × SST category rule row. Stores whether a specific product/service category is Taxable, Exempt, ReducedRate, " +
+                "or SpecialRule in a given state, plus the override rate if applicable (e.g., 0.04 for Tennessee's 4% food rate). " +
+                "Nullable TaxCategoryId until the SST taxonomy is imported. Combined with the Jurisdiction hierarchy, these rows " +
+                "drive the rate calculations."),
+
+            new("TaxCategoryRule",
+                "A jurisdiction-level override row (not state-profile level). Used for county or city exceptions where a local " +
+                "jurisdiction has a different rule than the state — rare outside home-rule cities. " +
+                "Foreign keys to both a Jurisdiction and a TaxCategory."),
+
+            new("TaxCategory",
+                "A node in the SST product/service taxonomy tree. Populated from SSUTA Appendix C. " +
+                "Two top-level types: <em>Goods</em> and <em>Services</em>. Leaf nodes (IsLeaf = true) are directly assignable " +
+                "to a TaxRate or transaction. The table is empty until the Appendix C PDF is parsed and imported."),
+
+            new("TaxRate",
+                "A scraped rate record for one jurisdiction at one point in time, optionally scoped to a TaxCategory. " +
+                "Stores the rate for that jurisdiction tier only (not cumulative). The effective rate = sum of all active " +
+                "ancestor TaxRate rows in the Country → State → County → City chain for the matching category."),
+
+            new("ScrapeRun",
+                "A single end-to-end execution of the scraper pipeline. Records start time, completion time, total jurisdictions " +
+                "processed, changes detected, and error count. Each TaxRate row references the ScrapeRun that produced it."),
+
+            new("Evidence / Source Document",
+                "A file captured as proof for a scraped tax rate — typically the PDF, Excel file, CSV, or HTML page from the " +
+                "government source. Stored on the filesystem at <code>%APPDATA%\\MindAttic\\TaxRateCollector\\evidence\\</code>. " +
+                "Each SourceDocument row holds metadata (URL, MIME type, content hash) and links back to the TaxRate it supports."),
+
+            new("Discovery",
+                "Phase 2 of the data pipeline. Recursively traverses the jurisdiction tree and attempts to locate the authoritative " +
+                "tax rate source URL for each jurisdiction. Results are logged (Found / NotFound / Skipped / Error) but no rates are " +
+                "written. The goal is to populate each Jurisdiction's SourceUrl so the Phase 1 scraper knows where to fetch."),
+
+            new("Scrape",
+                "Phase 1 of the data pipeline. For each jurisdiction with a configured SourceUrl, routes the request to the " +
+                "appropriate IScrapeStrategy (CSV, HTML table, Excel, PDF, API) and writes the parsed rates as new TaxRate rows. " +
+                "Detects changes against the previous run via the diff engine."),
+        ]),
+    ];
+}
