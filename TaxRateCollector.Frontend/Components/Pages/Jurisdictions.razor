@@ -26,6 +26,12 @@
             <p class="page-sub">Select a product category, then expand any tier to view or edit rates and attach evidence.</p>
         </div>
         <div class="header-actions">
+            @if (isAdmin)
+            {
+                <button class="btn-secondary" @onclick="RunScrape" disabled="@scraping">
+                    @(scraping ? "Scraping…" : "Run Scrape")
+                </button>
+            }
             <select class="btn-export-select" value="@exportFormat" @onchange="OnExportChange" disabled="@exporting">
                 <option value="">@(exporting ? "Exporting…" : "Export ▾")</option>
                 <option value="csv">CSV</option>
@@ -292,7 +298,7 @@ else if (!isAdmin && HasUnsubscribedContent)
     <div class="evidence-modal-backdrop" @onclick="CloseEvidenceModal">
         <div class="evidence-modal-panel" @onclick:stopPropagation="true">
             <div class="evidence-modal-header">
-                <span>Add Evidence — <strong>@evidenceModalNode.Name</strong></span>
+                <span>Add Evidence — <strong>@evidenceModalNode.Name</strong> › @evidenceModalRateRowName</span>
                 <button class="evidence-reader-close" @onclick="CloseEvidenceModal" title="Close">✕</button>
             </div>
             <div class="evidence-modal-body">
@@ -372,6 +378,13 @@ else if (!isAdmin && HasUnsubscribedContent)
     // ── Data model ─────────────────────────────────────────────────────────────
     private sealed record EvidenceFile(int Id, string FileName, string OriginalFileName, string EvidenceType, string SourceUrl, string RawContent, string SourceType, string FetchedAt);
 
+    private sealed record RateRow(
+        int Id, string Name, decimal Rate, RateBasis Basis, string Unit,
+        SaleContext SaleContext, RemittancePoint RemittancePoint,
+        decimal? MinAbv, decimal? MaxAbv, string Conditions,
+        string StatutoryReference, string EffectiveDate, string ExpirationDate,
+        List<EvidenceFile> Evidence);
+
     private sealed class StagedItem
     {
         public string Kind { get; init; } = ""; // "file" | "url" | "raw"
@@ -380,11 +393,14 @@ else if (!isAdmin && HasUnsubscribedContent)
         public string DisplayName { get; init; } = "";
     }
     private sealed record JNode(int Id, string Name, string StateCode, string FipsCode,
-        JurisdictionType Tier, decimal? Rate, int? RateId, List<EvidenceFile> Evidence,
+        JurisdictionType Tier, List<RateRow> Rates,
         decimal ParentCumulative = 0,
         decimal? MinCumulative = null,
         decimal? MaxCumulative = null);
     private sealed record CategoryItem(int Id, string Name, string TopLevelType, int? ParentId, bool IsLeaf, int SortOrder);
+
+    private static decimal NodePctSum(JNode node) =>
+        node.Rates.Where(r => r.Basis == RateBasis.Percentage).Sum(r => r.Rate);
 
     // ── State ──────────────────────────────────────────────────────────────────
     private bool loading = true;
@@ -411,22 +427,29 @@ else if (!isAdmin && HasUnsubscribedContent)
     private readonly Dictionary<int, List<JNode>> children = new();
     private readonly HashSet<int> expanded = new();
 
-    // Rate editing
-    private readonly HashSet<int> editActive = new();
-    private readonly Dictionary<int, string> editValues = new();
-
-    // Evidence panel
-    private int? evidenceOpen;
-    private bool uploading;
-    private readonly Dictionary<int, int> dropDepths = new();
-    private bool IsDropDragging(int id) => dropDepths.GetValueOrDefault(id) > 0;
-    private void OnDragEnter(int id) => dropDepths[id] = dropDepths.GetValueOrDefault(id) + 1;
-    private void OnDragLeave(int id) { var d = dropDepths.GetValueOrDefault(id) - 1; dropDepths[id] = d < 0 ? 0 : d; }
-    private void OnDropZoneDrop(int id) => dropDepths[id] = 0;
+    // Rate row form
+    private int? rateFormNodeId;
+    private int? rateFormRowId;
+    private string rateFormName = "";
+    private string rateFormRate = "0.000";
+    private RateBasis rateFormBasis = RateBasis.Percentage;
+    private string rateFormUnit = "";
+    private SaleContext rateFormSaleContext = SaleContext.Any;
+    private RemittancePoint rateFormRemittance = RemittancePoint.Retailer;
+    private string rateFormMinAbv = "";
+    private string rateFormMaxAbv = "";
+    private string rateFormStatutory = "";
+    private string rateFormEffective = "";
+    private string rateFormExpires = "";
+    private string rateFormConditions = "";
+    private bool savingRateForm;
+    private readonly HashSet<int> rateEvidenceExpanded = new();
 
     // Add Evidence modal
     private bool evidenceModalOpen;
     private JNode? evidenceModalNode;
+    private int? evidenceModalRateRowId;
+    private string evidenceModalRateRowName = "";
     private string evidenceModalTab = "file";
     private string evidenceModalUrl = "";
     private string evidenceModalRaw = "";
@@ -510,9 +533,9 @@ else if (!isAdmin && HasUnsubscribedContent)
         loading = true;
         children.Clear();
         expanded.Clear();
-        editActive.Clear();
-        editValues.Clear();
-        evidenceOpen = null;
+        rateFormNodeId = null;
+        rateFormRowId = null;
+        rateEvidenceExpanded.Clear();
         StateHasChanged();
         await using var db = await DbFactory.CreateDbContextAsync();
         states = await BuildNodes(db, JurisdictionType.State, parentType: JurisdictionType.Country);
@@ -546,9 +569,10 @@ else if (!isAdmin && HasUnsubscribedContent)
                 {
                     new(-j.Id, "revenue-schedule.pdf", "Revenue Schedule 2024.pdf", "pdf", "", "", "GovernmentPublication", "2024-11-01T00:00:00Z")
                 };
+                var fakeRow = new RateRow(-(j.Id), "General Sales Tax", fakeRate, RateBasis.Percentage,
+                    "", SaleContext.Any, RemittancePoint.Retailer, null, null, "", "", "2024-01-01", "", fakeEvidence);
                 return new JNode(j.Id, j.JurisdictionName, j.StateCode, j.FipsCode, type,
-                    fakeRate, -(j.Id), fakeEvidence, parentCumulative,
-                    fakeCum, fakeCum + (j.Id % 5) * 0.002m);
+                    [fakeRow], parentCumulative, fakeCum, fakeCum + (j.Id % 5) * 0.002m);
             }).ToList();
         }
 
@@ -561,7 +585,11 @@ else if (!isAdmin && HasUnsubscribedContent)
         var catId = selectedCategoryId;
         var rates = await db.TaxRates
             .Where(r => subscribedIds.Contains(r.JurisdictionId) && r.IsCurrent && r.TaxCategoryId == catId)
-            .Select(r => new { r.JurisdictionId, r.Rate, r.Id })
+            .Select(r => new { r.JurisdictionId, r.Rate, r.Id, r.Name, r.RateBasis, r.Unit,
+                r.SaleContext, r.RemittancePoint, r.MinAbv, r.MaxAbv, r.Conditions,
+                r.StatutoryReference,
+                EffectiveDate = r.EffectiveDate != null ? r.EffectiveDate.Value.ToString() : "",
+                ExpirationDate = r.ExpirationDate != null ? r.ExpirationDate.Value.ToString() : "" })
             .ToListAsync();
 
         var rateIds = rates.Select(r => r.Id).ToList();
@@ -571,10 +599,19 @@ else if (!isAdmin && HasUnsubscribedContent)
             .Select(d => new { d.TaxRateId, d.Id, d.FileName, d.OriginalFileName, d.EvidenceType, d.SourceUrl, d.RawContent, d.SourceType, d.FetchedAt })
             .ToListAsync();
 
-        var rateMap = rates
-            .GroupBy(r => r.JurisdictionId)
-            .ToDictionary(g => g.Key, g => g.MaxBy(r => r.Id)!);
         var docMap = docs.GroupBy(d => d.TaxRateId).ToDictionary(g => g.Key, g => g.ToList());
+
+        var ratesByJurisdiction = rates
+            .GroupBy(r => r.JurisdictionId)
+            .ToDictionary(g => g.Key, g => g
+                .Select(r => new RateRow(r.Id, r.Name, r.Rate, r.RateBasis, r.Unit,
+                    r.SaleContext, r.RemittancePoint, r.MinAbv, r.MaxAbv, r.Conditions,
+                    r.StatutoryReference, r.EffectiveDate, r.ExpirationDate,
+                    docMap.GetValueOrDefault(r.Id, [])
+                        .Select(d => new EvidenceFile(d.Id, d.FileName, d.OriginalFileName,
+                            d.EvidenceType, d.SourceUrl, d.RawContent, d.SourceType.ToString(), d.FetchedAt))
+                        .ToList()))
+                .ToList());
 
         // Compute child ranges
         Dictionary<int, (decimal Min, decimal Max)> subRangeMap = [];
@@ -585,12 +622,8 @@ else if (!isAdmin && HasUnsubscribedContent)
 
         return jurisdictions.Select(j =>
         {
-            var rate = rateMap.GetValueOrDefault(j.Id);
-            var evidence = rate is null ? [] : docMap.GetValueOrDefault(rate.Id, [])
-                .Select(d => new EvidenceFile(d.Id, d.FileName, d.OriginalFileName, d.EvidenceType, d.SourceUrl, d.RawContent, d.SourceType.ToString(), d.FetchedAt))
-                .ToList();
-
-            var myRate = rate?.Rate ?? 0m;
+            var nodeRates = ratesByJurisdiction.GetValueOrDefault(j.Id, []);
+            var myRate = nodeRates.Where(r => r.Basis == RateBasis.Percentage).Sum(r => r.Rate);
             decimal? minCum = null, maxCum = null;
 
             if (type == JurisdictionType.State)
@@ -613,7 +646,7 @@ else if (!isAdmin && HasUnsubscribedContent)
             }
 
             return new JNode(j.Id, j.JurisdictionName, j.StateCode, j.FipsCode, type,
-                rate?.Rate, rate?.Id, evidence, parentCumulative, minCum, maxCum);
+                nodeRates, parentCumulative, minCum, maxCum);
         }).ToList();
     }
 
@@ -630,8 +663,8 @@ else if (!isAdmin && HasUnsubscribedContent)
                 CountyId = co.Id,
                 StateId = co.ParentId!.Value,
                 Rate = (decimal?)db.TaxRates
-                    .Where(r => r.JurisdictionId == co.Id && r.IsCurrent && r.TaxCategoryId == catId)
-                    .Select(r => r.Rate).FirstOrDefault()
+                    .Where(r => r.JurisdictionId == co.Id && r.IsCurrent && r.TaxCategoryId == catId && r.RateBasis == RateBasis.Percentage)
+                    .Sum(r => (decimal?)r.Rate) ?? 0m
             })
             .ToListAsync();
 
@@ -646,16 +679,16 @@ else if (!isAdmin && HasUnsubscribedContent)
             {
                 CountyId = ci.ParentId!.Value,
                 Rate = (decimal?)db.TaxRates
-                    .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent && r.TaxCategoryId == catId)
-                    .Select(r => r.Rate).FirstOrDefault()
+                    .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent && r.TaxCategoryId == catId && r.RateBasis == RateBasis.Percentage)
+                    .Sum(r => (decimal?)r.Rate) ?? 0m
             })
             .ToListAsync();
 
         var cityByCounty = cities
             .GroupBy(c => c.CountyId)
             .ToDictionary(g => g.Key, g => (
-                Min: g.Min(c => c.Rate ?? 0m),
-                Max: g.Max(c => c.Rate ?? 0m)));
+                Min: g.Min(c => c.Rate),
+                Max: g.Max(c => c.Rate)));
 
         return counties
             .GroupBy(c => c.StateId)
@@ -663,7 +696,7 @@ else if (!isAdmin && HasUnsubscribedContent)
             {
                 var all = g.SelectMany(co =>
                 {
-                    var cr = co.Rate ?? 0m;
+                    var cr = co.Rate;
                     return cityByCounty.TryGetValue(co.CountyId, out var city)
                         ? new[] { cr + city.Min, cr + city.Max }
                         : new[] { cr };
@@ -685,16 +718,16 @@ else if (!isAdmin && HasUnsubscribedContent)
             {
                 CountyId = ci.ParentId!.Value,
                 Rate = (decimal?)db.TaxRates
-                    .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent && r.TaxCategoryId == catId)
-                    .Select(r => r.Rate).FirstOrDefault()
+                    .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent && r.TaxCategoryId == catId && r.RateBasis == RateBasis.Percentage)
+                    .Sum(r => (decimal?)r.Rate) ?? 0m
             })
             .ToListAsync();
 
         return cities
             .GroupBy(c => c.CountyId)
             .ToDictionary(g => g.Key, g => (
-                Min: g.Min(c => c.Rate ?? 0m),
-                Max: g.Max(c => c.Rate ?? 0m)));
+                Min: g.Min(c => c.Rate),
+                Max: g.Max(c => c.Rate)));
     }
 
     // ── Expand / collapse ─────────────────────────────────────────────────────
@@ -708,7 +741,7 @@ else if (!isAdmin && HasUnsubscribedContent)
             var stateNode = states.FirstOrDefault(s => s.Id == stateId);
             await using var db = await DbFactory.CreateDbContextAsync();
             children[stateId] = await BuildNodes(db, JurisdictionType.County, parentId: stateId,
-                parentCumulative: stateNode?.Rate ?? 0m);
+                parentCumulative: stateNode is null ? 0m : NodePctSum(stateNode));
         }
     }
 
@@ -718,7 +751,7 @@ else if (!isAdmin && HasUnsubscribedContent)
         if (!children.ContainsKey(countyId))
         {
             var countyNode = children.Values.SelectMany(l => l).FirstOrDefault(n => n.Id == countyId);
-            var parentCum = (countyNode?.ParentCumulative ?? 0m) + (countyNode?.Rate ?? 0m);
+            var parentCum = (countyNode?.ParentCumulative ?? 0m) + (countyNode is null ? 0m : NodePctSum(countyNode));
             await using var db = await DbFactory.CreateDbContextAsync();
             children[countyId] = await BuildNodes(db, JurisdictionType.City, parentId: countyId,
                 parentCumulative: parentCum);
@@ -730,132 +763,210 @@ else if (!isAdmin && HasUnsubscribedContent)
         if (!expanded.Add(cityId)) expanded.Remove(cityId);
     }
 
-    // ── Detail panel (rate label + upload + inline evidence list) ────────────
+    // ── Detail panel (1:M rate rows table) ───────────────────────────────────
     private RenderFragment DetailPanel(JNode node, bool showCombined = false) => __builder =>
     {
         <div @onclick:stopPropagation="true">
-            <div class="detail-top-row">
-                <div class="detail-field">
-                    <span class="detail-label">Tax Rate</span>
-                    @RateCell(node)
-                    @if (showCombined && (node.MinCumulative ?? 0) > 0)
-                    {
-                        <span class="combined-pill" title="State + County + City">
-                            ∑ @((node.MinCumulative!.Value * 100).ToString("F3"))%
-                        </span>
-                    }
-                </div>
-                @if (isAdmin)
+            <div class="detail-rates-header">
+                <span class="detail-label">Rate Laws</span>
+                @if (showCombined && (node.MinCumulative ?? 0) > 0)
                 {
-                    <div class="detail-field">
-                        <span class="detail-label">Evidence</span>
-                    </div>
-                    <div class="detail-field">
-                        @if (!node.RateId.HasValue)
-                        {
-                            <span class="muted small">Save a rate first to attach evidence</span>
-                        }
-                        else
-                        {
-                            <button class="btn-add-evidence" @onclick='() => OpenEvidenceModal(node)'>+ Add Evidence</button>
-                        }
-                    </div>
+                    <span class="combined-pill" title="State + County + City combined">
+                        ∑ @((node.MinCumulative!.Value * 100).ToString("F3"))%
+                    </span>
+                }
+                @if (isAdmin && rateFormNodeId != node.Id)
+                {
+                    <button class="btn-add-evidence" @onclick="() => StartAddRate(node.Id)">+ Add Rate Law</button>
                 }
             </div>
-            <!-- inline evidence list -->
-            @if (node.Evidence.Count > 0)
+
+            @* Inline add/edit form *@
+            @if (rateFormNodeId == node.Id)
             {
-                <ul class="detail-evidence-list">
-                    @foreach (var f in node.Evidence)
+                <div class="rate-row-form">
+                    <div class="rate-form-grid">
+                        <label>Name<input class="filter-input" @bind="rateFormName" placeholder="e.g. General Sales Tax" /></label>
+                        <label>Basis
+                            <select class="filter-select" @bind="rateFormBasis">
+                                @foreach (var b in Enum.GetValues<RateBasis>())
+                                { <option value="@b">@b</option> }
+                            </select>
+                        </label>
+                        <label>Rate
+                            <input class="filter-input rate-input" type="number" step="0.0001" min="0"
+                                   @bind="rateFormRate"
+                                   placeholder="@(rateFormBasis == RateBasis.Percentage ? "e.g. 6.25 (%)" : "e.g. 0.231")" />
+                        </label>
+                        <label>Unit<input class="filter-input" @bind="rateFormUnit" placeholder="per pack / per liter…" /></label>
+                        <label>Sale Context
+                            <select class="filter-select" @bind="rateFormSaleContext">
+                                @foreach (var s in Enum.GetValues<SaleContext>())
+                                { <option value="@s">@s</option> }
+                            </select>
+                        </label>
+                        <label>Remittance
+                            <select class="filter-select" @bind="rateFormRemittance">
+                                @foreach (var r in Enum.GetValues<RemittancePoint>())
+                                { <option value="@r">@r</option> }
+                            </select>
+                        </label>
+                        <label>Statutory Ref<input class="filter-input" @bind="rateFormStatutory" placeholder="e.g. 235 ILCS 5/8-1" /></label>
+                        <label>Effective<input class="filter-input" type="text" placeholder="yyyy-MM-dd" @bind="rateFormEffective" /></label>
+                        <label>Expires<input class="filter-input" type="text" placeholder="yyyy-MM-dd (opt)" @bind="rateFormExpires" /></label>
+                        <label>Min ABV<input class="filter-input" type="number" step="0.01" @bind="rateFormMinAbv" placeholder="%" /></label>
+                        <label>Max ABV<input class="filter-input" type="number" step="0.01" @bind="rateFormMaxAbv" placeholder="%" /></label>
+                        <label class="rate-form-full">Conditions<input class="filter-input" @bind="rateFormConditions" /></label>
+                    </div>
+                    <div class="rate-form-actions">
+                        <button class="btn-primary" @onclick="SaveRateRow" disabled="@savingRateForm">
+                            @(savingRateForm ? "Saving…" : (rateFormRowId.HasValue ? "Update" : "Add"))
+                        </button>
+                        <button class="btn-secondary" @onclick="CancelRateForm">Cancel</button>
+                    </div>
+                </div>
+            }
+
+            @* Rate rows table *@
+            @if (node.Rates.Count == 0 && rateFormNodeId != node.Id)
+            {
+                <p class="muted small">No rate laws recorded. @(isAdmin ? "Click \"+ Add Rate Law\" to add one." : "")</p>
+            }
+            else
+            {
+                <div class="rate-rows-list">
+                    @foreach (var row in node.Rates)
                     {
-                        <li class="evidence-item">
-                            <span class="ev-icon">@FileIcon(f.EvidenceType)</span>
-                            <button class="ev-name ev-name-btn" @onclick="() => OpenEvidenceReader(node, f)" title="View @EvidenceDisplayName(f)">@EvidenceDisplayName(f)</button>
-                            <span class="ev-type muted small">@f.SourceType</span>
-                            <span class="ev-date muted small">@(f.FetchedAt?.Length >= 10 ? f.FetchedAt[..10] : f.FetchedAt ?? "")</span>
-                            @if (isAdmin && f.Id > 0)
-                            {
-                                <button class="btn-danger-tiny" @onclick="() => DisassociateEvidence(node, f.Id)"
-                                        title="Disassociate (file kept for audit)">
-                                    ✕
+                        <div class="rate-row-item">
+                            <div class="rate-row-main">
+                                <span class="rate-row-name">@row.Name</span>
+                                <span class="rate-row-value">@FormatRateRowValue(row)</span>
+                                @if (!string.IsNullOrEmpty(row.SaleContext.ToString()) && row.SaleContext != SaleContext.Any)
+                                { <span class="rate-row-badge">@row.SaleContext</span> }
+                                @if (row.RemittancePoint != RemittancePoint.Retailer)
+                                { <span class="rate-row-badge badge-remit">@row.RemittancePoint</span> }
+                                @if (!string.IsNullOrEmpty(row.StatutoryReference))
+                                { <span class="rate-row-cite muted small" title="Statutory reference">@row.StatutoryReference</span> }
+                                <span class="rate-row-spacer"></span>
+                                @{
+                                    var evCount = row.Evidence.Count;
+                                    var evExpanded = rateEvidenceExpanded.Contains(row.Id);
+                                }
+                                <button class="evidence-badge @(evExpanded ? "evidence-hide" : evCount > 0 ? "evidence-ok" : "evidence-missing")"
+                                        @onclick="() => ToggleRateEvidence(row.Id)"
+                                        title="@(evExpanded ? "Hide evidence" : evCount > 0 ? $"{evCount} evidence file(s)" : "Add evidence")">
+                                    @(evExpanded ? "▲ Hide" : evCount > 0 ? $"📎 {evCount}" : isAdmin ? "＋ Evidence" : "—")
                                 </button>
+                                @if (isAdmin && row.Id > 0)
+                                {
+                                    <button class="btn-tiny" @onclick="() => StartEditRate(node, row)" title="Edit">✎</button>
+                                    <button class="btn-danger-tiny" @onclick="() => DeleteRateRow(node.Id, row.Id)" title="Delete rate law">✕</button>
+                                }
+                            </div>
+                            @if (!string.IsNullOrEmpty(row.Conditions))
+                            { <div class="rate-row-conditions muted small">@row.Conditions</div> }
+                            @if (row.MinAbv.HasValue || row.MaxAbv.HasValue)
+                            { <div class="rate-row-abv muted small">ABV: @(row.MinAbv?.ToString("F1") ?? "0")% – @(row.MaxAbv?.ToString("F1") ?? "∞")%</div> }
+                            @if (evExpanded)
+                            {
+                                <div class="rate-row-evidence-panel">
+                                    @if (row.Evidence.Count == 0)
+                                    { <p class="muted small">No evidence attached yet.</p> }
+                                    else
+                                    {
+                                        <ul class="detail-evidence-list">
+                                            @foreach (var f in row.Evidence)
+                                            {
+                                                <li class="evidence-item">
+                                                    <span class="ev-icon">@FileIcon(f.EvidenceType)</span>
+                                                    <button class="ev-name ev-name-btn" @onclick="() => OpenEvidenceReader(node, f)">@EvidenceDisplayName(f)</button>
+                                                    <span class="ev-type muted small">@f.SourceType</span>
+                                                    <span class="ev-date muted small">@(f.FetchedAt?.Length >= 10 ? f.FetchedAt[..10] : f.FetchedAt ?? "")</span>
+                                                    @if (isAdmin && f.Id > 0)
+                                                    {
+                                                        <button class="btn-danger-tiny" @onclick="() => DisassociateEvidence(node, f.Id)" title="Disassociate">✕</button>
+                                                    }
+                                                </li>
+                                            }
+                                        </ul>
+                                    }
+                                    @if (isAdmin && row.Id > 0)
+                                    {
+                                        <button class="btn-add-evidence" style="margin-top:.5rem"
+                                                @onclick="() => OpenEvidenceModal(node, row.Id, row.Name)">+ Add Evidence</button>
+                                    }
+                                </div>
                             }
-                        </li>
+                        </div>
                     }
-                </ul>
+                </div>
             }
         </div>
+    };
+
+    private void ToggleRateEvidence(int rateRowId)
+    {
+        if (!rateEvidenceExpanded.Add(rateRowId)) rateEvidenceExpanded.Remove(rateRowId);
+    }
+
+    private static string FormatRateRowValue(RateRow row) => row.Basis switch
+    {
+        RateBasis.Percentage => $"{row.Rate * 100:F3}%",
+        _ => $"${row.Rate:F4} {row.Unit}".Trim()
     };
 
     private void ShowCategoryLockedHint() =>
         SetStatus("✗ Subscribe to this product category to view rates — Adjust subscription →");
 
-    // ── Rate cell ─────────────────────────────────────────────────────────────
-    private RenderFragment RateCell(JNode node) => __builder =>
+    // ── Rate row CRUD ─────────────────────────────────────────────────────────
+    private void StartAddRate(int nodeId)
     {
-        <span @onclick:stopPropagation="true" class="rate-cell-wrap">
-            @if (IsGuestMode && editActive.Contains(node.Id))
-            {
-                <input class="rate-input"
-                       type="number" step="0.001" min="0" max="30"
-                       value="@(editValues.TryGetValue(node.Id, out var fv) ? fv : FormatRate(node.Rate))"
-                       @onchange="e => OnRateChange(node.Id, e.Value?.ToString() ?? string.Empty)"
-                       @onkeydown="e => OnFakeRateKey(e, node.Id)" />
-                <span class="muted small">%</span>
-                <button class="rate-action-btn rate-save-btn" @onclick="() => FakeSaveAttempt(node.Id)" title="Save">✓</button>
-                <button class="rate-action-btn rate-cancel-btn" @onclick="() => CancelEdit(node.Id)" title="Cancel">✕</button>
-            }
-            else if (IsGuestMode)
-            {
-                <span class="rate-val @(node.Rate.HasValue ? string.Empty : "no-rate")"
-                      @onclick="() => StartEdit(node.Id, node.Rate)"
-                      title="Click to edit">
-                    @(node.Rate.HasValue ? $"{node.Rate.Value * 100:F3}%" : "—")
-                </span>
-            }
-            else if (isAdmin && editActive.Contains(node.Id))
-            {
-                <input class="rate-input"
-                       type="number" step="0.001" min="0" max="30"
-                       value="@(editValues.TryGetValue(node.Id, out var av) ? av : FormatRate(node.Rate))"
-                       @onchange="e => OnRateChange(node.Id, e.Value?.ToString() ?? string.Empty)"
-                       @onkeydown="e => OnRateKey(e, node.Id)" />
-                <span class="muted small">%</span>
-                <button class="rate-action-btn rate-save-btn" @onclick="() => SaveRate(node.Id)" title="Save">✓</button>
-                <button class="rate-action-btn rate-cancel-btn" @onclick="() => CancelEdit(node.Id)" title="Cancel">✕</button>
-            }
-            else
-            {
-                <span class="rate-val @(node.Rate.HasValue ? string.Empty : "no-rate") @(!isAdmin ? "rate-readonly" : "")"
-                      @onclick="() => TryStartEdit(node.Id, node.Rate)"
-                      title="@(isAdmin ? "Click to edit" : "")">
-                    @(node.Rate.HasValue ? $"{node.Rate.Value * 100:F3}%" : "—")
-                </span>
-            }
-        </span>
-    };
-
-    private string FormatRate(decimal? rate) => rate.HasValue ? $"{rate.Value * 100:F3}" : "0.000";
-    private void StartEdit(int id, decimal? current) { editValues[id] = FormatRate(current); editActive.Add(id); }
-    private void OnRateChange(int id, string value) => editValues[id] = value;
-    private void CancelEdit(int id) { editActive.Remove(id); editValues.Remove(id); }
-
-    private async Task OnRateKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, int id)
-    {
-        if (e.Key is "Enter" or "Tab") await SaveRate(id);
-        if (e.Key == "Escape") CancelEdit(id);
+        rateFormNodeId = nodeId;
+        rateFormRowId = null;
+        rateFormName = "General Sales Tax";
+        rateFormRate = "0.000";
+        rateFormBasis = RateBasis.Percentage;
+        rateFormUnit = "";
+        rateFormSaleContext = SaleContext.Any;
+        rateFormRemittance = RemittancePoint.Retailer;
+        rateFormMinAbv = rateFormMaxAbv = rateFormStatutory = rateFormConditions = rateFormExpires = "";
+        rateFormEffective = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd");
     }
 
-    private async Task SaveRate(int jurisdictionId)
+    private void StartEditRate(JNode node, RateRow row)
+    {
+        rateFormNodeId = node.Id;
+        rateFormRowId = row.Id;
+        rateFormName = row.Name;
+        rateFormRate = row.Basis == RateBasis.Percentage ? $"{row.Rate * 100:F4}" : row.Rate.ToString("F4");
+        rateFormBasis = row.Basis;
+        rateFormUnit = row.Unit;
+        rateFormSaleContext = row.SaleContext;
+        rateFormRemittance = row.RemittancePoint;
+        rateFormMinAbv = row.MinAbv?.ToString() ?? "";
+        rateFormMaxAbv = row.MaxAbv?.ToString() ?? "";
+        rateFormStatutory = row.StatutoryReference;
+        rateFormEffective = row.EffectiveDate;
+        rateFormExpires = row.ExpirationDate;
+        rateFormConditions = row.Conditions;
+    }
+
+    private void CancelRateForm()
+    {
+        rateFormNodeId = null;
+        rateFormRowId = null;
+    }
+
+    private async Task SaveRateRow()
     {
         if (!isAdmin) { SetStatus("✗ Sign in to edit rates"); return; }
-        if (selectedCategoryId is null) { SetStatus("✗ Select a category first"); return; }
-        editActive.Remove(jurisdictionId);
-        if (!editValues.TryGetValue(jurisdictionId, out var valStr)) return;
-        editValues.Remove(jurisdictionId);
-        if (!decimal.TryParse(valStr, out var pct)) return;
-        var rate = pct / 100m;
+        if (rateFormNodeId is null) return;
+        if (string.IsNullOrWhiteSpace(rateFormName)) { SetStatus("✗ Rate name is required"); return; }
+        if (!decimal.TryParse(rateFormRate, out var rateVal)) { SetStatus("✗ Invalid rate value"); return; }
+        if (rateFormBasis == RateBasis.Percentage) rateVal /= 100m;
 
+        savingRateForm = true;
+        StateHasChanged();
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
@@ -868,27 +979,70 @@ else if (!isAdmin && HasUnsubscribedContent)
                 manualRunId = run.Id;
             }
 
-            var catId = selectedCategoryId;
-            var old = await db.TaxRates.FirstOrDefaultAsync(
-                r => r.JurisdictionId == jurisdictionId && r.IsCurrent && r.TaxCategoryId == catId);
-            if (old is not null) old.IsCurrent = false;
-
-            db.TaxRates.Add(new TaxRate
+            if (rateFormRowId.HasValue)
             {
-                JurisdictionId = jurisdictionId,
-                TaxCategoryId = catId,
-                Rate = rate,
-                RateType = "General",
-                EffectiveDate = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd"),
-                ScrapedAt = DateTime.UtcNow.ToString("o"),
-                ScrapeRunId = manualRunId.Value,
-                RawValue = $"{pct:F3}%",
-                IsCurrent = true
-            });
-            await db.SaveChangesAsync();
+                var existing = await db.TaxRates.FindAsync(rateFormRowId.Value);
+                if (existing is not null)
+                {
+                    existing.Name = rateFormName.Trim();
+                    existing.Rate = rateVal;
+                    existing.RateBasis = rateFormBasis;
+                    existing.Unit = rateFormUnit.Trim();
+                    existing.SaleContext = rateFormSaleContext;
+                    existing.RemittancePoint = rateFormRemittance;
+                    existing.MinAbv = decimal.TryParse(rateFormMinAbv, out var minA) ? minA : null;
+                    existing.MaxAbv = decimal.TryParse(rateFormMaxAbv, out var maxA) ? maxA : null;
+                    existing.StatutoryReference = rateFormStatutory.Trim();
+                    existing.EffectiveDate = string.IsNullOrWhiteSpace(rateFormEffective) ? null : DateOnly.Parse(rateFormEffective.Trim());
+                    existing.ExpirationDate = string.IsNullOrWhiteSpace(rateFormExpires) ? null : DateOnly.Parse(rateFormExpires.Trim());
+                    existing.Conditions = rateFormConditions.Trim();
+                }
+            }
+            else
+            {
+                db.TaxRates.Add(new TaxRate
+                {
+                    JurisdictionId = rateFormNodeId.Value,
+                    TaxCategoryId = selectedCategoryId,
+                    Rate = rateVal,
+                    Name = rateFormName.Trim(),
+                    RateBasis = rateFormBasis,
+                    Unit = rateFormUnit.Trim(),
+                    SaleContext = rateFormSaleContext,
+                    RemittancePoint = rateFormRemittance,
+                    MinAbv = decimal.TryParse(rateFormMinAbv, out var minAbv) ? minAbv : null,
+                    MaxAbv = decimal.TryParse(rateFormMaxAbv, out var maxAbv) ? maxAbv : null,
+                    StatutoryReference = rateFormStatutory.Trim(),
+                    EffectiveDate = string.IsNullOrWhiteSpace(rateFormEffective) ? null : DateOnly.Parse(rateFormEffective.Trim()),
+                    ExpirationDate = string.IsNullOrWhiteSpace(rateFormExpires) ? null : DateOnly.Parse(rateFormExpires.Trim()),
+                    Conditions = rateFormConditions.Trim(),
+                    ScrapedAt = DateTime.UtcNow.ToString("o"),
+                    ScrapeRunId = manualRunId.Value,
+                    RawEvidence = rateFormBasis == RateBasis.Percentage ? $"{rateVal * 100:F3}%" : $"{rateVal:F4} {rateFormUnit}".Trim(),
+                    IsCurrent = true
+                });
+            }
 
-            await RefreshNode(db, jurisdictionId);
-            SetStatus($"✓ Saved {pct:F3}%");
+            await db.SaveChangesAsync();
+            var nodeId = rateFormNodeId.Value;
+            CancelRateForm();
+            await RefreshNode(db, nodeId);
+            SetStatus("✓ Rate law saved");
+        }
+        catch (Exception ex) { SetStatus($"✗ {ex.Message}"); }
+        finally { savingRateForm = false; StateHasChanged(); }
+    }
+
+    private async Task DeleteRateRow(int nodeId, int rateRowId)
+    {
+        if (!isAdmin) { SetStatus("✗ Admin access required"); return; }
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var row = await db.TaxRates.FindAsync(rateRowId);
+            if (row is not null) { row.IsCurrent = false; await db.SaveChangesAsync(); }
+            await RefreshNode(db, nodeId);
+            SetStatus("✓ Rate law removed");
         }
         catch (Exception ex) { SetStatus($"✗ {ex.Message}"); }
         StateHasChanged();
@@ -922,114 +1076,6 @@ else if (!isAdmin && HasUnsubscribedContent)
         }
     };
 
-    // ── Evidence toggle button ────────────────────────────────────────────────
-    private RenderFragment EvidenceToggle(JNode node) => __builder =>
-    {
-        <span @onclick:stopPropagation="true">
-            @{
-                var count = node.Evidence.Count;
-                var isOpen = evidenceOpen == node.Id;
-                if (isOpen)
-                {
-                    <button class="evidence-badge evidence-hide" @onclick="() => ToggleEvidence(node.Id)"
-                            title="Hide evidence panel">
-                        ▲ Hide
-                    </button>
-                }
-                else if (count > 0)
-                {
-                    <button class="evidence-badge evidence-ok" @onclick="() => ToggleEvidence(node.Id)"
-                            title="@count evidence file(s) attached — click to view">
-                        📎 @count
-                    </button>
-                }
-                else if (node.RateId.HasValue && isAdmin)
-                {
-                    <button class="evidence-badge evidence-missing" @onclick="() => ToggleEvidence(node.Id)"
-                            title="No evidence — click to add">
-                        ＋ Add
-                    </button>
-                }
-                else if (node.RateId.HasValue)
-                {
-                    <span class="evidence-badge evidence-none" title="No evidence attached">—</span>
-                }
-                else
-                {
-                    <span class="evidence-badge evidence-none" title="Save a rate first">—</span>
-                }
-            }
-        </span>
-    };
-
-    private void ToggleEvidence(int id) => evidenceOpen = evidenceOpen == id ? null : id;
-
-    // ── Evidence panel ────────────────────────────────────────────────────────
-    private RenderFragment EvidencePanel(JNode node) => __builder =>
-    {
-        <div class="evidence-panel">
-            <div class="evidence-panel-title">
-                Evidence — <strong>@node.Name</strong>
-                <button class="btn-icon" @onclick="() => evidenceOpen = null" title="Close">✕</button>
-            </div>
-
-            @if (node.Evidence.Count == 0)
-            {
-                <p class="muted small">No evidence attached yet.</p>
-            }
-            else
-            {
-                <ul class="evidence-list">
-                    @foreach (var f in node.Evidence)
-                    {
-                        <li class="evidence-item">
-                            <span class="ev-icon">@FileIcon(f.EvidenceType)</span>
-                            <button class="ev-name ev-name-btn" @onclick="() => OpenEvidenceReader(node, f)" title="View @EvidenceDisplayName(f)">
-                                @EvidenceDisplayName(f)
-                            </button>
-                            <span class="ev-type muted small">@f.SourceType</span>
-                            <span class="ev-date muted small">@(f.FetchedAt?.Length >= 10 ? f.FetchedAt[..10] : f.FetchedAt ?? "")</span>
-                            @if (isAdmin && f.Id > 0)
-                            {
-                                <button class="btn-danger-tiny" @onclick="() => DisassociateEvidence(node, f.Id)"
-                                        title="Disassociate (record kept for audit)">
-                                    ✕
-                                </button>
-                            }
-                        </li>
-                    }
-                </ul>
-            }
-
-            @if (isAdmin)
-            {
-                @if (!node.RateId.HasValue)
-                {
-                    <p class="muted small">Save a tax rate first before attaching evidence.</p>
-                }
-                else
-                {
-                    <div class="drop-zone @(IsDropDragging(node.Id) ? "drop-zone-active" : "")"
-                         @ondragenter="() => OnDragEnter(node.Id)"
-                         @ondragleave="() => OnDragLeave(node.Id)"
-                         @ondrop="() => OnDropZoneDrop(node.Id)"
-                         @ondragover:preventDefault="true">
-                        <span class="dz-icon">⬆</span>
-                        <span class="dz-text">Drop files here or click to browse</span>
-                        <span class="dz-hint">.pdf · .txt · .csv · .html · .xlsx · .json</span>
-                        <InputFile OnChange="e => UploadEvidence(node, e)"
-                                   accept=".pdf,.txt,.csv,.html,.xlsx,.json"
-                                   multiple disabled="@uploading"
-                                   class="dz-input" />
-                    </div>
-                    @if (uploading)
-                    {
-                        <span class="muted small" style="margin-top:.25rem">Saving…</span>
-                    }
-                }
-            }
-        </div>
-    };
 
     private static string EvidenceDisplayName(EvidenceFile f) =>
         string.IsNullOrEmpty(f.OriginalFileName) ? f.FileName : f.OriginalFileName;
@@ -1079,78 +1125,6 @@ else if (!isAdmin && HasUnsubscribedContent)
         return node.Name;
     }
 
-    private async Task UploadEvidence(JNode node, InputFileChangeEventArgs e)
-    {
-        if (!isAdmin) { SetStatus("✗ Admin access required to upload evidence"); return; }
-        if (!node.RateId.HasValue || e.FileCount == 0) return;
-        uploading = true;
-        StateHasChanged();
-
-        try
-        {
-            Directory.CreateDirectory(SettingsService.EvidenceDirectory);
-
-            foreach (var file in e.GetMultipleFiles(10))
-            {
-                var ext = Path.GetExtension(file.Name).ToLowerInvariant();
-                var fileName = $"{Guid.CreateVersion7():N}{ext}";
-                var fullPath = Path.Combine(SettingsService.EvidenceDirectory, fileName);
-
-                string contentHash;
-                await using (var fs = File.Create(fullPath))
-                await using (var stream = file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024))
-                {
-                    using var sha = SHA256.Create();
-                    using var cs = new CryptoStream(fs, sha, CryptoStreamMode.Write);
-                    await stream.CopyToAsync(cs);
-                    cs.FlushFinalBlock();
-                    contentHash = Convert.ToHexString(sha.Hash!).ToLowerInvariant();
-                }
-
-                var mime = ext switch
-                {
-                    ".pdf" => "application/pdf",
-                    ".csv" => "text/csv",
-                    ".html" or ".htm" => "text/html",
-                    ".json" => "application/json",
-                    ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    _ => "text/plain"
-                };
-
-                var sourceType = ext switch
-                {
-                    ".pdf" => SourceType.Pdf,
-                    ".csv" => SourceType.Csv,
-                    ".html" or ".htm" => SourceType.Website,
-                    _ => SourceType.Manual
-                };
-
-                await using var db = await DbFactory.CreateDbContextAsync();
-                db.SourceDocuments.Add(new SourceDocument
-                {
-                    TaxRateId = node.RateId.Value,
-                    SourceType = sourceType,
-                    SourceUrl = string.Empty,
-                    MimeType = mime,
-                    FetchedAt = DateTime.UtcNow.ToString("o"),
-                    ContentHash = contentHash,
-                    FileName = fileName,
-                    OriginalFileName = file.Name,
-                    EvidenceType = ext.TrimStart('.'),
-                    RawContent = string.Empty
-                });
-                await db.SaveChangesAsync();
-            }
-
-            await using (var db2 = await DbFactory.CreateDbContextAsync())
-                await RefreshNode(db2, node.Id);
-
-            SetStatus("✓ Evidence attached");
-        }
-        catch (Exception ex) { SetStatus($"✗ Upload failed: {ex.Message}"); }
-        finally { uploading = false; StateHasChanged(); }
-    }
-
     private async Task DisassociateEvidence(JNode node, int docId)
     {
         if (!isAdmin) { SetStatus("✗ Admin access required to remove evidence"); return; }
@@ -1173,28 +1147,40 @@ else if (!isAdmin && HasUnsubscribedContent)
     private async Task RefreshNode(AppDbContext db, int jurisdictionId)
     {
         var catId = selectedCategoryId;
-        var rate = await db.TaxRates
+        var rates = await db.TaxRates
             .Where(r => r.JurisdictionId == jurisdictionId && r.IsCurrent && r.TaxCategoryId == catId)
-            .Select(r => new { r.Rate, r.Id })
-            .FirstOrDefaultAsync();
-
-        var evidence = rate is null ? [] : await db.SourceDocuments
-            .Where(d => d.TaxRateId == rate.Id && d.IsActive)
-            .Select(d => new EvidenceFile(d.Id, d.FileName, d.OriginalFileName, d.EvidenceType, d.SourceUrl, d.RawContent, d.SourceType.ToString(), d.FetchedAt))
+            .Select(r => new { r.Id, r.Name, r.Rate, r.RateBasis, r.Unit, r.SaleContext, r.RemittancePoint,
+                r.MinAbv, r.MaxAbv, r.Conditions, r.StatutoryReference,
+                EffectiveDate = r.EffectiveDate != null ? r.EffectiveDate.Value.ToString() : "",
+                ExpirationDate = r.ExpirationDate != null ? r.ExpirationDate.Value.ToString() : "" })
             .ToListAsync();
 
-        UpdateNodeInplace(jurisdictionId, rate?.Rate, rate?.Id, evidence);
+        var rateIds = rates.Select(r => r.Id).ToList();
+        var docs = await db.SourceDocuments
+            .Where(d => rateIds.Contains(d.TaxRateId) && d.IsActive)
+            .Select(d => new { d.TaxRateId, d.Id, d.FileName, d.OriginalFileName, d.EvidenceType, d.SourceUrl, d.RawContent, d.SourceType, d.FetchedAt })
+            .ToListAsync();
+        var docMap = docs.GroupBy(d => d.TaxRateId).ToDictionary(g => g.Key, g => g.ToList());
+
+        var rateRows = rates.Select(r => new RateRow(r.Id, r.Name, r.Rate, r.RateBasis, r.Unit,
+            r.SaleContext, r.RemittancePoint, r.MinAbv, r.MaxAbv, r.Conditions,
+            r.StatutoryReference, r.EffectiveDate, r.ExpirationDate,
+            docMap.GetValueOrDefault(r.Id, [])
+                .Select(d => new EvidenceFile(d.Id, d.FileName, d.OriginalFileName, d.EvidenceType, d.SourceUrl, d.RawContent, d.SourceType.ToString(), d.FetchedAt))
+                .ToList())).ToList();
+
+        UpdateNodeInplace(jurisdictionId, rateRows);
     }
 
-    private void UpdateNodeInplace(int id, decimal? rate, int? rateId, List<EvidenceFile> evidence)
+    private void UpdateNodeInplace(int id, List<RateRow> rates)
     {
         for (int i = 0; i < states.Count; i++)
         {
-            if (states[i].Id == id) { states[i] = states[i] with { Rate = rate, RateId = rateId, Evidence = evidence }; return; }
+            if (states[i].Id == id) { states[i] = states[i] with { Rates = rates }; return; }
         }
         foreach (var list in children.Values)
             for (int i = 0; i < list.Count; i++)
-                if (list[i].Id == id) { list[i] = list[i] with { Rate = rate, RateId = rateId, Evidence = evidence }; return; }
+                if (list[i].Id == id) { list[i] = list[i] with { Rates = rates }; return; }
     }
 
     // ── Scrape ────────────────────────────────────────────────────────────────
@@ -1206,12 +1192,14 @@ else if (!isAdmin && HasUnsubscribedContent)
         StateHasChanged();
         try
         {
-            var changed = await Orchestrator.RunFullScrapeAsync();
-            SetStatus($"✓ Scrape done — {changed} change(s)");
             await using var db = await DbFactory.CreateDbContextAsync();
-            states = await BuildNodes(db, JurisdictionType.State, parentType: JurisdictionType.Country);
-            children.Clear();
-            expanded.Clear();
+            db.ScrapeRuns.Add(new ScrapeRun
+            {
+                StartedAt = DateTime.UtcNow.ToString("o"),
+                Status = ScrapeStatus.Pending,
+            });
+            await db.SaveChangesAsync();
+            SetStatus("✓ Scrape queued — see /runs for progress");
         }
         catch (Exception ex) { SetStatus($"✗ {ex.Message}"); }
         finally { scraping = false; StateHasChanged(); }
@@ -1219,9 +1207,11 @@ else if (!isAdmin && HasUnsubscribedContent)
 
 
     // ── Add Evidence modal ────────────────────────────────────────────────────
-    private void OpenEvidenceModal(JNode node)
+    private void OpenEvidenceModal(JNode node, int rateRowId, string rateRowName)
     {
         evidenceModalNode = node;
+        evidenceModalRateRowId = rateRowId;
+        evidenceModalRateRowName = rateRowName;
         evidenceModalOpen = true;
         evidenceModalTab = "file";
         evidenceModalUrl = "";
@@ -1233,6 +1223,8 @@ else if (!isAdmin && HasUnsubscribedContent)
     {
         evidenceModalOpen = false;
         evidenceModalNode = null;
+        evidenceModalRateRowId = null;
+        evidenceModalRateRowName = "";
         stagedItems.Clear();
     }
 
@@ -1279,7 +1271,7 @@ else if (!isAdmin && HasUnsubscribedContent)
 
     private async Task SaveAllStaged()
     {
-        if (evidenceModalNode is null || !evidenceModalNode.RateId.HasValue || stagedItems.Count == 0) return;
+        if (evidenceModalNode is null || !evidenceModalRateRowId.HasValue || stagedItems.Count == 0) return;
         savingStaged = true;
         StateHasChanged();
 
@@ -1331,7 +1323,7 @@ else if (!isAdmin && HasUnsubscribedContent)
                         await using var db = await DbFactory.CreateDbContextAsync();
                         db.SourceDocuments.Add(new SourceDocument
                         {
-                            TaxRateId = node.RateId.Value, SourceType = sourceType,
+                            TaxRateId = evidenceModalRateRowId!.Value, SourceType = sourceType,
                             SourceUrl = string.Empty, MimeType = mime,
                             FetchedAt = DateTime.UtcNow.ToString("o"), ContentHash = contentHash,
                             FileName = fileName, OriginalFileName = item.File.Name,
@@ -1352,7 +1344,7 @@ else if (!isAdmin && HasUnsubscribedContent)
                         await using var db = await DbFactory.CreateDbContextAsync();
                         db.SourceDocuments.Add(new SourceDocument
                         {
-                            TaxRateId = node.RateId.Value, SourceType = SourceType.Manual,
+                            TaxRateId = evidenceModalRateRowId!.Value, SourceType = SourceType.Manual,
                             SourceUrl = item.Kind == "url" ? item.Text : string.Empty,
                             MimeType = "text/plain", FetchedAt = DateTime.UtcNow.ToString("o"),
                             ContentHash = contentHash, FileName = fileName,
@@ -1449,22 +1441,6 @@ else if (!isAdmin && HasUnsubscribedContent)
         }
     }
 
-    // ── Rate edit helpers ──────────────────────────────────────────────────────
-    private void TryStartEdit(int id, decimal? rate) { if (isAdmin) StartEdit(id, rate); }
-
-    private async Task OnFakeRateKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, int id)
-    {
-        if (e.Key is "Enter" or "Tab") FakeSaveAttempt(id);
-        if (e.Key == "Escape") CancelEdit(id);
-        await Task.CompletedTask;
-    }
-
-    private void FakeSaveAttempt(int id)
-    {
-        editActive.Remove(id);
-        editValues.Remove(id);
-        SetStatus("✗ Subscribe to save rate changes");
-    }
 
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -1495,9 +1471,9 @@ else if (!isAdmin && HasUnsubscribedContent)
                 j.StateCode,
                 j.JurisdictionName,
                 j.FipsCode,
-                Rate = (decimal?)db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent).Select(r => r.Rate).FirstOrDefault(),
-                EffectiveDate = db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent).Select(r => r.EffectiveDate).FirstOrDefault() ?? "",
-                RateId = (int?)db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent).Select(r => r.Id).FirstOrDefault()
+                Rate = (decimal?)db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent && r.RateBasis == RateBasis.Percentage).Sum(r => (decimal?)r.Rate),
+                EffectiveDate = db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent).Select(r => r.EffectiveDate != null ? r.EffectiveDate.Value.ToString() : "").FirstOrDefault() ?? "",
+                AnyRateId = (int?)db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent).Select(r => r.Id).FirstOrDefault()
             })
             .ToListAsync();
 
@@ -1534,7 +1510,7 @@ else if (!isAdmin && HasUnsubscribedContent)
                 j.Rate,
                 j.JurisdictionType == JurisdictionType.City ? CombinedFor(j.Id) : (decimal?)null,
                 j.EffectiveDate,
-                j.RateId.HasValue && evidencedSet.Contains(j.RateId.Value)
+                j.AnyRateId.HasValue && evidencedSet.Contains(j.AnyRateId.Value)
             ))
             .ToList();
     }

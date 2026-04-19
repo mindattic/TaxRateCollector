@@ -6,9 +6,7 @@ public class Jurisdiction
 {
     public int Id { get; set; }
 
-    /// <summary>
-    /// Null for top-level Country nodes; points to the parent for State→County→City.
-    /// </summary>
+    /// <summary>Null for top-level Country nodes; points to the parent for State→County→City→District.</summary>
     public int? ParentId { get; set; }
 
     public JurisdictionType JurisdictionType { get; set; }
@@ -16,28 +14,39 @@ public class Jurisdiction
 
     /// <summary>
     /// ISO 3166-1 alpha-2 for countries, FIPS state/county code, or municipal code.
-    /// Used as the stable lookup key when querying the tier's source independently.
+    /// Stable lookup key when querying the tier's source independently.
     /// </summary>
     public string FipsCode { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Denormalised state abbreviation kept for fast filtering (e.g. "CA", "TX").
-    /// </summary>
+    /// <summary>Denormalised state abbreviation kept for fast filtering (e.g. "CA", "TX").</summary>
     public string StateCode { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Root URL of the data source for this jurisdiction's tier.
-    /// Each tier may point at a different API endpoint or document repository.
-    /// </summary>
+    /// <summary>Root URL of the data source for this jurisdiction's tax rate laws.</summary>
     public string SourceUrl { get; set; } = string.Empty;
 
     public bool IsActive { get; set; } = true;
 
-    // Hierarchy navigation
+    /// <summary>
+    /// True when this local jurisdiction (city or district) administers and collects its own
+    /// sales tax independently of the state revenue authority. Sellers must file a separate
+    /// return directly with the local authority rather than remitting everything to the state.
+    ///
+    /// Primarily affects Colorado (home-rule cities: Denver, Boulder, Aurora, etc.),
+    /// Alabama (home-rule cities), and Louisiana (home-rule parishes).
+    ///
+    /// False (the default) means the state collects on behalf of the locality — one combined
+    /// return is sufficient.
+    /// </summary>
+    public bool IsHomeRuleAdministered { get; set; }
+
+    // ── Hierarchy navigation ──────────────────────────────────────────────────
     public Jurisdiction? Parent { get; set; }
     public ICollection<Jurisdiction> Children { get; set; } = new List<Jurisdiction>();
 
-    // Rate history and audit
+    // ── Rate history and audit ────────────────────────────────────────────────
     public ICollection<TaxRate> TaxRates { get; set; } = new List<TaxRate>();
     public ICollection<ChangeLogEntry> ChangeLogEntries { get; set; } = new List<ChangeLogEntry>();
+
+    /// <summary>ZIP codes that include this jurisdiction as an overlapping special district.</summary>
+    public ICollection<ZipCodeDistrict> ZipCodeDistricts { get; set; } = new List<ZipCodeDistrict>();
 }

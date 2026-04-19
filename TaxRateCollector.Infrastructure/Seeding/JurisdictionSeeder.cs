@@ -68,7 +68,7 @@ public static class JurisdictionSeeder
             return;
 
         var now    = DateTime.UtcNow;
-        var today  = DateOnly.FromDateTime(now).ToString("yyyy-MM-dd");
+        var today  = DateOnly.FromDateTime(now);
         var nowIso = now.ToString("o");
 
         var seedRun = new ScrapeRun
@@ -152,7 +152,7 @@ public static class JurisdictionSeeder
     }
 
     private static void AddRatesForCategories(AppDbContext db, int jurisdictionId, decimal rate,
-        string effectiveDate, string scrapedAt, int scrapeRunId, IReadOnlyList<TaxCategory> leafCats)
+        DateOnly effectiveDate, string scrapedAt, int scrapeRunId, IReadOnlyList<TaxCategory> leafCats)
     {
         if (leafCats.Count == 0)
         {
@@ -160,11 +160,11 @@ public static class JurisdictionSeeder
             {
                 JurisdictionId = jurisdictionId,
                 Rate = rate,
-                RateType = "General",
+                Name = "General Sales Tax", RateBasis = RateBasis.Percentage,
                 EffectiveDate = effectiveDate,
                 ScrapedAt = scrapedAt,
                 ScrapeRunId = scrapeRunId,
-                RawValue = $"{rate * 100:F3}%",
+                RawEvidence = $"{rate * 100:F3}%",
                 IsCurrent = true
             });
             return;
@@ -177,11 +177,11 @@ public static class JurisdictionSeeder
                 JurisdictionId = jurisdictionId,
                 TaxCategoryId = cat.Id,
                 Rate = rate,
-                RateType = "General",
+                Name = "General Sales Tax", RateBasis = RateBasis.Percentage,
                 EffectiveDate = effectiveDate,
                 ScrapedAt = scrapedAt,
                 ScrapeRunId = scrapeRunId,
-                RawValue = $"{rate * 100:F3}%",
+                RawEvidence = $"{rate * 100:F3}%",
                 IsCurrent = true
             });
         }

@@ -1,0 +1,329 @@
+@page "/review"
+@using Microsoft.EntityFrameworkCore
+@using TaxRateCollector.Core.Entities
+@using TaxRateCollector.Core.Enums
+@using TaxRateCollector.Infrastructure.Data
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@inject IDbContextFactory<AppDbContext> DbFactory
+@rendermode InteractiveServer
+
+<PageTitle>Review Queue — TaxRateCollector</PageTitle>
+
+<div class="page-header">
+    <div class="page-header-row">
+        <div>
+            <h1 class="page-title">Rate Law Review Queue</h1>
+            <p class="page-sub">
+                AI-extracted rates awaiting human approval.
+                Approve to make a rate live; reject to discard it.
+                The source evidence is shown for every rate.
+            </p>
+        </div>
+        @if (pendingCount > 0)
+        {
+            <div class="header-actions">
+                <span class="review-count-badge">@pendingCount pending</span>
+            </div>
+        }
+    </div>
+</div>
+
+@if (groups is null)
+{
+    <p class="muted">Loading…</p>
+}
+else if (groups.Count == 0)
+{
+    <div class="review-empty">
+        <span class="review-empty-icon">✓</span>
+        <p>No rates pending review.</p>
+    </div>
+}
+else
+{
+    @* State filter *@
+    <div class="review-filter-bar">
+        <button class="review-filter-btn @(filterState == null ? "active" : "")"
+                @onclick="() => SetFilter(null)">
+            All (@pendingCount)
+        </button>
+        @foreach (var g in groups)
+        {
+            <button class="review-filter-btn @(filterState == g.StateCode ? "active" : "")"
+                    @onclick="() => SetFilter(g.StateCode)">
+                @g.StateCode (@g.Rates.Count)
+            </button>
+        }
+    </div>
+
+    @foreach (var g in groups.Where(g => filterState == null || g.StateCode == filterState))
+    {
+        <div class="review-state-group">
+            <div class="review-state-header">
+                <span class="review-state-name">@g.StateCode — @g.StateName</span>
+                <button class="btn-secondary review-approve-all"
+                        @onclick="() => ApproveAll(g.StateCode)"
+                        disabled="@busy">
+                    Approve All (@g.Rates.Count)
+                </button>
+            </div>
+
+            @foreach (var r in g.Rates)
+            {
+                <div class="review-card @(r.Dismissed ? "review-card-dismissed" : "")">
+                    @if (!r.Dismissed)
+                    {
+                        <div class="review-card-header">
+                            <span class="review-jurisdiction">@r.JurisdictionPath</span>
+                            <span class="review-scraped muted small">scraped @r.ScrapedAt[..10]</span>
+                        </div>
+
+                        <div class="review-rate-row">
+                            <span class="review-rate-name">@r.Name</span>
+                            <span class="review-rate-value">@FormatRate(r)</span>
+                            <span class="rate-row-badge">@r.TaxType</span>
+                            @if (r.IsIncludedInPrice)
+                            { <span class="rate-row-badge badge-remit">Included in price</span> }
+                            @if (r.SaleContext != SaleContext.Any)
+                            { <span class="rate-row-badge">@r.SaleContext</span> }
+                            @if (r.RemittancePoint != RemittancePoint.Retailer)
+                            { <span class="rate-row-badge badge-remit">@r.RemittancePoint</span> }
+                            @if (!string.IsNullOrEmpty(r.StatutoryReference))
+                            { <span class="review-stat-ref muted small">@r.StatutoryReference</span> }
+                            @if (r.EffectiveDate.Length > 0)
+                            { <span class="muted small">eff. @r.EffectiveDate</span> }
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(r.Conditions))
+                        { <div class="review-conditions muted small">@r.Conditions</div> }
+
+                        @if (!string.IsNullOrEmpty(r.RawEvidence))
+                        {
+                            <details class="review-evidence">
+                                <summary class="muted small">Source evidence</summary>
+                                <blockquote class="review-evidence-text">@r.RawEvidence</blockquote>
+                                @if (!string.IsNullOrEmpty(r.SourceUrl))
+                                {
+                                    <a class="review-source-link muted small" href="@r.SourceUrl" target="_blank" rel="noopener">
+                                        ↗ @r.SourceUrl
+                                    </a>
+                                }
+                            </details>
+                        }
+
+                        <div class="review-actions">
+                            <button class="btn-approve" @onclick="() => Approve(r)" disabled="@busy">
+                                ✓ Approve
+                            </button>
+                            <button class="btn-reject" @onclick="() => Reject(r)" disabled="@busy">
+                                ✕ Reject
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <span class="muted small review-dismissed-label">@r.DismissedLabel</span>
+                    }
+                </div>
+            }
+        </div>
+    }
+}
+
+@if (!string.IsNullOrEmpty(statusMessage))
+{
+    <div class="review-status-toast">@statusMessage</div>
+}
+
+@code {
+    private List<StateGroup>? groups;
+    private int pendingCount;
+    private string? filterState;
+    private bool busy;
+    private string statusMessage = "";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var rates = await db.TaxRates
+            .Where(t => t.NeedsReview)
+            .Include(t => t.Jurisdiction)
+            .OrderBy(t => t.Jurisdiction.StateCode)
+            .ThenBy(t => t.Jurisdiction.JurisdictionName)
+            .ThenBy(t => t.Name)
+            .ToListAsync();
+
+        // Load source docs for evidence URLs
+        var rateIds = rates.Select(r => r.Id).ToList();
+        var docs = await db.SourceDocuments
+            .Where(d => rateIds.Contains(d.TaxRateId) && d.IsActive)
+            .ToListAsync();
+        var docByRate = docs.GroupBy(d => d.TaxRateId)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        // Load jurisdiction parents for breadcrumb path
+        var jurisdictionIds = rates.Select(r => r.JurisdictionId).Distinct().ToList();
+        var allJurisdictions = await db.Jurisdictions
+            .Where(j => jurisdictionIds.Contains(j.Id) || jurisdictionIds.Contains(j.Id))
+            .ToDictionaryAsync(j => j.Id);
+
+        groups = rates
+            .GroupBy(r => r.Jurisdiction.StateCode)
+            .Select(g => new StateGroup(
+                g.Key,
+                g.First().Jurisdiction.StateCode,
+                g.Select(r =>
+                {
+                    docByRate.TryGetValue(r.Id, out var doc);
+                    return new ReviewRow(
+                        Id:               r.Id,
+                        Name:             r.Name,
+                        Rate:             r.Rate,
+                        Basis:            r.RateBasis,
+                        Unit:             r.Unit,
+                        TaxType:          r.TaxType,
+                        IsIncludedInPrice: r.IsIncludedInPrice,
+                        SaleContext:      r.SaleContext,
+                        RemittancePoint:  r.RemittancePoint,
+                        Conditions:       r.Conditions,
+                        StatutoryReference: r.StatutoryReference,
+                        EffectiveDate:    r.EffectiveDate?.ToString("yyyy-MM-dd") ?? "",
+                        ScrapedAt:        r.ScrapedAt,
+                        JurisdictionId:   r.JurisdictionId,
+                        JurisdictionPath: BuildPath(r.Jurisdiction),
+                        RawEvidence:      r.RawEvidence,
+                        SourceUrl:        doc?.SourceUrl ?? "");
+                }).ToList()))
+            .ToList();
+
+        pendingCount = rates.Count;
+    }
+
+    private static string BuildPath(Jurisdiction j)
+    {
+        // Parent name not loaded — just use the jurisdiction name; full breadcrumb would need Include chain
+        return $"{j.StateCode} › {j.JurisdictionName}";
+    }
+
+    private async Task Approve(ReviewRow row)
+    {
+        busy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            // Retire any existing live rate with the same name in this jurisdiction
+            var existing = await db.TaxRates
+                .Where(t => t.JurisdictionId == row.JurisdictionId &&
+                            t.Name == row.Name && t.IsCurrent)
+                .ToListAsync();
+            foreach (var old in existing)
+                old.IsCurrent = false;
+
+            var rate = await db.TaxRates.FindAsync(row.Id);
+            if (rate is not null)
+            {
+                rate.NeedsReview = false;
+                rate.IsCurrent   = true;
+            }
+            await db.SaveChangesAsync();
+
+            row.Dismissed = true;
+            row.DismissedLabel = "✓ Approved";
+            pendingCount--;
+            statusMessage = $"✓ '{row.Name}' approved";
+        }
+        finally { busy = false; StateHasChanged(); }
+    }
+
+    private async Task Reject(ReviewRow row)
+    {
+        busy = true;
+        StateHasChanged();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var rate = await db.TaxRates.FindAsync(row.Id);
+            if (rate is not null)
+                db.TaxRates.Remove(rate);
+            await db.SaveChangesAsync();
+
+            row.Dismissed = true;
+            row.DismissedLabel = "✕ Rejected";
+            pendingCount--;
+            statusMessage = $"✕ '{row.Name}' rejected";
+        }
+        finally { busy = false; StateHasChanged(); }
+    }
+
+    private async Task ApproveAll(string stateCode)
+    {
+        busy = true;
+        StateHasChanged();
+        try
+        {
+            var group = groups?.FirstOrDefault(g => g.StateCode == stateCode);
+            if (group is null) return;
+
+            foreach (var row in group.Rates.Where(r => !r.Dismissed))
+                await Approve(row);
+
+            statusMessage = $"✓ All rates for {stateCode} approved";
+        }
+        finally { busy = false; StateHasChanged(); }
+    }
+
+    private void SetFilter(string? state)
+    {
+        filterState = state;
+    }
+
+    private static string FormatRate(ReviewRow r) => r.Basis switch
+    {
+        RateBasis.Percentage => $"{r.Rate * 100:F3}%",
+        _ => $"${r.Rate:F4} {r.Unit}",
+    };
+
+    // ── View models ───────────────────────────────────────────────────────────
+
+    private sealed class StateGroup(string stateCode, string stateName, List<ReviewRow> rates)
+    {
+        public string StateCode { get; } = stateCode;
+        public string StateName { get; } = stateName;
+        public List<ReviewRow> Rates { get; } = rates;
+    }
+
+    private sealed class ReviewRow(
+        int Id, string Name, decimal Rate, RateBasis Basis, string Unit,
+        TaxType TaxType, bool IsIncludedInPrice,
+        SaleContext SaleContext, RemittancePoint RemittancePoint,
+        string Conditions, string StatutoryReference, string EffectiveDate,
+        string ScrapedAt, int JurisdictionId, string JurisdictionPath,
+        string RawEvidence, string SourceUrl)
+    {
+        public int Id                  { get; } = Id;
+        public string Name             { get; } = Name;
+        public decimal Rate            { get; } = Rate;
+        public RateBasis Basis         { get; } = Basis;
+        public string Unit             { get; } = Unit;
+        public TaxType TaxType         { get; } = TaxType;
+        public bool IsIncludedInPrice  { get; } = IsIncludedInPrice;
+        public SaleContext SaleContext  { get; } = SaleContext;
+        public RemittancePoint RemittancePoint { get; } = RemittancePoint;
+        public string Conditions       { get; } = Conditions;
+        public string StatutoryReference { get; } = StatutoryReference;
+        public string EffectiveDate    { get; } = EffectiveDate;
+        public string ScrapedAt        { get; } = ScrapedAt;
+        public int JurisdictionId      { get; } = JurisdictionId;
+        public string JurisdictionPath { get; } = JurisdictionPath;
+        public string RawEvidence      { get; } = RawEvidence;
+        public string SourceUrl        { get; } = SourceUrl;
+
+        public bool Dismissed          { get; set; }
+        public string DismissedLabel   { get; set; } = "";
+    }
+}

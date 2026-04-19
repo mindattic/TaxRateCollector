@@ -20,9 +20,10 @@ public class DiffEngine(IDbContextFactory<AppDbContext> dbFactory) : IDiffEngine
 
         foreach (var newRate in newRates)
         {
+            // Match by jurisdiction + Name to find the previous version of the same law
             var previous = await db.TaxRates
                 .Where(t => t.JurisdictionId == newRate.JurisdictionId
-                         && t.RateType == newRate.RateType
+                         && t.Name == newRate.Name
                          && t.ScrapeRunId != scrapeRunId)
                 .OrderByDescending(t => t.ScrapedAt)
                 .FirstOrDefaultAsync(ct);
@@ -33,6 +34,8 @@ public class DiffEngine(IDbContextFactory<AppDbContext> dbFactory) : IDiffEngine
                 db.ChangeLog.Add(new ChangeLogEntry
                 {
                     JurisdictionId = newRate.JurisdictionId,
+                    TaxRateId = newRate.Id,
+                    RateName = newRate.Name,
                     ChangeType = ChangeType.NewJurisdiction,
                     NewRate = newRate.Rate,
                     DetectedAt = DateTime.UtcNow.ToString("o")
@@ -44,6 +47,8 @@ public class DiffEngine(IDbContextFactory<AppDbContext> dbFactory) : IDiffEngine
                 db.ChangeLog.Add(new ChangeLogEntry
                 {
                     JurisdictionId = newRate.JurisdictionId,
+                    TaxRateId = newRate.Id,
+                    RateName = newRate.Name,
                     ChangeType = ChangeType.RateChanged,
                     OldRate = previous.Rate,
                     NewRate = newRate.Rate,
@@ -55,25 +60,20 @@ public class DiffEngine(IDbContextFactory<AppDbContext> dbFactory) : IDiffEngine
         var scrapeJurisdictionIds = newRates.Select(r => r.JurisdictionId).ToHashSet();
         var previouslyActive = await db.TaxRates
             .Where(t => t.ScrapeRunId != scrapeRunId && !scrapeJurisdictionIds.Contains(t.JurisdictionId))
-            .Select(t => t.JurisdictionId)
+            .Select(t => new { t.JurisdictionId, t.Id, t.Name, t.Rate })
             .Distinct()
             .ToListAsync(ct);
 
-        foreach (var jId in previouslyActive)
+        foreach (var prev in previouslyActive)
         {
-            var lastKnown = await db.TaxRates
-                .Where(t => t.JurisdictionId == jId && t.ScrapeRunId != scrapeRunId)
-                .OrderByDescending(t => t.ScrapedAt)
-                .FirstOrDefaultAsync(ct);
-
-            if (lastKnown is null) continue;
-
-            changes.Add(new RateChange(jId, ChangeType.Removed, lastKnown.Rate, null));
+            changes.Add(new RateChange(prev.JurisdictionId, ChangeType.Removed, prev.Rate, null));
             db.ChangeLog.Add(new ChangeLogEntry
             {
-                JurisdictionId = jId,
+                JurisdictionId = prev.JurisdictionId,
+                TaxRateId = prev.Id,
+                RateName = prev.Name,
                 ChangeType = ChangeType.Removed,
-                OldRate = lastKnown.Rate,
+                OldRate = prev.Rate,
                 DetectedAt = DateTime.UtcNow.ToString("o")
             });
         }

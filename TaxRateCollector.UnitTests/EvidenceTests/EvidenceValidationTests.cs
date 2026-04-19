@@ -152,33 +152,36 @@ public class EvidenceValidationTests
         Assert.That(isValidHttps, Is.False);
     }
 
-    // ── Excise tax evidence ───────────────────────────────────────────────────
+    // ── Excise tax rate laws (merged into TaxRate) ────────────────────────────
 
     [Test]
-    public void ExciseTaxRate_FlatRate_RoundTrips()
+    public void TaxRate_FlatPerUnit_RoundTrips()
     {
-        var excise = new ExciseTaxRate
+        var excise = new TaxRate
         {
-            ProductCategory = ProductCategory.Cigarettes,
+            Name = "Cigarette Excise",
             Rate = 0.231m,   // $0.231 per pack (Illinois)
-            RateType = "flat",
+            RateBasis = RateBasis.FlatPerUnit,
             Unit = "per pack",
-            RawValue = "$0.231/pack"
+            RawEvidence = "$0.231/pack",
+            RemittancePoint = RemittancePoint.Distributor
         };
 
-        Assert.That(excise.ProductCategory, Is.EqualTo(ProductCategory.Cigarettes));
+        Assert.That(excise.Name, Is.EqualTo("Cigarette Excise"));
         Assert.That(excise.Rate, Is.EqualTo(0.231m));
         Assert.That(excise.Unit, Is.EqualTo("per pack"));
+        Assert.That(excise.RateBasis, Is.EqualTo(RateBasis.FlatPerUnit));
     }
 
     [Test]
-    public void ExciseTaxRate_PercentageRate_IsInBounds()
+    public void TaxRate_PercentageExcise_IsInBounds()
     {
-        var excise = new ExciseTaxRate
+        var excise = new TaxRate
         {
-            ProductCategory = ProductCategory.Alcohol,
+            Name = "Alcohol Excise",
             Rate = 0.14m,   // hypothetical 14% alcohol excise
-            RateType = "percentage"
+            RateBasis = RateBasis.Percentage,
+            RemittancePoint = RemittancePoint.Distributor
         };
 
         Assert.That(excise.Rate, Is.GreaterThanOrEqualTo(0m));

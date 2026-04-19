@@ -44,6 +44,21 @@ public class StateTaxProfile
     /// <summary>Primary URL for state tax rate / taxability information.</summary>
     public string StateRevenueUrl { get; set; } = "";
 
+    /// <summary>
+    /// Post-Wayfair (South Dakota v. Wayfair, 2018) economic nexus threshold: the minimum
+    /// annual sales dollar amount into this state that triggers a remote seller's obligation
+    /// to register and collect sales tax. Most states adopted $100,000. Null = not established
+    /// or not applicable (e.g. state has no sales tax).
+    /// </summary>
+    public decimal? EconomicNexusThresholdAmount { get; set; }
+
+    /// <summary>
+    /// Post-Wayfair transaction count threshold that independently triggers economic nexus,
+    /// regardless of dollar amount. Most states adopted 200 transactions. Null = no
+    /// transaction-count threshold (some states use dollar-only thresholds).
+    /// </summary>
+    public int? EconomicNexusThresholdTransactions { get; set; }
+
     /// <summary>Admin notes about quirks, pending changes, or data gaps for this state.</summary>
     public string? Notes { get; set; }
 
@@ -102,7 +117,8 @@ public class StateCategoryRule
     /// <summary>Human-readable note explaining nuances (e.g., "Exempt only when sold without utensils").</summary>
     public string? Notes { get; set; }
 
-    public string EffectiveDate { get; set; } = "";
+    /// <summary>Date on which this rule became effective. Null if unknown.</summary>
+    public DateOnly? EffectiveDate { get; set; }
 
     public StateTaxProfile StateTaxProfile { get; set; } = null!;
     public TaxCategory? TaxCategory { get; set; }

@@ -58,12 +58,15 @@ public class ScrapeOrchestrator(
                     db.TaxRates.Add(new TaxRate
                     {
                         JurisdictionId = jurisdiction.Id,
+                        Name = string.IsNullOrEmpty(raw.RateType) ? "General Sales Tax" : raw.RateType,
                         Rate = raw.ParsedRate.Value,
-                        RateType = raw.RateType ?? "General",
-                        EffectiveDate = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+                        RateBasis = RateBasis.Percentage,
+                        SaleContext = SaleContext.Any,
+                        RemittancePoint = RemittancePoint.Retailer,
+                        EffectiveDate = DateOnly.FromDateTime(DateTime.UtcNow),
                         ScrapedAt = DateTime.UtcNow.ToString("o"),
                         ScrapeRunId = run.Id,
-                        RawValue = raw.RawValue,
+                        RawEvidence = raw.RawValue,
                         IsCurrent = true
                     });
                 }

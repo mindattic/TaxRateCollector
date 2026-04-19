@@ -63,11 +63,11 @@ public class SubscriptionTaxLookupTests
         {
             JurisdictionId = jurisdictionId,
             Rate = rate,
-            RateType = "General",
-            EffectiveDate = "2024-01-01",
+            Name = "General Sales Tax", RateBasis = RateBasis.Percentage,
+            EffectiveDate = DateOnly.Parse("2024-01-01"),
             ScrapedAt = DateTime.UtcNow.ToString("o"),
             ScrapeRunId = run.Id,
-            RawValue = $"{rate * 100:F3}%",
+            RawEvidence = $"{rate * 100:F3}%",
             IsCurrent = true
         });
         await db.SaveChangesAsync();
@@ -145,8 +145,8 @@ public class SubscriptionTaxLookupTests
         {
             JurisdictionId = ca.Id,
             Rate = 0.0725m,
-            RateType = "General",
-            EffectiveDate = "2020-01-01",
+            Name = "General Sales Tax", RateBasis = RateBasis.Percentage,
+            EffectiveDate = DateOnly.Parse("2020-01-01"),
             ScrapedAt = DateTime.UtcNow.ToString("o"),
             ScrapeRunId = run.Id,
             IsCurrent = false
@@ -156,8 +156,8 @@ public class SubscriptionTaxLookupTests
         {
             JurisdictionId = ca.Id,
             Rate = 0.0725m,
-            RateType = "General",
-            EffectiveDate = "2024-01-01",
+            Name = "General Sales Tax", RateBasis = RateBasis.Percentage,
+            EffectiveDate = DateOnly.Parse("2024-01-01"),
             ScrapedAt = DateTime.UtcNow.ToString("o"),
             ScrapeRunId = run.Id,
             IsCurrent = true

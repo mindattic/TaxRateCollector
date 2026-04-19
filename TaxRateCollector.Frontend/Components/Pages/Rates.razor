@@ -49,7 +49,7 @@ else
                     <td>@r.StateCode</td>
                     <td>@r.JurisdictionType</td>
                     <td class="rate-cell">@r.Rate.ToString("P4")</td>
-                    <td>@r.RateType</td>
+                    <td>@r.Name</td>
                     <td>@r.EffectiveDate</td>
                     <td>@r.ScrapedAt[..10]</td>
                 </tr>
@@ -67,7 +67,7 @@ else
     private bool sortAsc = true;
 
     private record RateRow(string JurisdictionName, string StateCode, string JurisdictionType,
-        decimal Rate, string RateType, string EffectiveDate, string ScrapedAt);
+        decimal Rate, string Name, string EffectiveDate, string ScrapedAt);
 
     protected override async Task OnInitializedAsync()
     {
@@ -80,8 +80,8 @@ else
                 t.Jurisdiction.StateCode,
                 t.Jurisdiction.JurisdictionType.ToString(),
                 t.Rate,
-                t.RateType,
-                t.EffectiveDate,
+                t.Name,
+                t.EffectiveDate != null ? t.EffectiveDate.Value.ToString() : "",
                 t.ScrapedAt))
             .ToListAsync();
     }

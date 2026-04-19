@@ -1,5 +1,8 @@
 @inherits LayoutComponentBase
+@using Microsoft.EntityFrameworkCore
+@using TaxRateCollector.Infrastructure.Data
 @inject NavigationManager Nav
+@inject IDbContextFactory<AppDbContext> DbFactory
 @rendermode InteractiveServer
 
 <div class="app-shell">
@@ -56,6 +59,16 @@
 
         <AuthorizeView Roles="Administrator">
             <Authorized>
+                <NavLink class="tab tab-admin" href="review">
+                    <span class="tab-icon">✓</span>
+                    <span class="tab-label">
+                        Review
+                        @if (reviewCount > 0)
+                        {
+                            <span class="tab-badge">@reviewCount</span>
+                        }
+                    </span>
+                </NavLink>
                 <NavLink class="tab tab-admin" href="setup">
                     <span class="tab-icon">⚒</span>
                     <span class="tab-label">Setup</span>
@@ -77,6 +90,13 @@
 
 @code {
     private bool dropdownOpen;
+    private int reviewCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        reviewCount = await db.TaxRates.CountAsync(t => t.NeedsReview);
+    }
 
     private void ToggleDropdown() => dropdownOpen = !dropdownOpen;
     private void CloseDropdown() => dropdownOpen = false;

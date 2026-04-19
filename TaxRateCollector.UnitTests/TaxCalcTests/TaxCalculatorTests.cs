@@ -44,8 +44,9 @@ public class TaxCalculatorTests
         {
             JurisdictionId = j.Id,
             Rate = 0.1025m,
-            RateType = "General",
-            EffectiveDate = "2024-01-01",
+            Name = "General Sales Tax",
+            RateBasis = RateBasis.Percentage,
+            EffectiveDate = DateOnly.Parse("2024-01-01"),
             ScrapedAt = DateTime.UtcNow.ToString("o"),
             ScrapeRunId = run.Id,
             IsCurrent = true
@@ -56,8 +57,8 @@ public class TaxCalculatorTests
         var result = await calc.CalculateAsync(j.Id, 100m, 2);
 
         Assert.That(result, Is.Not.Null);
-        Assert.That(result!.TaxAmount, Is.EqualTo(20.50m));
-        Assert.That(result.Rate, Is.EqualTo(0.1025m));
+        Assert.That(result!.TotalTaxAmount, Is.EqualTo(20.50m));
+        Assert.That(result.TotalPercentageRate, Is.EqualTo(0.1025m));
     }
 
     [Test]

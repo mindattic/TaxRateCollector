@@ -56,6 +56,10 @@ public class DbSchemaTests
         [
             "20260418044705_InitialCreate",
             "20260418050115_AddPerCategoryRateIndex",
+            "20260419170109_AddScrapeRunProgress",
+            "20260419171915_AddTaxRateNeedsReview",
+            "20260419180430_SchemaComplianceFixes",
+            "20260419182631_RealWorldAccuracyFixes",
         ];
 
         var missing = expected.Where(m => !MigrationApplied(m)).ToList();
@@ -77,8 +81,12 @@ public class DbSchemaTests
     public void TaxRates_HasAllBaselineColumns()
     {
         var cols = TableColumns("TaxRates");
-        string[] required = ["Id", "JurisdictionId", "Rate", "RateType", "EffectiveDate",
-                              "ScrapedAt", "ScrapeRunId", "RawValue", "IsCurrent", "TaxCategoryId"];
+        string[] required = ["Id", "JurisdictionId", "Rate", "Name", "RateBasis", "Unit",
+                              "TaxType", "IsIncludedInPrice", "ProductCategory",
+                              "SaleContext", "RemittancePoint", "StatutoryReference",
+                              "EffectiveDate", "ExpirationDate", "Conditions",
+                              "ScrapedAt", "ScrapeRunId", "RawEvidence", "IsCurrent",
+                              "TaxCategoryId", "NeedsReview"];
         var missing = required.Where(c => !cols.Contains(c)).ToList();
         Assert.That(missing, Is.Empty,
             $"TaxRates is missing columns: {string.Join(", ", missing)}");
@@ -97,14 +105,14 @@ public class DbSchemaTests
     // ── Index existence ───────────────────────────────────────────────────────
 
     [Test]
-    public void TaxRates_HasPerCategoryUniqueIndex()
+    public void TaxRates_HasPerCategoryIndex()
     {
         var count = Scalar(
             "SELECT COUNT(*) FROM sys.indexes " +
-            "WHERE name = 'IX_TaxRates_JurisdictionId_TaxCategoryId_Current' " +
+            "WHERE name = 'IX_TaxRates_JurisdictionId_CategoryId_Current' " +
             "AND object_id = OBJECT_ID('TaxRates')");
         Assert.That(count, Is.EqualTo(1),
-            "Filtered unique index IX_TaxRates_JurisdictionId_TaxCategoryId_Current is missing.");
+            "Index IX_TaxRates_JurisdictionId_CategoryId_Current is missing.");
     }
 
     // ── Jurisdictions schema ──────────────────────────────────────────────────

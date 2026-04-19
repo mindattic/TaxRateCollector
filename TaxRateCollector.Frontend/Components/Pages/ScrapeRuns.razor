@@ -2,10 +2,9 @@
 @using Microsoft.EntityFrameworkCore
 @using TaxRateCollector.Core.Entities
 @using TaxRateCollector.Core.Enums
-@using TaxRateCollector.Core.Interfaces
 @using TaxRateCollector.Infrastructure.Data
+@implements IDisposable
 @inject IDbContextFactory<AppDbContext> DbFactory
-@inject IScrapeOrchestrator Orchestrator
 @rendermode InteractiveServer
 
 <PageTitle>Scrape Runs — TaxRateCollector</PageTitle>
@@ -14,7 +13,16 @@
     <div class="page-header-row">
         <div>
             <h1 class="page-title">Scrape Runs</h1>
-            <p class="page-sub">Manually trigger a full scrape across all jurisdictions that have a registered strategy.</p>
+            <p class="page-sub">Queue a scrape job — the Worker Service picks it up and writes progress back here.</p>
+        </div>
+        <div class="header-actions">
+            <button class="btn-secondary" @onclick="QueueScrape" disabled="@running">
+                @(running ? "Queued…" : "Queue Scrape")
+            </button>
+            @if (lastResult is not null)
+            {
+                <span class="muted small">@lastResult</span>
+            }
         </div>
     </div>
 </div>
@@ -36,7 +44,7 @@ else
                 <th>Started</th>
                 <th>Completed</th>
                 <th>Status</th>
-                <th>Scraped</th>
+                <th>Progress</th>
                 <th>Changes</th>
                 <th>Errors</th>
                 <th></th>
@@ -47,10 +55,32 @@ else
             {
                 <tr>
                     <td>#@r.Id</td>
-                    <td>@r.StartedAt</td>
-                    <td>@(r.CompletedAt ?? "—")</td>
+                    <td>@r.StartedAt[..19]</td>
+                    <td>@(r.CompletedAt is not null ? r.CompletedAt[..19] : "—")</td>
                     <td><span class="badge badge-@r.Status.ToString().ToLower()">@r.Status</span></td>
-                    <td>@r.TotalScraped</td>
+                    <td>
+                        @if (r.Status == ScrapeStatus.Running || r.Status == ScrapeStatus.Pending)
+                        {
+                            <div class="scrape-progress">
+                                @if (r.TotalCount > 0)
+                                {
+                                    var pct = (int)(100.0 * r.ProcessedCount / r.TotalCount);
+                                    <div class="scrape-progress-bar">
+                                        <div class="scrape-progress-fill" style="width:@(pct)%"></div>
+                                    </div>
+                                    <span class="muted small">@r.ProcessedCount / @r.TotalCount</span>
+                                }
+                                else
+                                {
+                                    <span class="muted small">Waiting for worker…</span>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <span>@r.TotalScraped</span>
+                        }
+                    </td>
                     <td>@r.ChangesDetected</td>
                     <td>@r.ErrorCount</td>
                     <td>
@@ -74,7 +104,7 @@ else
                                     <ul>
                                         @foreach (var tr in runRates)
                                         {
-                                            <li>@tr.JurisdictionName — @tr.Rate.ToString("P4") (@tr.RateType)</li>
+                                            <li>@tr.JurisdictionName — @tr.Rate.ToString("P4") (@tr.Name)</li>
                                         }
                                     </ul>
                                 }
@@ -90,11 +120,41 @@ else
 @code {
     private List<ScrapeRun>? runs;
     private int? expanded;
-    private List<(string JurisdictionName, decimal Rate, string RateType)> runRates = [];
+    private List<(string JurisdictionName, decimal Rate, string Name)> runRates = [];
     private bool running;
     private string? lastResult;
 
-    protected override async Task OnInitializedAsync() => await LoadRuns();
+    private Timer? pollTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRuns();
+        StartPollingIfNeeded();
+    }
+
+    private void StartPollingIfNeeded()
+    {
+        var hasActiveRun = runs?.Any(r =>
+            r.Status == ScrapeStatus.Pending || r.Status == ScrapeStatus.Running) ?? false;
+
+        if (hasActiveRun && pollTimer is null)
+        {
+            pollTimer = new Timer(_ => InvokeAsync(PollProgress), null,
+                TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+        }
+        else if (!hasActiveRun && pollTimer is not null)
+        {
+            pollTimer.Dispose();
+            pollTimer = null;
+        }
+    }
+
+    private async Task PollProgress()
+    {
+        await LoadRuns();
+        StateHasChanged();
+        StartPollingIfNeeded();
+    }
 
     private async Task LoadRuns()
     {
@@ -104,7 +164,7 @@ else
             .ToListAsync();
     }
 
-    private async Task RunScrape()
+    private async Task QueueScrape()
     {
         running = true;
         lastResult = null;
@@ -112,8 +172,14 @@ else
 
         try
         {
-            var changed = await Orchestrator.RunFullScrapeAsync();
-            lastResult = $"✓ Done — {changed} change(s) detected";
+            await using var db = await DbFactory.CreateDbContextAsync();
+            db.ScrapeRuns.Add(new ScrapeRun
+            {
+                StartedAt = DateTime.UtcNow.ToString("o"),
+                Status = ScrapeStatus.Pending,
+            });
+            await db.SaveChangesAsync();
+            lastResult = "✓ Job queued — Worker will pick it up shortly";
         }
         catch (Exception ex)
         {
@@ -123,6 +189,7 @@ else
         {
             running = false;
             await LoadRuns();
+            StartPollingIfNeeded();
             StateHasChanged();
         }
     }
@@ -141,7 +208,9 @@ else
         runRates = await db.TaxRates
             .Include(t => t.Jurisdiction)
             .Where(t => t.ScrapeRunId == runId)
-            .Select(t => ValueTuple.Create(t.Jurisdiction.JurisdictionName, t.Rate, t.RateType))
+            .Select(t => ValueTuple.Create(t.Jurisdiction.JurisdictionName, t.Rate, t.Name))
             .ToListAsync();
     }
+
+    public void Dispose() => pollTimer?.Dispose();
 }

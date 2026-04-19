@@ -3,4 +3,5 @@
   <Project Path="TaxRateCollector.Infrastructure/TaxRateCollector.Infrastructure.csproj" />
   <Project Path="TaxRateCollector.UnitTests/TaxRateCollector.UnitTests.csproj" />
   <Project Path="TaxRateCollector.Frontend/TaxRateCollector.Frontend.csproj" />
+  <Project Path="TaxRateCollector.Worker/TaxRateCollector.Worker.csproj" />
 </Solution>

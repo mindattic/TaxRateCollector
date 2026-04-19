@@ -13,6 +13,7 @@ public class AppSettings
     [JsonPropertyName("font")] public string Font { get; set; } = "outfit";
     [JsonPropertyName("font_size")] public int FontSize { get; set; } = 14;
     [JsonPropertyName("usps_api_key")] public string UspsApiKey { get; set; } = "";
+    [JsonPropertyName("anthropic_api_key")] public string AnthropicApiKey { get; set; } = "";
     [JsonPropertyName("default_update_frequency_days")] public int DefaultUpdateFrequencyDays { get; set; } = 90;
     [JsonPropertyName("evidence_auto_fetch")] public bool EvidenceAutoFetch { get; set; } = false;
     [JsonPropertyName("wayback_machine_fallback")] public bool WaybackMachineFallback { get; set; } = true;

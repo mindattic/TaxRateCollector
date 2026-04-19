@@ -335,7 +335,7 @@ public class ExportFormattingTests
         db.Jurisdictions.Add(state);
         await db.SaveChangesAsync();
 
-        var rate = new TaxRate { JurisdictionId = state.Id, Rate = 0.0625m, RateType = "General", EffectiveDate = "2024-01-01", ScrapedAt = DateTime.UtcNow.ToString("o"), ScrapeRunId = run.Id, IsCurrent = true };
+        var rate = new TaxRate { JurisdictionId = state.Id, Rate = 0.0625m, Name = "General Sales Tax", RateBasis = RateBasis.Percentage, EffectiveDate = DateOnly.Parse("2024-01-01"), ScrapedAt = DateTime.UtcNow.ToString("o"), ScrapeRunId = run.Id, IsCurrent = true };
         db.TaxRates.Add(rate);
         await db.SaveChangesAsync();
 
@@ -373,7 +373,7 @@ public class ExportFormattingTests
         db.Jurisdictions.Add(state);
         await db.SaveChangesAsync();
 
-        var rate = new TaxRate { JurisdictionId = state.Id, Rate = 0.0625m, RateType = "General", EffectiveDate = "2024-01-01", ScrapedAt = DateTime.UtcNow.ToString("o"), ScrapeRunId = run.Id, IsCurrent = true };
+        var rate = new TaxRate { JurisdictionId = state.Id, Rate = 0.0625m, Name = "General Sales Tax", RateBasis = RateBasis.Percentage, EffectiveDate = DateOnly.Parse("2024-01-01"), ScrapedAt = DateTime.UtcNow.ToString("o"), ScrapeRunId = run.Id, IsCurrent = true };
         db.TaxRates.Add(rate);
         await db.SaveChangesAsync();
         // No SourceDocuments added

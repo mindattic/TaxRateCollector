@@ -162,7 +162,7 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
 
         // Need a ScrapeRun for rate rows
         var nowIso = DateTime.UtcNow.ToString("o");
-        var today  = DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd");
+        var today  = DateOnly.FromDateTime(DateTime.UtcNow);
         var run    = new ScrapeRun
         {
             StartedAt = nowIso, CompletedAt = nowIso,
@@ -232,7 +232,7 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
 
     private static async Task FlushCountyBatchAsync(
         AppDbContext db, List<(Jurisdiction J, string StateCode)> batch,
-        int runId, string today, string nowIso, IReadOnlyList<TaxCategory> leafCats, CancellationToken ct)
+        int runId, DateOnly today, string nowIso, IReadOnlyList<TaxCategory> leafCats, CancellationToken ct)
     {
         db.Jurisdictions.AddRange(batch.Select(x => x.J));
         await db.SaveChangesAsync(ct);
@@ -242,12 +242,12 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
         {
             if (leafCats.Count == 0)
             {
-                rates.Add(new TaxRate { JurisdictionId = j.Id, Rate = 0m, RateType = "General", EffectiveDate = today, ScrapedAt = nowIso, ScrapeRunId = runId, RawValue = "0.000%", IsCurrent = true });
+                rates.Add(new TaxRate { JurisdictionId = j.Id, Rate = 0m, Name = "General Sales Tax", RateBasis = RateBasis.Percentage, EffectiveDate = today, ScrapedAt = nowIso, ScrapeRunId = runId, RawEvidence = "0.000%", IsCurrent = true });
             }
             else
             {
                 foreach (var cat in leafCats)
-                    rates.Add(new TaxRate { JurisdictionId = j.Id, Rate = 0m, RateType = "General", EffectiveDate = today, ScrapedAt = nowIso, ScrapeRunId = runId, RawValue = "0.000%", IsCurrent = true, TaxCategoryId = cat.Id });
+                    rates.Add(new TaxRate { JurisdictionId = j.Id, Rate = 0m, Name = "General Sales Tax", RateBasis = RateBasis.Percentage, EffectiveDate = today, ScrapedAt = nowIso, ScrapeRunId = runId, RawEvidence = "0.000%", IsCurrent = true, TaxCategoryId = cat.Id });
             }
         }
         db.TaxRates.AddRange(rates);
@@ -275,7 +275,7 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
             .ToHashSetAsync(ct);
 
         var nowIso = DateTime.UtcNow.ToString("o");
-        var today  = DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd");
+        var today  = DateOnly.FromDateTime(DateTime.UtcNow);
         var run    = new ScrapeRun
         {
             StartedAt = nowIso, CompletedAt = nowIso,
@@ -363,7 +363,7 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
 
     private static async Task FlushCityBatchAsync(
         AppDbContext db, List<Jurisdiction> batch,
-        int runId, string today, string nowIso, IReadOnlyList<TaxCategory> leafCats, CancellationToken ct)
+        int runId, DateOnly today, string nowIso, IReadOnlyList<TaxCategory> leafCats, CancellationToken ct)
     {
         db.Jurisdictions.AddRange(batch);
         await db.SaveChangesAsync(ct);
@@ -373,12 +373,12 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
         {
             if (leafCats.Count == 0)
             {
-                rates.Add(new TaxRate { JurisdictionId = j.Id, Rate = 0m, RateType = "General", EffectiveDate = today, ScrapedAt = nowIso, ScrapeRunId = runId, RawValue = "0.000%", IsCurrent = true });
+                rates.Add(new TaxRate { JurisdictionId = j.Id, Rate = 0m, Name = "General Sales Tax", RateBasis = RateBasis.Percentage, EffectiveDate = today, ScrapedAt = nowIso, ScrapeRunId = runId, RawEvidence = "0.000%", IsCurrent = true });
             }
             else
             {
                 foreach (var cat in leafCats)
-                    rates.Add(new TaxRate { JurisdictionId = j.Id, Rate = 0m, RateType = "General", EffectiveDate = today, ScrapedAt = nowIso, ScrapeRunId = runId, RawValue = "0.000%", IsCurrent = true, TaxCategoryId = cat.Id });
+                    rates.Add(new TaxRate { JurisdictionId = j.Id, Rate = 0m, Name = "General Sales Tax", RateBasis = RateBasis.Percentage, EffectiveDate = today, ScrapedAt = nowIso, ScrapeRunId = runId, RawEvidence = "0.000%", IsCurrent = true, TaxCategoryId = cat.Id });
             }
         }
         db.TaxRates.AddRange(rates);

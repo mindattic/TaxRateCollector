@@ -304,115 +304,27 @@ namespace TaxRateCollector.Infrastructure.Migrations
                         .HasColumnType("int");
 
                     b.Property<decimal?>("NewRate")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
 
                     b.Property<decimal?>("OldRate")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
+
+                    b.Property<string>("RateName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("TaxRateId")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
                     b.HasIndex("JurisdictionId");
+
+                    b.HasIndex("TaxRateId");
 
                     b.ToTable("ChangeLog", (string)null);
-                });
-
-            modelBuilder.Entity("TaxRateCollector.Core.Entities.ExciseSourceDocument", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("ContentHash")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("ExciseTaxRateId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("FetchedAt")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("MimeType")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("RawContent")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("SourceType")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("SourceUrl")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ExciseTaxRateId")
-                        .IsUnique();
-
-                    b.ToTable("ExciseSourceDocuments");
-                });
-
-            modelBuilder.Entity("TaxRateCollector.Core.Entities.ExciseTaxRate", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("EffectiveDate")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("IsCurrent")
-                        .HasColumnType("bit");
-
-                    b.Property<int>("JurisdictionId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("ProductCategory")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal>("Rate")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("RateType")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("RawValue")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("ScrapeRunId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("ScrapedAt")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Unit")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("JurisdictionId");
-
-                    b.HasIndex("ScrapeRunId");
-
-                    b.ToTable("ExciseTaxRates");
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.Jurisdiction", b =>
@@ -428,6 +340,9 @@ namespace TaxRateCollector.Infrastructure.Migrations
                         .HasColumnType("nvarchar(450)");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsHomeRuleAdministered")
                         .HasColumnType("bit");
 
                     b.Property<string>("JurisdictionName")
@@ -575,6 +490,9 @@ namespace TaxRateCollector.Infrastructure.Migrations
                     b.Property<int>("ErrorCount")
                         .HasColumnType("int");
 
+                    b.Property<int>("ProcessedCount")
+                        .HasColumnType("int");
+
                     b.Property<string>("StartedAt")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -582,6 +500,9 @@ namespace TaxRateCollector.Infrastructure.Migrations
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("TotalCount")
+                        .HasColumnType("int");
 
                     b.Property<int>("TotalScraped")
                         .HasColumnType("int");
@@ -603,11 +524,11 @@ namespace TaxRateCollector.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("FetchedAt")
+                    b.Property<string>("EvidenceType")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("EvidenceType")
+                    b.Property<string>("FetchedAt")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
@@ -656,9 +577,8 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("EffectiveDate")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<DateOnly?>("EffectiveDate")
+                        .HasColumnType("date");
 
                     b.Property<bool>("LocalRateApplies")
                         .HasColumnType("bit");
@@ -670,8 +590,8 @@ namespace TaxRateCollector.Infrastructure.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<decimal?>("StateRate")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
 
                     b.Property<int>("StateTaxProfileId")
                         .HasColumnType("int");
@@ -705,9 +625,16 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<decimal>("GeneralSalesTaxRate")
+                    b.Property<decimal?>("EconomicNexusThresholdAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<int?>("EconomicNexusThresholdTransactions")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("GeneralSalesTaxRate")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
 
                     b.Property<bool>("HasLocalRateCap")
                         .HasColumnType("bit");
@@ -716,8 +643,8 @@ namespace TaxRateCollector.Infrastructure.Migrations
                         .HasColumnType("bit");
 
                     b.Property<decimal?>("LocalRateCap")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
 
                     b.Property<string>("LocalTaxAuthorityType")
                         .IsRequired()
@@ -911,26 +838,34 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("EffectiveDate")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("IsExempt")
-                        .HasColumnType("bit");
+                    b.Property<DateOnly?>("EffectiveDate")
+                        .HasColumnType("date");
 
                     b.Property<int>("JurisdictionId")
                         .HasColumnType("int");
 
+                    b.Property<bool>("LocalRateApplies")
+                        .HasColumnType("bit");
+
                     b.Property<string>("Notes")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<decimal?>("OverrideRate")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
+
+                    b.Property<string>("SourceUrl")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("StatutoryReference")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("TaxCategoryId")
                         .HasColumnType("int");
+
+                    b.Property<string>("Taxability")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
@@ -950,25 +885,70 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("EffectiveDate")
+                    b.Property<string>("Conditions")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateOnly?>("EffectiveDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("ExpirationDate")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsCompound")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsCurrent")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsIncludedInPrice")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsTemporary")
                         .HasColumnType("bit");
 
                     b.Property<int>("JurisdictionId")
                         .HasColumnType("int");
 
-                    b.Property<decimal>("Rate")
+                    b.Property<decimal?>("MaxAbv")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
+
+                    b.Property<decimal?>("MaxTaxableAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
-                    b.Property<string>("RateType")
+                    b.Property<decimal?>("MinAbv")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
+
+                    b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("RawValue")
+                    b.Property<bool>("NeedsReview")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ProductCategory")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<decimal>("Rate")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
+
+                    b.Property<string>("RateBasis")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RawEvidence")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RemittancePoint")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SaleContext")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
@@ -979,8 +959,20 @@ namespace TaxRateCollector.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("StatutoryReference")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int?>("TaxCategoryId")
                         .HasColumnType("int");
+
+                    b.Property<string>("TaxType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
@@ -988,12 +980,38 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     b.HasIndex("TaxCategoryId");
 
-                    b.HasIndex("JurisdictionId", "TaxCategoryId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_TaxRates_JurisdictionId_TaxCategoryId_Current")
-                        .HasFilter("[IsCurrent] = 1 AND [TaxCategoryId] IS NOT NULL");
+                    b.HasIndex("JurisdictionId", "TaxCategoryId", "IsCurrent")
+                        .HasDatabaseName("IX_TaxRates_JurisdictionId_CategoryId_Current");
+
+                    b.HasIndex("JurisdictionId", "ProductCategory", "TaxType", "IsCurrent")
+                        .HasDatabaseName("IX_TaxRates_JurisdictionId_ProductCategory_TaxType_Current");
 
                     b.ToTable("TaxRates");
+                });
+
+            modelBuilder.Entity("TaxRateCollector.Core.Entities.ZipCodeDistrict", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("JurisdictionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ZipCode")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JurisdictionId");
+
+                    b.HasIndex("ZipCode", "JurisdictionId")
+                        .IsUnique();
+
+                    b.ToTable("ZipCodeDistricts");
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.ZipCodeRecord", b =>
@@ -1119,37 +1137,13 @@ namespace TaxRateCollector.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Jurisdiction");
-                });
-
-            modelBuilder.Entity("TaxRateCollector.Core.Entities.ExciseSourceDocument", b =>
-                {
-                    b.HasOne("TaxRateCollector.Core.Entities.ExciseTaxRate", "ExciseTaxRate")
-                        .WithOne("SourceDocument")
-                        .HasForeignKey("TaxRateCollector.Core.Entities.ExciseSourceDocument", "ExciseTaxRateId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ExciseTaxRate");
-                });
-
-            modelBuilder.Entity("TaxRateCollector.Core.Entities.ExciseTaxRate", b =>
-                {
-                    b.HasOne("TaxRateCollector.Core.Entities.Jurisdiction", "Jurisdiction")
+                    b.HasOne("TaxRateCollector.Core.Entities.TaxRate", "TaxRate")
                         .WithMany()
-                        .HasForeignKey("JurisdictionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("TaxRateCollector.Core.Entities.ScrapeRun", "ScrapeRun")
-                        .WithMany()
-                        .HasForeignKey("ScrapeRunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("TaxRateId");
 
                     b.Navigation("Jurisdiction");
 
-                    b.Navigation("ScrapeRun");
+                    b.Navigation("TaxRate");
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.Jurisdiction", b =>
@@ -1268,9 +1262,23 @@ namespace TaxRateCollector.Infrastructure.Migrations
                     b.Navigation("TaxCategory");
                 });
 
-            modelBuilder.Entity("TaxRateCollector.Core.Entities.ExciseTaxRate", b =>
+            modelBuilder.Entity("TaxRateCollector.Core.Entities.ZipCodeDistrict", b =>
                 {
-                    b.Navigation("SourceDocument");
+                    b.HasOne("TaxRateCollector.Core.Entities.Jurisdiction", "Jurisdiction")
+                        .WithMany("ZipCodeDistricts")
+                        .HasForeignKey("JurisdictionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TaxRateCollector.Core.Entities.ZipCodeRecord", "ZipCodeRecord")
+                        .WithMany("Districts")
+                        .HasForeignKey("ZipCode")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Jurisdiction");
+
+                    b.Navigation("ZipCodeRecord");
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.Jurisdiction", b =>
@@ -1280,6 +1288,8 @@ namespace TaxRateCollector.Infrastructure.Migrations
                     b.Navigation("Children");
 
                     b.Navigation("TaxRates");
+
+                    b.Navigation("ZipCodeDistricts");
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.ScrapeRun", b =>
@@ -1311,6 +1321,11 @@ namespace TaxRateCollector.Infrastructure.Migrations
             modelBuilder.Entity("TaxRateCollector.Core.Entities.TaxRate", b =>
                 {
                     b.Navigation("SourceDocuments");
+                });
+
+            modelBuilder.Entity("TaxRateCollector.Core.Entities.ZipCodeRecord", b =>
+                {
+                    b.Navigation("Districts");
                 });
 #pragma warning restore 612, 618
         }

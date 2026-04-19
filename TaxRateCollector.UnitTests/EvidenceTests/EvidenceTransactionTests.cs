@@ -34,7 +34,7 @@ public class EvidenceTransactionTests
         db.Jurisdictions.Add(state);
         await db.SaveChangesAsync();
 
-        var rate = new TaxRate { JurisdictionId = state.Id, Rate = 0.0625m, RateType = "General", EffectiveDate = "2024-01-01", ScrapedAt = DateTime.UtcNow.ToString("o"), ScrapeRunId = run.Id, RawValue = "6.250%", IsCurrent = true };
+        var rate = new TaxRate { JurisdictionId = state.Id, Rate = 0.0625m, Name = "General Sales Tax", RateBasis = RateBasis.Percentage, EffectiveDate = DateOnly.Parse("2024-01-01"), ScrapedAt = DateTime.UtcNow.ToString("o"), ScrapeRunId = run.Id, RawEvidence = "6.250%", IsCurrent = true };
         db.TaxRates.Add(rate);
         await db.SaveChangesAsync();
 
@@ -148,7 +148,7 @@ public class EvidenceTransactionTests
 
         // Retire old rate, create new rate
         rate.IsCurrent = false;
-        var newRate = new TaxRate { JurisdictionId = state.Id, Rate = 0.065m, RateType = "General", EffectiveDate = "2025-01-01", ScrapedAt = DateTime.UtcNow.ToString("o"), ScrapeRunId = run.Id, RawValue = "6.500%", IsCurrent = true };
+        var newRate = new TaxRate { JurisdictionId = state.Id, Rate = 0.065m, Name = "General Sales Tax", RateBasis = RateBasis.Percentage, EffectiveDate = DateOnly.Parse("2025-01-01"), ScrapedAt = DateTime.UtcNow.ToString("o"), ScrapeRunId = run.Id, RawEvidence = "6.500%", IsCurrent = true };
         db.TaxRates.Add(newRate);
         await db.SaveChangesAsync();
 

@@ -67,8 +67,8 @@ public class ExportEvidenceSubqueryTests
         {
             JurisdictionId = jurisdictionId,
             Rate = rate,
-            RateType = "General",
-            EffectiveDate = "2024-01-01",
+            Name = "General Sales Tax", RateBasis = RateBasis.Percentage,
+            EffectiveDate = DateOnly.Parse("2024-01-01"),
             ScrapedAt = DateTime.UtcNow.ToString("o"),
             ScrapeRunId = runId,
             IsCurrent = isCurrent
