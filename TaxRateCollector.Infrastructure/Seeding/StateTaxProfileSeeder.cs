@@ -36,7 +36,8 @@ public static class StateTaxProfileSeeder
         P("AZ", "Arizona",               0.056m,   false, LocalTaxAuthorityType.Piggyback,
             "Arizona Department of Revenue",
             "https://azdor.gov/business/transaction-privilege-tax",
-            "Arizona levies a Transaction Privilege Tax (TPT) on the privilege of doing business rather than a traditional retail sales tax. Businesses remit on gross receipts."),
+            "Arizona levies a Transaction Privilege Tax (TPT) on the privilege of doing business rather than a traditional retail sales tax. Businesses remit on gross receipts.",
+            sourcingRule: SourcingRule.OriginBased),
 
         P("AR", "Arkansas",              0.065m,   true,  LocalTaxAuthorityType.SstUniform,
             "Arkansas Department of Finance and Administration",
@@ -45,7 +46,8 @@ public static class StateTaxProfileSeeder
         P("CA", "California",            0.0725m,  false, LocalTaxAuthorityType.Piggyback,
             "California Department of Tax and Fee Administration",
             "https://www.cdtfa.ca.gov/industry/sales-use-tax.html",
-            "Base state rate of 7.25% (6% state + 1% Local Revenue Fund + 0.25% county). Local district taxes may add up to 3.5% more; statewide average combined rate exceeds 10%."),
+            "Base state rate of 7.25% (6% state + 1% Local Revenue Fund + 0.25% county). Local district taxes may add up to 3.5% more; statewide average combined rate exceeds 10%. Hybrid sourcing: state/county components use seller's location; city/district components use buyer's location.",
+            sourcingRule: SourcingRule.Modified),
 
         P("CO", "Colorado",              0.029m,   false, LocalTaxAuthorityType.HomeRule,
             "Colorado Department of Revenue",
@@ -87,7 +89,8 @@ public static class StateTaxProfileSeeder
         P("IL", "Illinois",              0.0625m,  false, LocalTaxAuthorityType.Piggyback,
             "Illinois Department of Revenue",
             "https://tax.illinois.gov/research/taxinformation/sales/rot.html",
-            "Reduced rate of 1% applies to qualifying food and drugs; 6.25% on general merchandise. Local Retailers' Occupation Tax (ROT) stacks on top."),
+            "Reduced rate of 1% applies to qualifying food and drugs; 6.25% on general merchandise. Local Retailers' Occupation Tax (ROT) stacks on top.",
+            sourcingRule: SourcingRule.OriginBased),
 
         P("IN", "Indiana",               0.07m,    true,  LocalTaxAuthorityType.SstUniform,
             "Indiana Department of Revenue",
@@ -140,12 +143,14 @@ public static class StateTaxProfileSeeder
         P("MS", "Mississippi",           0.07m,    false, LocalTaxAuthorityType.Piggyback,
             "Mississippi Department of Revenue",
             "https://www.dor.ms.gov/taxes/sales-use/",
-            "No local sales tax; 7% applies statewide."),
+            "No local sales tax; 7% applies statewide.",
+            sourcingRule: SourcingRule.OriginBased),
 
         P("MO", "Missouri",              0.04225m, false, LocalTaxAuthorityType.Piggyback,
             "Missouri Department of Revenue",
             "https://dor.mo.gov/taxation/business/tax-types/sales-use/",
-            "State rate of 4.225% = 4% base + 0.225% supplemental. Combined local rates in some cities exceed 10%."),
+            "State rate of 4.225% = 4% base + 0.225% supplemental. Combined local rates in some cities exceed 10%.",
+            sourcingRule: SourcingRule.OriginBased),
 
         P("MT", "Montana",               0m,       false, LocalTaxAuthorityType.Piggyback,
             "Montana Department of Revenue",
@@ -174,7 +179,8 @@ public static class StateTaxProfileSeeder
         P("NM", "New Mexico",            0.05m,    false, LocalTaxAuthorityType.Piggyback,
             "New Mexico Taxation and Revenue Department",
             "https://www.tax.newmexico.gov/businesses/gross-receipts-tax-overview/",
-            "New Mexico levies a Gross Receipts Tax (GRT) on business receipts rather than a traditional retail sales tax. Rate varies by location."),
+            "New Mexico levies a Gross Receipts Tax (GRT) on business receipts rather than a traditional retail sales tax. Rate varies by location.",
+            sourcingRule: SourcingRule.OriginBased),
 
         P("NY", "New York",              0.04m,    false, LocalTaxAuthorityType.Piggyback,
             "New York Department of Taxation and Finance",
@@ -191,7 +197,8 @@ public static class StateTaxProfileSeeder
 
         P("OH", "Ohio",                  0.0575m,  true,  LocalTaxAuthorityType.SstUniform,
             "Ohio Department of Taxation",
-            "https://tax.ohio.gov/business/ohio-business-taxes/sales-and-use/introduction"),
+            "https://tax.ohio.gov/business/ohio-business-taxes/sales-and-use/introduction",
+            sourcingRule: SourcingRule.OriginBased),
 
         P("OK", "Oklahoma",              0.045m,   true,  LocalTaxAuthorityType.SstUniform,
             "Oklahoma Tax Commission",
@@ -205,7 +212,8 @@ public static class StateTaxProfileSeeder
         P("PA", "Pennsylvania",          0.06m,    false, LocalTaxAuthorityType.Piggyback,
             "Pennsylvania Department of Revenue",
             "https://www.revenue.pa.gov/TaxTypes/SUT/Pages/default.aspx",
-            "Allegheny County adds 1%; Philadelphia adds 2%, bringing Philadelphia's combined rate to 8%."),
+            "Allegheny County adds 1%; Philadelphia adds 2%, bringing Philadelphia's combined rate to 8%.",
+            sourcingRule: SourcingRule.OriginBased),
 
         P("RI", "Rhode Island",          0.07m,    true,  LocalTaxAuthorityType.SstUniform,
             "Rhode Island Division of Taxation",
@@ -224,17 +232,19 @@ public static class StateTaxProfileSeeder
         P("TN", "Tennessee",             0.07m,    true,  LocalTaxAuthorityType.SstUniform,
             "Tennessee Department of Revenue",
             "https://www.tn.gov/revenue/taxes/sales-and-use-tax.html",
-            "Reduced rate of 4% applies to food and food ingredients; 7% general rate applies to all other items."),
+            "Reduced rate of 4% applies to food and food ingredients; 7% general rate applies to all other items. Single-article tax brackets apply per-unit price tiers (Tenn. Code Ann. §67-6-228).",
+            sourcingRule: SourcingRule.OriginBased),
 
         P("TX", "Texas",                 0.0625m,  false, LocalTaxAuthorityType.Piggyback,
             "Texas Comptroller of Public Accounts",
             "https://comptroller.texas.gov/taxes/sales/",
             "Combined local rate capped at 2% by statute (Tex. Tax Code §321.101). Maximum combined total rate is 8.25%.",
-            hasLocalCap: true, localCap: 0.02m),
+            hasLocalCap: true, localCap: 0.02m, sourcingRule: SourcingRule.OriginBased),
 
         P("UT", "Utah",                  0.0485m,  true,  LocalTaxAuthorityType.SstUniform,
             "Utah State Tax Commission",
-            "https://tax.utah.gov/sales"),
+            "https://tax.utah.gov/sales",
+            sourcingRule: SourcingRule.OriginBased),
 
         P("VT", "Vermont",               0.06m,    true,  LocalTaxAuthorityType.SstUniform,
             "Vermont Department of Taxes",
@@ -243,7 +253,8 @@ public static class StateTaxProfileSeeder
         P("VA", "Virginia",              0.043m,   false, LocalTaxAuthorityType.Piggyback,
             "Virginia Department of Taxation",
             "https://www.tax.virginia.gov/sales-and-use-tax",
-            "State rate 4.3% plus mandatory 1% local add-on = 5.3% statewide minimum. Northern Virginia and Hampton Roads regions add 0.7% more for a combined 6%."),
+            "State rate 4.3% plus mandatory 1% local add-on = 5.3% statewide minimum. Northern Virginia and Hampton Roads regions add 0.7% more for a combined 6%. Food and personal hygiene items taxed at 2.5% (Va. Code §58.1-611.1).",
+            sourcingRule: SourcingRule.OriginBased),
 
         P("WA", "Washington",            0.065m,   true,  LocalTaxAuthorityType.SstUniform,
             "Washington Department of Revenue",
@@ -272,18 +283,20 @@ public static class StateTaxProfileSeeder
         string agencyUrl,
         string? notes = null,
         bool hasLocalCap = false,
-        decimal? localCap = null) => new()
+        decimal? localCap = null,
+        SourcingRule sourcingRule = SourcingRule.DestinationBased) => new()
         {
-            StateCode              = stateCode,
-            StateName              = stateName,
-            GeneralSalesTaxRate    = rate,
-            IsSstMember            = isSst,
-            LocalTaxAuthorityType  = localType,
-            HasLocalRateCap        = hasLocalCap,
-            LocalRateCap           = localCap,
-            StateRevenueAgencyName = agencyName,
-            StateRevenueUrl        = agencyUrl,
-            Notes                  = notes,
-            UpdatedAt              = AsOf,
+            StateCode                  = stateCode,
+            StateName                  = stateName,
+            GeneralSalesTaxRate        = rate,
+            IsSstMember                = isSst,
+            LocalTaxAuthorityType      = localType,
+            HasLocalRateCap            = hasLocalCap,
+            LocalRateCap               = localCap,
+            IntrastateSourcingRule     = sourcingRule,
+            StateRevenueAgencyName     = agencyName,
+            StateRevenueUrl            = agencyUrl,
+            Notes                      = notes,
+            UpdatedAt                  = AsOf,
         };
 }

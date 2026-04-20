@@ -107,44 +107,16 @@ public static class JurisdictionSeeder
         db.Jurisdictions.AddRange(statePairs.Select(p => p.Entity));
         await db.SaveChangesAsync();
 
-        var countyPairs = statePairs
-            .SelectMany(sp => sp.Data.Counties.Select(c => (Data: c, StateCode: sp.Data.Code, Entity: new Jurisdiction
-            {
-                JurisdictionType = JurisdictionType.County,
-                JurisdictionName = c.Name,
-                StateCode = sp.Data.Code,
-                FipsCode = c.Fips,
-                SourceUrl = c.SourceUrl,
-                IsActive = true,
-                ParentId = sp.Entity.Id
-            })))
-            .ToList();
-        db.Jurisdictions.AddRange(countyPairs.Select(p => p.Entity));
-        await db.SaveChangesAsync();
-
-        var cityPairs = countyPairs
-            .SelectMany(cp => cp.Data.Cities.Select(city => (Data: city, StateCode: cp.StateCode, Entity: new Jurisdiction
-            {
-                JurisdictionType = JurisdictionType.City,
-                JurisdictionName = city.Name,
-                StateCode = cp.StateCode,
-                FipsCode = city.Fips,
-                SourceUrl = city.SourceUrl,
-                IsActive = true,
-                ParentId = cp.Entity.Id
-            })))
-            .ToList();
-        db.Jurisdictions.AddRange(cityPairs.Select(p => p.Entity));
-        await db.SaveChangesAsync();
+        // Counties and cities are NOT seeded here.
+        // CensusAutoImportService downloads and imports all ~3,200 counties
+        // and ~30,000 cities from the Census Bureau on first startup.
 
         var leafCats = await db.TaxCategories.Where(c => c.IsLeaf).ToListAsync();
 
         AddRatesForCategories(db, country.Id, countryRate, today, nowIso, seedRun.Id, leafCats);
-        foreach (var (s, sEntity)      in statePairs)  AddRatesForCategories(db, sEntity.Id,  s.Rate,    today, nowIso, seedRun.Id, leafCats);
-        foreach (var (c, _, cEntity)   in countyPairs) AddRatesForCategories(db, cEntity.Id,  c.Rate,    today, nowIso, seedRun.Id, leafCats);
-        foreach (var (city, _, citEnt) in cityPairs)   AddRatesForCategories(db, citEnt.Id,   city.Rate, today, nowIso, seedRun.Id, leafCats);
+        foreach (var (s, sEntity) in statePairs) AddRatesForCategories(db, sEntity.Id, s.Rate, today, nowIso, seedRun.Id, leafCats);
 
-        int jurisdictionCount = 1 + statePairs.Count + countyPairs.Count + cityPairs.Count;
+        int jurisdictionCount = 1 + statePairs.Count;
         int catCount = leafCats.Count > 0 ? leafCats.Count : 1;
         seedRun.TotalScraped = jurisdictionCount * catCount;
         db.ScrapeRuns.Update(seedRun);

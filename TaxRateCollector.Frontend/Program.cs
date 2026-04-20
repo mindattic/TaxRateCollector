@@ -95,7 +95,6 @@ builder.Services.AddScoped<IZipImportService, ZipImportService>();
 builder.Services.AddScoped<ICensusJurisdictionImportService, CensusJurisdictionImportService>();
 builder.Services.AddScoped<ISstTaxonomyImportService, SstTaxonomyImportService>();
 builder.Services.AddScoped<ViewAsService>();
-builder.Services.AddHostedService<ConsoleHeartbeatService>();
 
 // ── App settings (singleton — %APPDATA%\MindAttic\TaxRateCollector\settings.json) ──
 var settings = new SettingsService();

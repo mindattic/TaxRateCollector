@@ -103,13 +103,16 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
 
         var customerTax  = lines.Where(l => !l.IsIncludedInPrice).Sum(l => l.TaxAmount);
         var embeddedTax  = lines.Where(l => l.IsIncludedInPrice).Sum(l => l.TaxAmount);
+        // Compound rates (tax-on-tax) have a different base (subtotal + retail taxes),
+        // so they cannot be meaningfully summed with regular percentage rates.
         var combinedRate = rates
-            .Where(r => r.RateBasis == RateBasis.Percentage && !r.IsIncludedInPrice)
+            .Where(r => r.RateBasis == RateBasis.Percentage && !r.IsIncludedInPrice && !r.IsCompound)
             .Sum(r => r.Rate);
 
         // ── Local rate cap (e.g. Texas caps combined local tax at 2%) ──────────
         // For county/city tier jurisdictions, the entire rate set is "local".
-        // Cap is enforced at the calculation level so exported combined rates are correct.
+        // Cap is enforced at both the dollar amount and combined rate fields.
+        // Flat-rate excise taxes and compound taxes are not subject to the cap.
         if (jur.JurisdictionType != JurisdictionType.Country &&
             jur.JurisdictionType != JurisdictionType.State)
         {
@@ -118,6 +121,10 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
             if (profile?.HasLocalRateCap == true && profile.LocalRateCap.HasValue &&
                 combinedRate > profile.LocalRateCap.Value)
             {
+                var exemptFromCap = lines
+                    .Where(l => !l.IsIncludedInPrice && (l.IsCompound || l.Basis != RateBasis.Percentage))
+                    .Sum(l => l.TaxAmount);
+                customerTax  = exemptFromCap + subtotal * profile.LocalRateCap.Value;
                 combinedRate = profile.LocalRateCap.Value;
             }
         }

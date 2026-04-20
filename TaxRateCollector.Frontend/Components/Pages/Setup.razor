@@ -6,19 +6,16 @@
 @using TaxRateCollector.Core.Interfaces
 @using TaxRateCollector.Infrastructure.Data
 @using TaxRateCollector.Infrastructure.Services
+@using TaxRateCollector.Infrastructure.Seeding
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject ICensusJurisdictionImportService censusSvc
 @inject IZipImportService zipSvc
 @inject ISstTaxonomyImportService sstSvc
-@inject IDiscoveryService DiscoveryService
-@inject ScrapeJobCoordinator ScrapeCoordinator
 @inject SettingsService settings
 @inject IHttpClientFactory HttpClientFactory
 @inject IJSRuntime JS
 @inject IConfiguration Configuration
 @rendermode InteractiveServer
-@implements IAsyncDisposable
-
 <PageTitle>Setup — TaxRateCollector</PageTitle>
 
 <div class="page-header">
@@ -31,16 +28,17 @@
 
 <!-- ── Phase guide ──────────────────────────────────────────────────────────── -->
 <div class="setup-card" style="border-style:dashed">
-    <p style="margin:0;font-weight:600">Complete the three phases in order:</p>
+    <p style="margin:0;font-weight:600">Complete the four phases in order:</p>
     <ol style="margin:.5rem 0 0 1.1rem;padding:0;line-height:1.9">
-        <li><strong>Phase 1 — Configure</strong> Set the source URLs and scraping preferences the import pipeline needs. Do this once before running any imports.</li>
-        <li><strong>Phase 2 — Import Pipeline (Steps 1–6)</strong> Populate the database from authoritative external sources. Steps are sequential and each unlocks the next.</li>
-        <li><strong>Phase 3 — Business Configuration</strong> Set subscription pricing and PayPal credentials. Do this before opening subscriptions to customers.</li>
+        <li><strong>Phase 1 — Configuration</strong> Set the source URLs and scraping preferences the import pipeline needs. Do this once before running any imports.</li>
+        <li><strong>Phase 2 — Schema</strong> Populate the database from authoritative external sources — SST taxonomy, Census jurisdictions, and ZIP crosswalks.</li>
+        <li><strong>Phase 3 — Scraping</strong> <em class="muted">(Coming soon)</em> Automatically discover and scrape current tax rates for every jurisdiction.</li>
+        <li><strong>Phase 4 — Business</strong> Set subscription pricing and PayPal credentials. Do this before opening subscriptions to customers.</li>
     </ol>
 </div>
 
-<!-- ── Phase 1: Configure ────────────────────────────────────────────────────── -->
-<div class="setup-phase-label">Phase 1 — Configure Source URLs &amp; Preferences</div>
+<!-- ── Phase 1: Configuration ─────────────────────────────────────────────────── -->
+<div class="setup-phase-label">Phase 1 — Configuration</div>
 
 @{ var failedUrlCount = urlResults.Values.Count(v => !v); }
 @if (urlResults.Count > 0 && failedUrlCount > 0)
@@ -124,7 +122,7 @@ else
         </div>
     </div>
     <div class="settings-actions" style="margin-top:1rem;gap:.6rem;justify-content:flex-end">
-        <button class="btn-secondary" @onclick="CheckSources" disabled="@checkingUrls">
+        <button class="btn-secondary" @onclick="() => CheckSources()" disabled="@checkingUrls">
             @(checkingUrls ? "Checking…" : "Check Sources")
         </button>
         <button class="btn-primary" @onclick="SaveConfig" disabled="@(configBusy || !step1Ok)">Save URLs</button>
@@ -194,215 +192,118 @@ else
     </div>
 </div>
 
-<!-- ── Phase 2: Import Pipeline ──────────────────────────────────────────────── -->
-<div class="setup-phase-label">Phase 2 — Import Pipeline</div>
+<!-- ── Phase 2: Schema ───────────────────────────────────────────────────────── -->
+<div class="setup-phase-label">Phase 2 — Schema</div>
 
-<!-- ── Checklist ────────────────────────────────────────────────────────────── -->
-<div class="setup-checklist">
-    <div class="setup-checklist-header">
-        <h2 class="setup-checklist-title">Progress</h2>
-        <p class="setup-checklist-sub">Each step unlocks the next. All data is sourced from official external authorities.</p>
+<div class="setup-card setup-card-primary">
+    <div class="setup-card-header">
+        <div>
+            <h2 class="setup-card-title">Populate Database</h2>
+            <p class="setup-card-desc">
+                Wipes all jurisdictions, tax categories, and rate data, then rebuilds everything from
+                authoritative sources in sequence. Steps run in order — each unlocks the next.
+            </p>
+        </div>
+        <div class="setup-card-actions">
+            @if (pipelineState == PipelineState.Running)
+            {
+                <button class="btn-secondary btn-lg" @onclick="PausePipeline">⏸ Pause</button>
+            }
+            else if (pipelineState == PipelineState.Paused)
+            {
+                <button class="btn-primary btn-lg" @onclick="ResumePipeline">↩ Resume</button>
+                <button class="btn-secondary" @onclick="StartPipeline">↺ Restart</button>
+            }
+            else
+            {
+                <button class="btn-primary btn-lg" @onclick="StartPipeline">
+                    @(pipelineState == PipelineState.Complete ? "↺ Re-run Pipeline" : "▶ Run Pipeline")
+                </button>
+            }
+        </div>
     </div>
-    <ol class="setup-steps">
-        <li class="setup-step @(step1Ok ? "step-ok" : "step-active")">
-            <span class="step-icon">@(step1Ok ? "✓" : "1")</span>
+
+    @if (!string.IsNullOrEmpty(runAllMsg))
+    {
+        <div class="setup-status @(runAllMsg.StartsWith("✗") ? "setup-status-error" : (runAllMsg.StartsWith("⏸") ? "setup-status-warn" : "setup-status-ok"))">@runAllMsg</div>
+    }
+
+    <ol class="setup-steps setup-steps-inline">
+        <!-- Step 1: Validate URLs -->
+        <li class="setup-step @StepClass(PipelineStep.ValidateUrls)">
+            <span class="step-icon">@StepIcon(PipelineStep.ValidateUrls, "1")</span>
             <div class="step-body">
-                <strong>Validate data source URLs</strong>
+                <strong>Validate source URLs</strong>
                 <span class="step-desc">
-                    All Census and SST URLs must be reachable before importing.
-                    Configure source URLs in the Phase 1 cards above.
-                    @if (!step1Ok) { <span class="step-action">→ Use the <em>Check Sources</em> button in the Data Source URLs card above</span> }
+                    @if (step1Ok) { <span class="step-count-ok">All @urlResults.Count URLs reachable</span> }
+                    else if (currentStep == PipelineStep.ValidateUrls) { <span class="step-count-warn">Checking…</span> }
+                    else { <span class="step-count-warn">Pending</span> }
                 </span>
             </div>
         </li>
-        <li class="setup-step @(step2Ok ? "step-ok" : (step1Ok ? "step-active" : "step-todo"))">
-            <span class="step-icon">@(step2Ok ? "✓" : "2")</span>
+        <!-- Step 2: Wipe -->
+        <li class="setup-step @StepClass(PipelineStep.Clear)">
+            <span class="step-icon">@StepIcon(PipelineStep.Clear, "2")</span>
             <div class="step-body">
-                <strong>Import SST product/service taxonomy</strong>
+                <strong>Wipe all jurisdictions, categories &amp; rates</strong>
                 <span class="step-desc">
-                    Source: SSUTA Agreement PDF, Appendix C — SST Governing Board.
-                    @taxCategoryCount.ToString("N0") categories in DB.
+                    @if (wipeCompleted) { <span class="step-count-ok">Wiped — clean slate ready</span> }
+                    else if (currentStep == PipelineStep.Clear) { <span class="step-count-warn">Clearing…</span> }
+                    else { <span class="step-count-warn">Pending — removes all existing jurisdiction, category, and rate data</span> }
                 </span>
             </div>
         </li>
-        <li class="setup-step @(step3Ok ? "step-ok" : (step2Ok ? "step-active" : "step-todo"))">
-            <span class="step-icon">@(step3Ok ? "✓" : "3")</span>
+        <!-- Step 3: SST taxonomy -->
+        <li class="setup-step @StepClass(PipelineStep.SstTaxonomy)">
+            <span class="step-icon">@StepIcon(PipelineStep.SstTaxonomy, "3")</span>
             <div class="step-body">
-                <strong>Import Census jurisdictions — counties &amp; cities</strong>
+                <strong>SST product/service taxonomy</strong>
                 <span class="step-desc">
-                    Source: US Census Bureau Gazetteer files (ZIP archives).
-                    @countyCount.ToString("N0") counties · @cityCount.ToString("N0") cities in DB.
+                    @if (step2Ok) { <span class="step-count-ok">@taxCategoryCount.ToString("N0") categories imported</span> }
+                    else if (sstRunning) { <span class="step-count-warn">Importing… @sstMsg</span> }
+                    else { <span class="step-count-warn">Pending — SSUTA Appendix C category tree</span> }
                 </span>
             </div>
         </li>
-        <li class="setup-step @(step4Ok ? "step-ok" : (step3Ok ? "step-active" : "step-todo"))">
-            <span class="step-icon">@(step4Ok ? "✓" : "4")</span>
+        <!-- Step 4: Seed -->
+        <li class="setup-step @StepClass(PipelineStep.Seed)">
+            <span class="step-icon">@StepIcon(PipelineStep.Seed, "4")</span>
             <div class="step-body">
-                <strong>Import ZIP code crosswalks</strong>
+                <strong>Seed country, states &amp; tax profiles</strong>
                 <span class="step-desc">
-                    Source: US Census Bureau ZCTA relationship files (TXT).
-                    @zipCount.ToString("N0") ZIP codes in DB.
+                    @if (seedCompleted) { <span class="step-count-ok">United States · 51 state jurisdictions &amp; tax profiles seeded</span> }
+                    else if (currentStep == PipelineStep.Seed) { <span class="step-count-warn">Seeding…</span> }
+                    else { <span class="step-count-warn">Pending — country, 50 states + DC, sourcing rules, local rate caps</span> }
                 </span>
             </div>
         </li>
-        <li class="setup-step @(step5Ok ? "step-ok" : (step4Ok ? "step-active" : "step-todo"))">
-            <span class="step-icon">@(step5Ok ? "✓" : "5")</span>
+        <!-- Step 5: Census -->
+        <li class="setup-step @StepClass(PipelineStep.Census)">
+            <span class="step-icon">@StepIcon(PipelineStep.Census, "5")</span>
             <div class="step-body">
-                <strong>Assign source URLs to jurisdictions</strong>
+                <strong>Census jurisdictions — counties &amp; cities</strong>
                 <span class="step-desc">
-                    Each state/county needs its official tax rate page URL.
-                    @jurisdictionsWithSources.ToString("N0") of @(countyCount + cityCount).ToString("N0") jurisdictions configured.
-                    <span class="step-action muted">→ Edit via <a href="/">Jurisdictions</a></span>
+                    @if (step3Ok) { <span class="step-count-ok">@countyCount.ToString("N0") counties · @cityCount.ToString("N0") cities</span> }
+                    else if (censusRunning) { <span class="step-count-warn">@importMsg</span> }
+                    else { <span class="step-count-warn">Pending — ~3,200 counties and ~30,000 cities (20–40 min)</span> }
                 </span>
             </div>
         </li>
-        <li class="setup-step @(step6Ok ? "step-ok" : (step5Ok ? "step-active" : "step-todo"))">
-            <span class="step-icon">@(step6Ok ? "✓" : "6")</span>
+        <!-- Step 6: ZIP -->
+        <li class="setup-step @StepClass(PipelineStep.Zips)">
+            <span class="step-icon">@StepIcon(PipelineStep.Zips, "6")</span>
             <div class="step-body">
-                <strong>Run initial scrape</strong>
+                <strong>ZIP code crosswalks</strong>
                 <span class="step-desc">
-                    Collect current tax rates from all configured sources.
-                    @scrapeRunCount.ToString("N0") scrape run(s) on record.
-                    <span class="step-action muted">→ Use <a href="/discovery">Discovery → ▶ Run Scrape</a></span>
+                    @if (step4Ok) { <span class="step-count-ok">@zipCount.ToString("N0") ZIP codes linked</span> }
+                    else if (zipRunning) { <span class="step-count-warn">@zipProgress.Processed.ToString("N0") / @(zipProgress.Total > 0 ? zipProgress.Total.ToString("N0") : "…") processed</span> }
+                    else { <span class="step-count-warn">Pending — ~33,000 ZIP codes (15–30 min)</span> }
                 </span>
             </div>
         </li>
     </ol>
-</div>
 
-<!-- ── Run All ─────────────────────────────────────────────────────────────── -->
-<div class="setup-card">
-    <div class="setup-card-header">
-        <div>
-            <h2 class="setup-card-title">Run All Import Steps</h2>
-            <p class="setup-card-desc">
-                Runs steps 1→4 in sequence: validate URLs, import SST taxonomy, import Census jurisdictions,
-                then import ZIP codes. Skips steps that have already completed.
-            </p>
-        </div>
-    </div>
-    @if (!string.IsNullOrEmpty(runAllMsg))
-    {
-        <div class="setup-status @(runAllMsg.StartsWith("✗") ? "setup-status-error" : "setup-status-ok")">@runAllMsg</div>
-    }
-    <div class="settings-actions">
-        <button class="btn-primary" @onclick="RunAllSteps" disabled="@importBusy">
-            @(importBusy ? "Running…" : "▶▶ Run All Steps")
-        </button>
-    </div>
-</div>
-
-<!-- ── Step 2: SST Taxonomy ──────────────────────────────────────────────────── -->
-<div class="setup-card @(step2Ok ? "setup-card-done" : "")">
-    <div class="setup-card-header">
-        <div>
-            <h2 class="setup-card-title">
-                <span class="setup-step-num @(step2Ok ? "num-done" : (step1Ok ? "num-active" : "num-todo"))">@(step2Ok ? "✓" : "2")</span>
-                SST Product/Service Taxonomy
-            </h2>
-            <p class="setup-card-desc">
-                Downloads the SSUTA Agreement PDF, extracts Appendix C defined terms, and builds
-                the product/service category tree used to scope tax rates per product type.
-                Source: <span class="mono-sm">@TruncateUrl(settings.Current.SstAgreementUrl)</span>
-            </p>
-        </div>
-    </div>
-    @if (!string.IsNullOrEmpty(sstMsg))
-    {
-        <div class="setup-status @(sstMsg.StartsWith("✗") ? "setup-status-error" : "setup-status-ok")">@sstMsg</div>
-    }
-    <div class="settings-actions">
-        <button class="btn-primary" @onclick="RunSstImport" disabled="@(importBusy || !step1Ok)">
-            @(sstRunning ? "Importing…" : (step2Ok ? "↺ Re-import" : "▶ Import Taxonomy"))
-        </button>
-    </div>
-</div>
-
-<!-- ── Step 3: Census jurisdictions ─────────────────────────────────────────── -->
-<div class="setup-card @(step3Ok ? "setup-card-done" : "")">
-    <div class="setup-card-header">
-        <div>
-            <h2 class="setup-card-title">
-                <span class="setup-step-num @(step3Ok ? "num-done" : (step2Ok ? "num-active" : "num-todo"))">@(step3Ok ? "✓" : "3")</span>
-                Census Jurisdictions — Counties &amp; Cities
-            </h2>
-            <p class="setup-card-desc">
-                Downloads the Census Bureau Gazetteer ZIP archives and imports all US counties and
-                incorporated cities/places (~3,200 counties · ~30,000 cities). Takes 20–40 minutes.
-                Source: Census Bureau Gazetteer 2025.
-            </p>
-        </div>
-        <div class="setup-card-actions">
-            <button class="btn-primary" @onclick="RunCensusImport" disabled="@(importBusy || !step2Ok)">
-                @(censusRunning ? "Running…" : (step3Ok ? "↺ Re-import" : "▶ Import Jurisdictions"))
-            </button>
-            <button class="btn-secondary" @onclick="ClearCensusCache" disabled="@importBusy" style="font-size:.82rem">
-                Clear cache
-            </button>
-        </div>
-    </div>
-    @if (!string.IsNullOrEmpty(importMsg))
-    {
-        <div class="setup-status @(importMsg.StartsWith("✗") ? "setup-status-error" : "setup-status-ok")">@importMsg</div>
-    }
-</div>
-
-<!-- ── Step 4: ZIP codes ─────────────────────────────────────────────────────── -->
-<div class="setup-card @(step4Ok ? "setup-card-done" : "")">
-    <div class="setup-card-header">
-        <div>
-            <h2 class="setup-card-title">
-                <span class="setup-step-num @(step4Ok ? "num-done" : (step3Ok ? "num-active" : "num-todo"))">@(step4Ok ? "✓" : "4")</span>
-                ZIP Code Crosswalks
-            </h2>
-            <p class="setup-card-desc">
-                Downloads Census ZCTA relationship files and maps ~33,000 ZIP codes to their
-                State, County, and City jurisdictions. Requires Step 3. Takes 15–30 minutes.
-            </p>
-        </div>
-        <div class="setup-card-actions">
-            @if (!zipRunning)
-            {
-                <button class="btn-primary" @onclick="RunZipImport" disabled="@(importBusy || !step3Ok)">
-                    @(step4Ok ? "↺ Re-import" : "▶ Import ZIP Codes")
-                </button>
-                <button class="btn-secondary" @onclick="ClearZipCache" disabled="@importBusy" style="font-size:.82rem">Clear cache</button>
-            }
-            else
-            {
-                <button class="btn-secondary" @onclick="StopZipImport">■ Stop</button>
-            }
-        </div>
-    </div>
-    @if (!step3Ok)
-    {
-        <div class="setup-status setup-status-warn">Complete Step 3 first.</div>
-    }
-    else if (!zipRunning && zipResult == null && !step4Ok)
-    {
-        <div class="zip-info-card">
-            <h3>How ZIP-based tax resolution works</h3>
-            <div class="zip-info-grid">
-                <div class="zip-info-item">
-                    <span class="zip-info-num">1</span>
-                    <div><strong>ZIP → State</strong><br/>Every ZIP belongs to exactly one state. The state's general sales tax rate applies.</div>
-                </div>
-                <div class="zip-info-item">
-                    <span class="zip-info-num">2</span>
-                    <div><strong>ZIP → County</strong><br/>Each ZIP is assigned its primary county by land-area intersection. County add-on rates apply.</div>
-                </div>
-                <div class="zip-info-item">
-                    <span class="zip-info-num">3</span>
-                    <div><strong>ZIP → City</strong><br/>The Census primary place identifies municipal rates.</div>
-                </div>
-                <div class="zip-info-item">
-                    <span class="zip-info-num">4</span>
-                    <div><strong>Product Category</strong><br/>Exemptions and reduced rates are applied per category × jurisdiction rule.</div>
-                </div>
-            </div>
-        </div>
-    }
-    @if (zipRunning || zipResult != null)
+    @if (censusRunning || zipRunning)
     {
         <div class="discovery-progress-wrap" style="margin-top:.75rem">
             @if (zipRunning && zipProgress.Total > 0)
@@ -410,231 +311,64 @@ else
                 var pct = (int)Math.Round(zipProgress.Processed * 100.0 / zipProgress.Total);
                 <div class="discovery-progress-bar" style="width:@pct%"></div>
             }
-            else if (zipRunning)
-            {
-                <div class="progress-bar-indeterminate"></div>
-            }
             else
-            {
-                <div class="discovery-progress-bar" style="width:100%"></div>
-            }
-        </div>
-        <div class="discovery-stats" style="margin-top:.4rem">
-            @if (zipRunning)
-            {
-                <span class="disc-stat disc-stat-total">
-                    <strong>@zipProgress.Processed.ToString("N0")</strong> / @(zipProgress.Total > 0 ? zipProgress.Total.ToString("N0") : "…") processed
-                </span>
-            }
-            <span class="disc-stat disc-stat-found"><strong>@zipProgress.Imported.ToString("N0")</strong> imported</span>
-            <span class="disc-stat disc-stat-skipped"><strong>@zipProgress.Skipped.ToString("N0")</strong> skipped</span>
-            @if (zipProgress.Errors > 0) { <span class="disc-stat disc-stat-error"><strong>@zipProgress.Errors</strong> errors</span> }
-            @if (!string.IsNullOrEmpty(zipProgress.CurrentZip)) { <span class="disc-stat muted">@zipProgress.CurrentZip</span> }
-            @if (zipResult != null && !zipRunning) { <span class="disc-stat muted">Done in @zipResult.Elapsed.ToString(@"m\:ss")</span> }
-        </div>
-    }
-    @if (zipResult != null && !zipRunning)
-    {
-        <div class="zip-result-card" style="margin-top:.75rem">
-            <div class="zip-result-stat">
-                <div class="zip-result-num">@zipResult.Imported.ToString("N0")</div>
-                <div class="zip-result-label">imported</div>
-            </div>
-            <div class="zip-result-stat">
-                <div class="zip-result-num">@zipLinkedCounty.ToString("N0")</div>
-                <div class="zip-result-label">linked county</div>
-            </div>
-            <div class="zip-result-stat">
-                <div class="zip-result-num">@zipLinkedCity.ToString("N0")</div>
-                <div class="zip-result-label">linked city</div>
-            </div>
-        </div>
-    }
-</div>
-
-@if (zipStateCounts.Count > 0)
-{
-    <div class="zip-table-wrap" style="margin-top:1rem">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>State</th>
-                    <th style="text-align:right">ZIP Codes</th>
-                    <th style="text-align:right">Linked County</th>
-                    <th style="text-align:right">Linked City</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var row in zipStateCounts.OrderBy(r => r.StateCode))
-                {
-                    <tr>
-                        <td class="mono">@row.StateCode</td>
-                        <td class="mono" style="text-align:right">@row.Total.ToString("N0")</td>
-                        <td class="mono" style="text-align:right">@row.CountyLinked.ToString("N0")</td>
-                        <td class="mono" style="text-align:right">@row.CityLinked.ToString("N0")</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-}
-
-<!-- ── Step 6: Run Scrape ─────────────────────────────────────────────────────── -->
-<div class="setup-card @(step6Ok ? "setup-card-done" : "")">
-    <div class="setup-card-header">
-        <div>
-            <h2 class="setup-card-title">
-                <span class="setup-step-num @(step6Ok ? "num-done" : (step5Ok ? "num-active" : "num-todo"))">@(step6Ok ? "✓" : "6")</span>
-                Run Initial Scrape
-            </h2>
-            <p class="setup-card-desc">
-                Iterates every active jurisdiction that has a source URL, fetches the current tax rate
-                via its registered scrape strategy, and records any changes. Requires source URLs to be
-                configured in the Jurisdictions tab (Step 5).
-            </p>
-        </div>
-        <div class="setup-card-actions">
-            @if (!ScrapeCoordinator.IsRunning)
-            {
-                <button class="btn-primary" @onclick="StartScrape" disabled="@(!step5Ok)">▶ Run Scrape</button>
-                @if (pausedScrapeRunId.HasValue)
-                {
-                    <button class="btn-secondary" @onclick="ResumeScrape">↩ Resume</button>
-                }
-            }
-            else
-            {
-                <button class="btn-secondary" @onclick="() => ScrapeCoordinator.RequestPause()">⏸ Pause</button>
-            }
-        </div>
-    </div>
-    @if (activeScrapeRun is not null)
-    {
-        var pct = activeScrapeRun.TotalCount > 0
-            ? (int)(100.0 * activeScrapeRun.ProcessedCount / activeScrapeRun.TotalCount)
-            : 0;
-        <div class="scrape-progress-wrap">
-            <div class="scrape-progress-bar" style="width:@(pct)%"></div>
-        </div>
-        <div class="setup-status setup-status-ok">
-            <span class="pipeline-running-dot"></span>
-            @activeScrapeRun.ProcessedCount.ToString("N0") / @activeScrapeRun.TotalCount.ToString("N0") jurisdictions (@pct%)
-        </div>
-    }
-    @if (pausedScrapeRunId.HasValue && !ScrapeCoordinator.IsRunning)
-    {
-        <div class="setup-status setup-status-warn">⏸ Paused — run #@pausedScrapeRunId can be resumed.</div>
-    }
-    @if (scrapeStatus is not null && !ScrapeCoordinator.IsRunning)
-    {
-        <div class="setup-status @(scrapeStatus.StartsWith("✗") ? "setup-status-error" : "setup-status-ok")">@scrapeStatus</div>
-    }
-</div>
-
-<!-- ── Source Discovery (optional) ──────────────────────────────────────────── -->
-<div class="setup-card">
-    <div class="setup-card-header">
-        <div>
-            <h2 class="setup-card-title">
-                Source Discovery
-                <span class="phase-badge phase-badge-stub">Stub</span>
-            </h2>
-            <p class="setup-card-desc">
-                Probes every jurisdiction for a tax rate source URL — government API, web page, or PDF.
-                Results are logged below but no rates are written. Use the findings to configure source
-                URLs in the Jurisdictions tab. <em class="muted">Live probing is planned; currently returns stub results.</em>
-            </p>
-        </div>
-        <div class="setup-card-actions">
-            @if (!discoveryRunning)
-            {
-                <button class="btn-primary" @onclick="StartDiscovery">▶ Run Discovery</button>
-            }
-            else
-            {
-                <button class="btn-secondary" @onclick="StopDiscovery">■ Stop</button>
-            }
-            @if (discoveryResults.Count > 0 && !discoveryRunning)
-            {
-                <button class="btn-secondary" @onclick="ClearDiscovery">✕ Clear</button>
-            }
-        </div>
-    </div>
-    @if (discoveryRunning || discoveryProcessed > 0)
-    {
-        <div class="discovery-progress-wrap" style="margin-top:.75rem">
-            @if (discoveryRunning && discoveryTotal > 0)
-            {
-                var pct = (int)Math.Round(discoveryProcessed * 100.0 / discoveryTotal);
-                <div class="discovery-progress-bar" style="width:@pct%"></div>
-            }
-            else if (discoveryRunning)
             {
                 <div class="progress-bar-indeterminate"></div>
             }
         </div>
-        <div class="discovery-stats" style="margin-top:.4rem">
-            <span class="disc-stat">
-                <strong>@discoveryProcessed</strong> / @(discoveryTotal > 0 ? discoveryTotal.ToString() : "…") processed
-            </span>
-            <span class="disc-stat disc-stat-found"><strong>@discoveryFound</strong> found</span>
-            <span class="disc-stat disc-stat-missing"><strong>@discoveryNotFound</strong> not found</span>
-            <span class="disc-stat disc-stat-skipped"><strong>@discoverySkipped</strong> skipped</span>
-            @if (discoveryErrors > 0) { <span class="disc-stat disc-stat-error"><strong>@discoveryErrors</strong> errors</span> }
-            @if (!discoveryRunning && discoveryProcessed > 0)
-            {
-                <span class="disc-stat muted">Done @discoveryCompletedAt?.ToString("HH:mm:ss")</span>
-            }
-        </div>
     }
 </div>
-
-@if (discoveryResults.Count > 0)
-{
-    <div class="disc-filter-bar">
-        <div class="log-level-pills">
-            @foreach (var f in new[] { "All", "Found", "NotFound", "Skipped", "Error" })
-            {
-                <button class="@(discoveryFilter == f ? "btn-primary" : "btn-secondary")"
-                        @onclick="() => discoveryFilter = f">@f</button>
-            }
-        </div>
-        <input class="setting-input log-search" placeholder="Search name or state…"
-               @bind="discoverySearch" @bind:event="oninput" />
-    </div>
-    <div class="disc-table-wrap">
-        <table class="data-table disc-table">
-            <thead>
-                <tr>
-                    <th>Tier</th><th>State</th><th>Name</th><th>Status</th><th>Source</th><th>Rate</th><th>Notes</th><th>Time</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var r in DiscoveryFilteredResults.Take(500))
-                {
-                    <tr class="disc-row disc-row-@r.Status.ToLower()">
-                        <td><span class="tier-badge @TierClass(r.Tier)">@r.Tier</span></td>
-                        <td class="mono">@r.StateCode</td>
-                        <td>@r.JurisdictionName</td>
-                        <td><span class="disc-status-badge disc-status-@r.Status.ToLower()">@r.Status</span></td>
-                        <td class="disc-source-cell" title="@r.SourceUsed">@TruncateDiscoveryUrl(r.SourceUsed)</td>
-                        <td class="mono">@(r.FoundRate.HasValue ? $"{r.FoundRate.Value * 100:F3}%" : "—")</td>
-                        <td class="disc-notes-cell">@r.Notes</td>
-                        <td class="mono muted">@r.ProcessedAt.ToString("HH:mm:ss")</td>
-                    </tr>
-                }
-                @if (DiscoveryFilteredResults.Count() > 500)
-                {
-                    <tr><td colspan="8" class="muted" style="text-align:center;padding:.75rem">Showing first 500 of @DiscoveryFilteredResults.Count() results</td></tr>
-                }
-            </tbody>
-        </table>
-    </div>
-}
 
 <!-- ══════════════════════════════════════════════════════════════════════════ -->
-<!-- ── Phase 3: Business Configuration ──────────────────────────────────────── -->
-<div class="setup-phase-label">Phase 3 — Business Configuration</div>
+<!-- ── Phase 3: Scraping ─────────────────────────────────────────────────────── -->
+<div class="setup-phase-label">Phase 3 — Scraping</div>
+
+<div class="setup-card" style="opacity:.7;border-style:dashed">
+    <div class="setup-card-header">
+        <div>
+            <h2 class="setup-card-title" style="display:flex;align-items:center;gap:.6rem">
+                Run Scrape Pipeline
+                <span class="phase-badge phase-badge-stub">Coming Soon</span>
+            </h2>
+            <p class="setup-card-desc">
+                Once Phase 2 is complete, the scrape pipeline will automatically discover and collect
+                current tax rates for every jurisdiction — government APIs, agency web pages, and official PDFs.
+                Rates are validated, change-logged, and linked to source evidence.
+                Complete Phase 2 first before this phase becomes active.
+            </p>
+        </div>
+        <div class="setup-card-actions">
+            <button class="btn-primary btn-lg" disabled>▶ Run Scrape</button>
+        </div>
+    </div>
+    <ol class="setup-steps setup-steps-inline">
+        <li class="setup-step step-todo">
+            <span class="step-icon">1</span>
+            <div class="step-body">
+                <strong>Source discovery</strong>
+                <span class="step-desc"><span class="step-count-warn">Probe every jurisdiction for a tax rate source URL — government API, web page, or PDF</span></span>
+            </div>
+        </li>
+        <li class="setup-step step-todo">
+            <span class="step-icon">2</span>
+            <div class="step-body">
+                <strong>Initial scrape</strong>
+                <span class="step-desc"><span class="step-count-warn">Fetch current rates from all discovered sources and populate baseline tax rate records</span></span>
+            </div>
+        </li>
+        <li class="setup-step step-todo">
+            <span class="step-icon">3</span>
+            <div class="step-body">
+                <strong>Scheduled re-scrape</strong>
+                <span class="step-desc"><span class="step-count-warn">Automatically re-check sources on a configurable interval and log any rate changes</span></span>
+            </div>
+        </li>
+    </ol>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- ── Phase 4: Business ─────────────────────────────────────────────────────── -->
+<div class="setup-phase-label">Phase 4 — Business</div>
 
 <!-- ── Subscription Pricing ──────────────────────────────────────────────────── -->
 <div class="setup-card">
@@ -777,20 +511,49 @@ else
     </div>
     <p class="section-note" style="margin-top:.5rem;color:var(--color-error,#dc2626)">
         Clears: Jurisdictions · TaxRates · ZipCodes · TaxCategories · TaxCategoryRules ·
-        ExciseTaxRates · ScrapeRuns · ChangeLog · SourceDocuments · Subscribers · BillingRecords · LogEntries
+        StateTaxProfiles · ScrapeRuns · ChangeLog · SourceDocuments · Subscribers · BillingRecords · LogEntries
     </p>
 </div>
 
 @code {
+    // ── Pipeline state machine ────────────────────────────────────────────────
+    private enum PipelineState { None, Running, Paused, Complete }
+    private enum PipelineStep  { None, ValidateUrls, Clear, SstTaxonomy, Seed, Census, Zips }
+
+    private PipelineState pipelineState = PipelineState.None;
+    private PipelineStep  currentStep   = PipelineStep.None;
+    private bool wipeCompleted;
+    private bool seedCompleted;
+    private CancellationTokenSource? pipelineCts;
+
+    private string StepClass(PipelineStep step)
+    {
+        if (StepIsDone(step)) return "step-ok";
+        if (currentStep == step && pipelineState == PipelineState.Running) return "step-active";
+        return "step-todo";
+    }
+
+    private string StepIcon(PipelineStep step, string num) =>
+        StepIsDone(step) ? "✓" : num;
+
+    private bool StepIsDone(PipelineStep step) => step switch
+    {
+        PipelineStep.ValidateUrls => step1Ok,
+        PipelineStep.Clear        => wipeCompleted,
+        PipelineStep.SstTaxonomy  => step2Ok,
+        PipelineStep.Seed         => seedCompleted,
+        PipelineStep.Census       => step3Ok,
+        PipelineStep.Zips         => step4Ok,
+        _                         => false,
+    };
+
     // ── Counts ────────────────────────────────────────────────────────────────
-    private int countyCount, cityCount, zipCount, taxCategoryCount, scrapeRunCount, jurisdictionsWithSources;
+    private int countyCount, cityCount, zipCount, taxCategoryCount;
 
     private bool step1Ok => urlResults.Count > 0 && urlResults.Values.All(v => v);
     private bool step2Ok => taxCategoryCount > 0;
     private bool step3Ok => countyCount > 0 && cityCount > 0;
     private bool step4Ok => zipCount > 0;
-    private bool step5Ok => jurisdictionsWithSources > 0;
-    private bool step6Ok => scrapeRunCount > 0;
 
     // ── URL validation ────────────────────────────────────────────────────────
     private bool checkingUrls;
@@ -807,20 +570,12 @@ else
         ["SstMemberStates"]     = ("SST Member States page (web)",          () => settings.Current.SstMemberStatesUrl),
     };
 
-    // ── Import state ──────────────────────────────────────────────────────────
-    private bool importBusy;
+    // ── Import running state ──────────────────────────────────────────────────
     private bool censusRunning, zipRunning, sstRunning;
     private string? importMsg;
     private string? sstMsg;
     private string? runAllMsg;
-
-    // ── ZIP rich state ────────────────────────────────────────────────────────
-    private CancellationTokenSource? zipCts;
     private ZipImportProgress zipProgress = new(0, 0, 0, 0, 0);
-    private ZipImportResult? zipResult;
-    private int zipLinkedCounty, zipLinkedCity;
-    private record ZipStateRow(string StateCode, int Total, int CountyLinked, int CityLinked);
-    private List<ZipStateRow> zipStateCounts = [];
 
     // ── Config / admin state ──────────────────────────────────────────────────
     private bool configBusy;
@@ -843,27 +598,147 @@ else
         await using var db = await DbFactory.CreateDbContextAsync();
         pricing = await db.PricingConfigs.OrderBy(x => x.Id).FirstOrDefaultAsync();
         paypal  = await db.PayPalConfigs.OrderBy(x => x.Id).FirstOrDefaultAsync();
-        _ = PollScrapeProgressAsync(_pollCts.Token);
     }
 
     private async Task Refresh()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
-        countyCount              = await db.Jurisdictions.CountAsync(j => j.JurisdictionType == JurisdictionType.County);
-        cityCount                = await db.Jurisdictions.CountAsync(j => j.JurisdictionType == JurisdictionType.City);
-        zipCount                 = await db.ZipCodes.CountAsync();
-        taxCategoryCount         = await db.TaxCategories.CountAsync();
-        scrapeRunCount           = await db.ScrapeRuns.CountAsync();
-        jurisdictionsWithSources = await db.Jurisdictions.CountAsync(
-            j => j.SourceUrl != null && j.SourceUrl != "" && j.JurisdictionType != JurisdictionType.Country);
+        countyCount      = await db.Jurisdictions.CountAsync(j => j.JurisdictionType == JurisdictionType.County);
+        cityCount        = await db.Jurisdictions.CountAsync(j => j.JurisdictionType == JurisdictionType.City);
+        zipCount         = await db.ZipCodes.CountAsync();
+        taxCategoryCount = await db.TaxCategories.CountAsync();
+    }
 
-        if (zipCount > 0 && zipStateCounts.Count == 0)
-            await LoadZipStateCountsAsync();
+    // ── Pipeline entry points ─────────────────────────────────────────────────
+
+    private async Task StartPipeline()
+    {
+        wipeCompleted = false;
+        seedCompleted = false;
+        runAllMsg     = null;
+        await RunPipelineAsync(fresh: true);
+    }
+
+    private Task ResumePipeline() => RunPipelineAsync(fresh: false);
+
+    private void PausePipeline() => pipelineCts?.Cancel();
+
+    private async Task RunPipelineAsync(bool fresh)
+    {
+        pipelineState = PipelineState.Running;
+        pipelineCts   = new CancellationTokenSource();
+        var ct = pipelineCts.Token;
+        StateHasChanged();
+
+        try
+        {
+            // Step 1: Validate URLs
+            currentStep = PipelineStep.ValidateUrls;
+            runAllMsg   = "Step 1/6 — Checking source URLs…";
+            StateHasChanged();
+            await CheckSources(ct);
+            if (!step1Ok)
+            {
+                runAllMsg     = "✗ URL check failed — fix broken URLs in Phase 1 first.";
+                pipelineState = PipelineState.None;
+                currentStep   = PipelineStep.None;
+                return;
+            }
+
+            // Step 2: Wipe (fresh start only — resume skips if already wiped)
+            if (fresh || !wipeCompleted)
+            {
+                currentStep = PipelineStep.Clear;
+                runAllMsg   = "Step 2/6 — Wiping all jurisdictions, categories, and rate data…";
+                StateHasChanged();
+                await WipeAllDataAsync(ct);
+                wipeCompleted = true;
+                seedCompleted = false;
+                await Refresh();
+                StateHasChanged();
+            }
+
+            // Step 3: SST taxonomy
+            if (!step2Ok)
+            {
+                currentStep = PipelineStep.SstTaxonomy;
+                runAllMsg   = "Step 3/6 — Importing SST taxonomy…";
+                StateHasChanged();
+                await RunSstImportAsync(ct);
+                if (sstMsg?.StartsWith("✗") == true)
+                {
+                    runAllMsg     = $"✗ SST import failed: {sstMsg}";
+                    pipelineState = PipelineState.None;
+                    currentStep   = PipelineStep.None;
+                    return;
+                }
+            }
+
+            // Step 4: Seed Country + States + Tax Profiles
+            if (!seedCompleted)
+            {
+                currentStep = PipelineStep.Seed;
+                runAllMsg   = "Step 4/6 — Seeding country, states, and tax profiles…";
+                StateHasChanged();
+                await SeedJurisdictionsAsync(ct);
+                seedCompleted = true;
+                await Refresh();
+                StateHasChanged();
+            }
+
+            // Step 5: Census
+            if (!step3Ok)
+            {
+                currentStep = PipelineStep.Census;
+                runAllMsg   = "Step 5/6 — Importing Census jurisdictions…";
+                StateHasChanged();
+                await RunCensusImportAsync(ct);
+                if (importMsg?.StartsWith("✗") == true)
+                {
+                    runAllMsg     = $"✗ Census import failed: {importMsg}";
+                    pipelineState = PipelineState.None;
+                    currentStep   = PipelineStep.None;
+                    return;
+                }
+            }
+
+            // Step 6: ZIPs
+            if (!step4Ok)
+            {
+                currentStep = PipelineStep.Zips;
+                runAllMsg   = "Step 6/6 — Importing ZIP crosswalks…";
+                StateHasChanged();
+                await RunZipImportAsync(ct);
+                if (importMsg?.StartsWith("✗") == true)
+                {
+                    runAllMsg     = $"✗ ZIP import failed: {importMsg}";
+                    pipelineState = PipelineState.None;
+                    currentStep   = PipelineStep.None;
+                    return;
+                }
+            }
+
+            runAllMsg     = "✓ Pipeline complete.";
+            pipelineState = PipelineState.Complete;
+            currentStep   = PipelineStep.None;
+        }
+        catch (OperationCanceledException)
+        {
+            runAllMsg     = "⏸ Pipeline paused — click Resume to continue.";
+            pipelineState = PipelineState.Paused;
+        }
+        catch (Exception ex)
+        {
+            runAllMsg     = $"✗ {ex.Message}";
+            pipelineState = PipelineState.None;
+            currentStep   = PipelineStep.None;
+        }
+        finally { StateHasChanged(); }
     }
 
     // ── URL check ────────────────────────────────────────────────────────────
 
-    private async Task CheckSources()
+    private async Task CheckSources(CancellationToken ct = default)
     {
         checkingUrls = true;
         urlResults = [];
@@ -878,69 +753,117 @@ else
             if (string.IsNullOrWhiteSpace(url)) return (kv.Key, false);
             try
             {
-                using var req = new HttpRequestMessage(HttpMethod.Head, url);
-                using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+                using var req  = new HttpRequestMessage(HttpMethod.Head, url);
+                using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
                 return (kv.Key, resp.IsSuccessStatusCode || (int)resp.StatusCode < 400);
             }
             catch { return (kv.Key, false); }
         });
 
         var results = await Task.WhenAll(tasks);
-        urlResults = results.ToDictionary(r => r.Item1, r => r.Item2);
+        urlResults   = results.ToDictionary(r => r.Item1, r => r.Item2);
         checkingUrls = false;
         StateHasChanged();
     }
 
+    // ── Full wipe ─────────────────────────────────────────────────────────────
+
+    private async Task WipeAllDataAsync(CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync(ct);
+
+        // Null ZIP→jurisdiction links (no DB-level cascade for these nullable columns).
+        await db.ZipCodes
+            .Where(z => z.CountyJurisdictionId != null || z.CityJurisdictionId != null)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(z => z.CountyJurisdictionId, (int?)null)
+                .SetProperty(z => z.CityJurisdictionId,   (int?)null), ct);
+
+        // Delete jurisdictions bottom-up (ParentId FK is Restrict; TaxRates cascade).
+        foreach (var type in new[] {
+            JurisdictionType.City, JurisdictionType.County,
+            JurisdictionType.State, JurisdictionType.Country })
+        {
+            var ids = await db.Jurisdictions
+                .Where(j => j.JurisdictionType == type)
+                .Select(j => j.Id).ToListAsync(ct);
+            if (ids.Count > 0)
+                await db.Jurisdictions.Where(j => ids.Contains(j.Id)).ExecuteDeleteAsync(ct);
+        }
+
+        // Wipe tax categories (self-referential FK — disable constraints to allow bulk delete).
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM TaxCategoryRules", ct);
+        await db.Database.ExecuteSqlRawAsync("ALTER TABLE TaxCategories NOCHECK CONSTRAINT ALL", ct);
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM TaxCategories", ct);
+        await db.Database.ExecuteSqlRawAsync("ALTER TABLE TaxCategories WITH CHECK CHECK CONSTRAINT ALL", ct);
+
+        // Wipe scrape history and source evidence.
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM SourceDocuments", ct);
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM ScrapeRuns", ct);
+
+        // Wipe state tax profiles (will be re-seeded in step 4).
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM StateTaxProfiles", ct);
+    }
+
+    // ── Seed Country + States + Tax Profiles ─────────────────────────────────
+
+    private async Task SeedJurisdictionsAsync(CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync(ct);
+        await JurisdictionSeeder.SeedAsync(db);
+        await StateTaxProfileSeeder.SeedAsync(db);
+    }
+
     // ── SST import ───────────────────────────────────────────────────────────
 
-    private async Task RunSstImport()
+    private async Task RunSstImportAsync(CancellationToken ct)
     {
-        importBusy = sstRunning = true;
-        sstMsg = "Starting…";
+        sstRunning = true;
+        sstMsg     = null;
         StateHasChanged();
         try
         {
             var p = new Progress<string>(msg => { sstMsg = msg; InvokeAsync(StateHasChanged); });
-            var r = await sstSvc.ImportAsync(p);
+            var r = await sstSvc.ImportAsync(p, ct);
             sstMsg = r.Success
-                ? $"✓ {r.CategoriesCreated} categories imported in {r.Elapsed:m\\:ss}"
+                ? $"{r.CategoriesCreated:N0} categories in {r.Elapsed:m\\:ss}"
                 : $"✗ {r.Error}";
             await Refresh();
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex) { sstMsg = $"✗ {ex.Message}"; }
-        finally { importBusy = sstRunning = false; StateHasChanged(); }
+        finally { sstRunning = false; StateHasChanged(); }
     }
 
-    // ── Census import ────────────────────────────────────────────────────────
+    // ── Census import ─────────────────────────────────────────────────────────
 
-    private async Task RunCensusImport()
+    private async Task RunCensusImportAsync(CancellationToken ct)
     {
-        importBusy = censusRunning = true;
-        importMsg = "Importing counties & cities…";
+        censusRunning = true;
+        importMsg     = "Starting…";
         StateHasChanged();
         try
         {
             var p = new Progress<CensusImportProgress>(snap =>
             {
-                importMsg = $"{snap.Stage}: {snap.Created:N0} created";
+                importMsg = $"{snap.Stage}: {snap.Processed:N0}/{snap.Total:N0}";
                 InvokeAsync(StateHasChanged);
             });
-            var r = await censusSvc.ImportAsync(p);
-            importMsg = $"✓ {r.CountiesCreated:N0} counties · {r.CitiesCreated:N0} cities created in {r.Elapsed:m\\:ss}";
+            var r = await censusSvc.ImportAsync(p, ct);
+            importMsg = $"{r.CountiesCreated:N0} counties · {r.CitiesCreated:N0} cities in {r.Elapsed:m\\:ss}";
             await Refresh();
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex) { importMsg = $"✗ {ex.Message}"; }
-        finally { importBusy = censusRunning = false; StateHasChanged(); }
+        finally { censusRunning = false; StateHasChanged(); }
     }
 
-    // ── ZIP import ───────────────────────────────────────────────────────────
+    // ── ZIP import ────────────────────────────────────────────────────────────
 
-    private async Task RunZipImport()
+    private async Task RunZipImportAsync(CancellationToken ct)
     {
-        importBusy = zipRunning = true;
-        zipResult = null;
-        zipProgress = new(0, 0, 0, 0, 0);
-        zipCts = new CancellationTokenSource();
+        zipRunning    = true;
+        zipProgress   = new(0, 0, 0, 0, 0);
         StateHasChanged();
         try
         {
@@ -949,247 +872,12 @@ else
                 zipProgress = snap;
                 InvokeAsync(StateHasChanged);
             });
-            zipResult = await zipSvc.ImportAsync(p, zipCts.Token);
-            await LoadZipLinkStatsAsync();
+            await zipSvc.ImportAsync(p, ct);
             await Refresh();
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex) { importMsg = $"✗ {ex.Message}"; }
-        finally { importBusy = zipRunning = false; zipCts = null; StateHasChanged(); }
-    }
-
-    private void StopZipImport() => zipCts?.Cancel();
-
-    private async Task LoadZipLinkStatsAsync()
-    {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        zipLinkedCounty = await db.ZipCodes.CountAsync(z => z.CountyJurisdictionId != null);
-        zipLinkedCity   = await db.ZipCodes.CountAsync(z => z.CityJurisdictionId   != null);
-    }
-
-    private async Task LoadZipStateCountsAsync()
-    {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        zipStateCounts = await db.ZipCodes
-            .GroupBy(z => z.StateCode)
-            .Select(g => new ZipStateRow(
-                g.Key,
-                g.Count(),
-                g.Count(z => z.CountyJurisdictionId != null),
-                g.Count(z => z.CityJurisdictionId   != null)))
-            .ToListAsync();
-    }
-
-    // ── Run All ──────────────────────────────────────────────────────────────
-
-    private async Task RunAllSteps()
-    {
-        importBusy = true;
-        runAllMsg = "Step 1/4 — Checking URLs…";
-        StateHasChanged();
-
-        try
-        {
-            await CheckSources();
-            if (!step1Ok) { runAllMsg = "✗ URL check failed — fix URLs in Settings first."; return; }
-
-            if (!step2Ok)
-            {
-                runAllMsg = "Step 2/4 — Importing SST taxonomy…";
-                StateHasChanged();
-                await RunSstImport();
-                if (sstMsg?.StartsWith("✗") == true) { runAllMsg = $"✗ SST step failed: {sstMsg}"; return; }
-            }
-
-            if (!step3Ok)
-            {
-                runAllMsg = "Step 3/4 — Importing Census jurisdictions…";
-                StateHasChanged();
-                await RunCensusImport();
-                if (importMsg?.StartsWith("✗") == true) { runAllMsg = $"✗ Census step failed: {importMsg}"; return; }
-            }
-
-            if (!step4Ok)
-            {
-                runAllMsg = "Step 4/4 — Importing ZIP codes…";
-                StateHasChanged();
-                await RunZipImport();
-                if (importMsg?.StartsWith("✗") == true) { runAllMsg = $"✗ ZIP step failed: {importMsg}"; return; }
-            }
-
-            runAllMsg = "✓ All steps complete.";
-        }
-        catch (Exception ex) { runAllMsg = $"✗ {ex.Message}"; }
-        finally { importBusy = false; StateHasChanged(); }
-    }
-
-    private void ClearCensusCache() { censusSvc.ClearCache(); importMsg = "Census cache cleared."; StateHasChanged(); }
-    private void ClearZipCache()    { zipSvc.ClearCache();    importMsg = "ZIP cache cleared.";    StateHasChanged(); }
-
-    private static string TruncateUrl(string url) =>
-        url.Length <= 55 ? url : url[..52] + "…";
-
-    // ── Scrape state ──────────────────────────────────────────────────────────
-    private string? scrapeStatus;
-    private int? pausedScrapeRunId;
-    private ScrapeRun? activeScrapeRun;
-    private CancellationTokenSource _pollCts = new();
-
-    private void StartScrape()
-    {
-        scrapeStatus = null;
-        ScrapeCoordinator.TryEnqueueStart();
-    }
-
-    private void ResumeScrape()
-    {
-        if (pausedScrapeRunId is null) return;
-        scrapeStatus = null;
-        ScrapeCoordinator.TryEnqueueResume(pausedScrapeRunId.Value);
-    }
-
-    private async Task PollScrapeProgressAsync(CancellationToken ct)
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
-        try
-        {
-            while (await timer.WaitForNextTickAsync(ct))
-            {
-                await using var db = await DbFactory.CreateDbContextAsync(ct);
-
-                activeScrapeRun = await db.ScrapeRuns
-                    .Where(r => r.Status == ScrapeStatus.Running)
-                    .OrderByDescending(r => r.Id)
-                    .FirstOrDefaultAsync(ct);
-
-                pausedScrapeRunId = activeScrapeRun is null
-                    ? await db.ScrapeRuns
-                        .Where(r => r.Status == ScrapeStatus.Paused)
-                        .OrderByDescending(r => r.Id)
-                        .Select(r => (int?)r.Id)
-                        .FirstOrDefaultAsync(ct)
-                    : null;
-
-                await InvokeAsync(StateHasChanged);
-            }
-        }
-        catch (OperationCanceledException) { }
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await _pollCts.CancelAsync();
-        _pollCts.Dispose();
-    }
-
-    // ── Discovery state ───────────────────────────────────────────────────────
-    private bool discoveryRunning;
-    private CancellationTokenSource? discoveryCts;
-    private int discoveryTotal, discoveryProcessed, discoveryFound, discoveryNotFound, discoverySkipped, discoveryErrors;
-    private DateTime? discoveryCompletedAt;
-    private string discoveryFilter = "All";
-    private string discoverySearch = "";
-    private readonly List<DiscoveryResult> discoveryResults = new();
-
-    private IEnumerable<DiscoveryResult> DiscoveryFilteredResults =>
-        discoveryResults
-            .Where(r => discoveryFilter == "All" || r.Status == discoveryFilter)
-            .Where(r => string.IsNullOrEmpty(discoverySearch) ||
-                        r.JurisdictionName.Contains(discoverySearch, StringComparison.OrdinalIgnoreCase) ||
-                        r.StateCode.Contains(discoverySearch, StringComparison.OrdinalIgnoreCase));
-
-    private async Task StartDiscovery()
-    {
-        discoveryRunning     = true;
-        discoveryCts         = new CancellationTokenSource();
-        discoveryTotal       = 0; discoveryProcessed = 0;
-        discoveryFound       = 0; discoveryNotFound  = 0;
-        discoverySkipped     = 0; discoveryErrors    = 0;
-        discoveryCompletedAt = null;
-        discoveryResults.Clear();
-        StateHasChanged();
-        try
-        {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            discoveryTotal = await db.Jurisdictions
-                .CountAsync(j => j.IsActive && j.JurisdictionType != JurisdictionType.Country, discoveryCts.Token);
-            await InvokeAsync(StateHasChanged);
-
-            var countries = await db.Jurisdictions
-                .Where(j => j.JurisdictionType == JurisdictionType.Country && j.IsActive)
-                .OrderBy(j => j.JurisdictionName)
-                .ToListAsync(discoveryCts.Token);
-
-            foreach (var country in countries)
-                await DiscoverRecursiveAsync(country, db, discoveryCts.Token);
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            discoveryResults.Insert(0, new DiscoveryResult
-            { JurisdictionName = "Discovery run", Status = "Error", Notes = ex.Message, ProcessedAt = DateTime.UtcNow });
-        }
-        finally { discoveryRunning = false; discoveryCompletedAt = DateTime.UtcNow; await InvokeAsync(StateHasChanged); }
-    }
-
-    private async Task DiscoverRecursiveAsync(Jurisdiction jurisdiction, AppDbContext db, CancellationToken ct)
-    {
-        ct.ThrowIfCancellationRequested();
-        if (jurisdiction.JurisdictionType != JurisdictionType.Country)
-        {
-            DiscoveryResult result;
-            try { result = await DiscoveryService.DiscoverAsync(jurisdiction, ct); }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex)
-            {
-                result = new DiscoveryResult
-                {
-                    JurisdictionId = jurisdiction.Id, JurisdictionName = jurisdiction.JurisdictionName,
-                    StateCode = jurisdiction.StateCode, Tier = jurisdiction.JurisdictionType,
-                    Status = "Error", Notes = ex.Message, ProcessedAt = DateTime.UtcNow,
-                };
-            }
-            discoveryResults.Insert(0, result);
-            discoveryProcessed++;
-            switch (result.Status)
-            {
-                case "Found":    discoveryFound++;    break;
-                case "NotFound": discoveryNotFound++; break;
-                case "Skipped":  discoverySkipped++;  break;
-                case "Error":    discoveryErrors++;   break;
-            }
-            if (discoveryProcessed % 10 == 0 || result.Status is "Error" or "Found")
-                await InvokeAsync(StateHasChanged);
-        }
-        var children = await db.Jurisdictions
-            .Where(j => j.ParentId == jurisdiction.Id && j.IsActive)
-            .OrderBy(j => j.JurisdictionName)
-            .ToListAsync(ct);
-        foreach (var child in children)
-            await DiscoverRecursiveAsync(child, db, ct);
-    }
-
-    private void StopDiscovery() => discoveryCts?.Cancel();
-
-    private void ClearDiscovery()
-    {
-        discoveryResults.Clear();
-        discoveryTotal = discoveryProcessed = discoveryFound = discoveryNotFound = discoverySkipped = discoveryErrors = 0;
-        discoveryCompletedAt = null;
-    }
-
-    private static string TierClass(JurisdictionType tier) => tier switch
-    {
-        JurisdictionType.State  => "tier-state",
-        JurisdictionType.County => "tier-county",
-        JurisdictionType.City   => "tier-city",
-        _                       => "tier-country"
-    };
-
-    private static string TruncateDiscoveryUrl(string url)
-    {
-        if (string.IsNullOrEmpty(url) || url == "—") return url;
-        return url.Length <= 40 ? url : url[..37] + "…";
+        finally { zipRunning = false; StateHasChanged(); }
     }
 
     // ── Config save ───────────────────────────────────────────────────────────
@@ -1311,8 +999,6 @@ else
             await db.Database.ExecuteSqlRawAsync("DELETE FROM Subscribers");
             await db.Database.ExecuteSqlRawAsync("DELETE FROM LogEntries");
             await db.Database.ExecuteSqlRawAsync("DELETE FROM ChangeLog");
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM ExciseSourceDocuments");
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM ExciseTaxRates");
             await db.Database.ExecuteSqlRawAsync("DELETE FROM SourceDocuments");
             await db.Database.ExecuteSqlRawAsync("DELETE FROM TaxRates");
             await db.Database.ExecuteSqlRawAsync("DELETE FROM ScrapeRuns");
@@ -1322,6 +1008,7 @@ else
             await db.Database.ExecuteSqlRawAsync("DELETE FROM TaxCategories");
             await db.Database.ExecuteSqlRawAsync("ALTER TABLE TaxCategories WITH CHECK CHECK CONSTRAINT ALL");
             await db.Database.ExecuteSqlRawAsync("DELETE FROM Jurisdictions");
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM StateTaxProfiles");
             truncateMsg = "✓ All data cleared.";
         }
         catch (Exception ex) { truncateMsg = $"✗ {ex.Message}"; }

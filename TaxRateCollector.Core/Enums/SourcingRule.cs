@@ -22,7 +22,7 @@ public enum SourcingRule
     /// <summary>
     /// Tax is based on the seller's business location for intrastate sales.
     /// The seller applies the tax rate for their own city/county, not the buyer's.
-    /// States: AZ, IL, MS, MO, OH, PA, TN, TX, UT, VA (intrastate only).
+    /// States: AZ, IL, MS, MO, NM, OH, PA, TN, TX, UT, VA (intrastate only).
     /// </summary>
     OriginBased,
 

@@ -2264,6 +2264,29 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
 }
 .mono-sm { font-family: monospace; font-size: .82rem; }
 
+/* ── Setup primary / sub-step card variants ─────────────────────────────── */
+.setup-card-primary {
+    border-color: var(--accent, #2563eb);
+    border-width: 2px;
+}
+.setup-card-substep {
+    margin-left: 1.5rem;
+    border-left: 3px solid var(--border);
+    opacity: .92;
+}
+.setup-substep-label {
+    margin: 1.25rem 0 .5rem 1.5rem;
+    font-size: .8rem;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted, #64748b);
+}
+.setup-steps-inline { margin-top: 1rem; border-top: 1px solid var(--border); padding-top: .75rem; }
+.step-count-ok   { color: #16a34a; font-size: .82rem; }
+.step-count-warn { color: #b45309; font-size: .82rem; }
+.btn-lg { font-size: 1rem; padding: .55rem 1.25rem; }
+
 [data-theme="dark"] .setup-card { background: #1e293b; border-color: #334155; }
 [data-theme="dark"] .setup-card-done { border-color: #14532d; }
 [data-theme="dark"] .setup-status-ok    { background: #052e16; color: #86efac; border-color: #14532d; }

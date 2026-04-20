@@ -26,12 +26,6 @@
             <p class="page-sub">Select a product category, then expand any tier to view or edit rates and attach evidence.</p>
         </div>
         <div class="header-actions">
-            @if (isAdmin)
-            {
-                <button class="btn-secondary" @onclick="RunScrape" disabled="@scraping">
-                    @(scraping ? "Scraping…" : "Run Scrape")
-                </button>
-            }
             <select class="btn-export-select" value="@exportFormat" @onchange="OnExportChange" disabled="@exporting">
                 <option value="">@(exporting ? "Exporting…" : "Export ▾")</option>
                 <option value="csv">CSV</option>
@@ -406,7 +400,6 @@ else if (!isAdmin && HasUnsubscribedContent)
 
     // ── State ──────────────────────────────────────────────────────────────────
     private bool loading = true;
-    private bool scraping;
     private bool exporting;
     private string exportFormat = "";
     private bool isAdmin;
@@ -1330,28 +1323,6 @@ else if (!isAdmin && HasUnsubscribedContent)
         foreach (var list in children.Values)
             for (int i = 0; i < list.Count; i++)
                 if (list[i].Id == id) { list[i] = list[i] with { Rates = rates }; return; }
-    }
-
-    // ── Scrape ────────────────────────────────────────────────────────────────
-    private async Task RunScrape()
-    {
-        if (!isAdmin) { SetStatus("✗ Sign in to run scrape"); return; }
-        scraping = true;
-        SetStatus(null);
-        StateHasChanged();
-        try
-        {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            db.ScrapeRuns.Add(new ScrapeRun
-            {
-                StartedAt = DateTime.UtcNow.ToString("o"),
-                Status = ScrapeStatus.Pending,
-            });
-            await db.SaveChangesAsync();
-            SetStatus("✓ Scrape queued — see /runs for progress");
-        }
-        catch (Exception ex) { SetStatus($"✗ {ex.Message}"); }
-        finally { scraping = false; StateHasChanged(); }
     }
 
 

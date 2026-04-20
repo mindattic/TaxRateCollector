@@ -160,22 +160,8 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
             .Select(j => new { j.Id, j.FipsCode })
             .ToDictionaryAsync(j => j.FipsCode, ct);
 
-        // Need a ScrapeRun for rate rows
-        var nowIso = DateTime.UtcNow.ToString("o");
-        var today  = DateOnly.FromDateTime(DateTime.UtcNow);
-        var run    = new ScrapeRun
-        {
-            StartedAt = nowIso, CompletedAt = nowIso,
-            Status = ScrapeStatus.Manual,
-            TotalScraped = 0, ChangesDetected = 0, ErrorCount = 0
-        };
-        db.ScrapeRuns.Add(run);
-        await db.SaveChangesAsync(ct);
-
-        var leafCats = await db.TaxCategories.Where(c => c.IsLeaf).ToListAsync(ct);
-
         int total = counties.Count, processed = 0, created = 0, skipped = 0, errors = 0;
-        var batch = new List<(Jurisdiction J, string StateCode)>(200);
+        var batch = new List<Jurisdiction>(200);
 
         foreach (var c in counties)
         {
@@ -189,7 +175,7 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
                 }
                 else if (stateJurisdictions.TryGetValue(c.StateFips, out var stateJ))
                 {
-                    var j = new Jurisdiction
+                    batch.Add(new Jurisdiction
                     {
                         JurisdictionType = JurisdictionType.County,
                         JurisdictionName = c.Name,
@@ -198,8 +184,7 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
                         SourceUrl        = "",
                         IsActive         = true,
                         ParentId         = stateJ.Id,
-                    };
-                    batch.Add((j, c.StateCode));
+                    });
                     created++;
                 }
                 else
@@ -213,44 +198,22 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
 
             if (batch.Count >= 200)
             {
-                await FlushCountyBatchAsync(db, batch, run.Id, today, nowIso, leafCats, ct);
+                await FlushBatchAsync(db, batch, ct);
                 batch.Clear();
                 Report(progress, "Counties", processed, total, created, skipped, errors, c.Name);
             }
         }
 
         if (batch.Count > 0)
-            await FlushCountyBatchAsync(db, batch, run.Id, today, nowIso, leafCats, ct);
-
-        run.TotalScraped = created * Math.Max(1, leafCats.Count);
-        db.ScrapeRuns.Update(run);
-        await db.SaveChangesAsync(ct);
+            await FlushBatchAsync(db, batch, ct);
 
         Report(progress, "Counties", total, total, created, skipped, errors);
         return (created, skipped);
     }
 
-    private static async Task FlushCountyBatchAsync(
-        AppDbContext db, List<(Jurisdiction J, string StateCode)> batch,
-        int runId, DateOnly today, string nowIso, IReadOnlyList<TaxCategory> leafCats, CancellationToken ct)
+    private static async Task FlushBatchAsync(AppDbContext db, List<Jurisdiction> batch, CancellationToken ct)
     {
-        db.Jurisdictions.AddRange(batch.Select(x => x.J));
-        await db.SaveChangesAsync(ct);
-
-        var rates = new List<TaxRate>(batch.Count * Math.Max(1, leafCats.Count));
-        foreach (var (j, _) in batch)
-        {
-            if (leafCats.Count == 0)
-            {
-                rates.Add(new TaxRate { JurisdictionId = j.Id, Rate = 0m, Name = "General Sales Tax", RateBasis = RateBasis.Percentage, EffectiveDate = today, ScrapedAt = nowIso, ScrapeRunId = runId, RawEvidence = "0.000%", IsCurrent = true });
-            }
-            else
-            {
-                foreach (var cat in leafCats)
-                    rates.Add(new TaxRate { JurisdictionId = j.Id, Rate = 0m, Name = "General Sales Tax", RateBasis = RateBasis.Percentage, EffectiveDate = today, ScrapedAt = nowIso, ScrapeRunId = runId, RawEvidence = "0.000%", IsCurrent = true, TaxCategoryId = cat.Id });
-            }
-        }
-        db.TaxRates.AddRange(rates);
+        db.Jurisdictions.AddRange(batch);
         await db.SaveChangesAsync(ct);
     }
 
@@ -274,19 +237,6 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
             .Select(j => j.FipsCode)
             .ToHashSetAsync(ct);
 
-        var nowIso = DateTime.UtcNow.ToString("o");
-        var today  = DateOnly.FromDateTime(DateTime.UtcNow);
-        var run    = new ScrapeRun
-        {
-            StartedAt = nowIso, CompletedAt = nowIso,
-            Status = ScrapeStatus.Manual,
-            TotalScraped = 0, ChangesDetected = 0, ErrorCount = 0
-        };
-        db.ScrapeRuns.Add(run);
-        await db.SaveChangesAsync(ct);
-
-        var leafCats = await db.TaxCategories.Where(c => c.IsLeaf).ToListAsync(ct);
-
         int total = places.Count, processed = 0, created = 0, skipped = 0, errors = 0;
         var batch = new List<Jurisdiction>(500);
 
@@ -302,7 +252,6 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
                 }
                 else
                 {
-                    // Find parent county via place→county relationship
                     int? parentCountyId = null;
                     if (placeCountyMap.TryGetValue(p.Fips, out var countyFips) &&
                         countyLookup.TryGetValue(countyFips, out var cj))
@@ -310,7 +259,6 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
                         parentCountyId = cj.Id;
                     }
 
-                    // Fall back: find any county in the same state
                     if (parentCountyId == null)
                     {
                         var fallback = countyLookup.Values
@@ -344,45 +292,17 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
 
             if (batch.Count >= 500)
             {
-                await FlushCityBatchAsync(db, batch, run.Id, today, nowIso, leafCats, ct);
+                await FlushBatchAsync(db, batch, ct);
                 batch.Clear();
                 Report(progress, "Cities", processed, total, created, skipped, errors, p.Name);
             }
         }
 
         if (batch.Count > 0)
-            await FlushCityBatchAsync(db, batch, run.Id, today, nowIso, leafCats, ct);
-
-        run.TotalScraped = created * Math.Max(1, leafCats.Count);
-        db.ScrapeRuns.Update(run);
-        await db.SaveChangesAsync(ct);
+            await FlushBatchAsync(db, batch, ct);
 
         Report(progress, "Cities", total, total, created, skipped, errors);
         return (created, skipped);
-    }
-
-    private static async Task FlushCityBatchAsync(
-        AppDbContext db, List<Jurisdiction> batch,
-        int runId, DateOnly today, string nowIso, IReadOnlyList<TaxCategory> leafCats, CancellationToken ct)
-    {
-        db.Jurisdictions.AddRange(batch);
-        await db.SaveChangesAsync(ct);
-
-        var rates = new List<TaxRate>(batch.Count * Math.Max(1, leafCats.Count));
-        foreach (var j in batch)
-        {
-            if (leafCats.Count == 0)
-            {
-                rates.Add(new TaxRate { JurisdictionId = j.Id, Rate = 0m, Name = "General Sales Tax", RateBasis = RateBasis.Percentage, EffectiveDate = today, ScrapedAt = nowIso, ScrapeRunId = runId, RawEvidence = "0.000%", IsCurrent = true });
-            }
-            else
-            {
-                foreach (var cat in leafCats)
-                    rates.Add(new TaxRate { JurisdictionId = j.Id, Rate = 0m, Name = "General Sales Tax", RateBasis = RateBasis.Percentage, EffectiveDate = today, ScrapedAt = nowIso, ScrapeRunId = runId, RawEvidence = "0.000%", IsCurrent = true, TaxCategoryId = cat.Id });
-            }
-        }
-        db.TaxRates.AddRange(rates);
-        await db.SaveChangesAsync(ct);
     }
 
     // ── ZIP re-linking ────────────────────────────────────────────────────────
