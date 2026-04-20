@@ -204,6 +204,33 @@ public sealed class ZipImportService : IZipImportService
             await db.SaveChangesAsync(ct);
         }
 
+        // ── Persist USPS validation on city/county Jurisdiction rows ─────────
+        // Mark each city jurisdiction whose city name was confirmed by USPS as validated.
+        if (uspsCities is { Count: > 0 })
+        {
+            progress?.Report(new ZipImportProgress(processed, total, imported, skipped, errors, "Marking USPS-validated jurisdictions…"));
+            var validatedAt = DateTime.UtcNow;
+            var uspsConfirmedCityIds = await db.ZipCodes
+                .Where(z => z.Source == "USPS+Census" && z.CityJurisdictionId != null)
+                .Select(z => z.CityJurisdictionId!.Value)
+                .Distinct()
+                .ToListAsync(ct);
+
+            if (uspsConfirmedCityIds.Count > 0)
+            {
+                var jurisdictions = await db.Jurisdictions
+                    .Where(j => uspsConfirmedCityIds.Contains(j.Id) && !j.UspsValidated)
+                    .ToListAsync(ct);
+                foreach (var j in jurisdictions)
+                {
+                    j.UspsValidated   = true;
+                    j.UspsValidatedAt = validatedAt;
+                }
+                if (jurisdictions.Count > 0)
+                    await db.SaveChangesAsync(ct);
+            }
+        }
+
         sw.Stop();
         progress?.Report(new ZipImportProgress(processed, total, imported, skipped, errors));
         return new ZipImportResult(total, imported, skipped, errors, sw.Elapsed);

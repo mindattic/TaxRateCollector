@@ -21,8 +21,13 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
         var subtotal = price * quantity;
 
         // ── Load rates ────────────────────────────────────────────────────────
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var ratesQuery = db.TaxRates
-            .Where(t => t.JurisdictionId == jurisdictionId && t.IsCurrent);
+            .Where(t => t.JurisdictionId == jurisdictionId
+                     && t.IsCurrent
+                     && !t.NeedsReview
+                     && (t.EffectiveDate == null || t.EffectiveDate <= today)
+                     && (t.ExpirationDate == null || t.ExpirationDate > today));
 
         if (options.TaxCategoryId.HasValue)
             ratesQuery = ratesQuery.Where(t => t.TaxCategoryId == options.TaxCategoryId);
@@ -78,6 +83,21 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
         var combinedRate = rates
             .Where(r => r.RateBasis == RateBasis.Percentage && !r.IsIncludedInPrice)
             .Sum(r => r.Rate);
+
+        // ── Local rate cap (e.g. Texas caps combined local tax at 2%) ──────────
+        // For county/city tier jurisdictions, the entire rate set is "local".
+        // Cap is enforced at the calculation level so exported combined rates are correct.
+        if (jur.JurisdictionType != JurisdictionType.Country &&
+            jur.JurisdictionType != JurisdictionType.State)
+        {
+            var profile = await db.StateTaxProfiles
+                .FirstOrDefaultAsync(p => p.StateCode == jur.StateCode);
+            if (profile?.HasLocalRateCap == true && profile.LocalRateCap.HasValue &&
+                combinedRate > profile.LocalRateCap.Value)
+            {
+                combinedRate = profile.LocalRateCap.Value;
+            }
+        }
 
         return new TaxCalcResult(customerTax, embeddedTax, combinedRate, lines, jur.JurisdictionName);
     }

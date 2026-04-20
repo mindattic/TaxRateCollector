@@ -2605,3 +2605,32 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
 [data-theme="dark"] .btn-approve { background: #14532d; color: #bbf7d0; border-color: #166534; }
 [data-theme="dark"] .btn-reject  { background: #7f1d1d; color: #fecaca; border-color: #991b1b; }
 [data-theme="dark"] .review-status-toast { background: #1e293b; border-color: #334155; }
+
+/* ── Excise & Special Rates section ─────────────────────────────────────── */
+.excise-section {
+    margin-top: .75rem;
+    border-top: 1px dashed var(--border);
+    padding-top: .5rem;
+}
+.excise-toggle {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-muted); font-size: .82rem; font-weight: 600;
+    padding: .2rem .4rem; border-radius: 4px;
+    display: flex; align-items: center; gap: .35rem;
+    transition: color .12s, background .12s;
+}
+.excise-toggle:hover { color: var(--text); background: var(--surface2); }
+.excise-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #fef3c7; color: #92400e; border: 1px solid #fcd34d;
+    border-radius: 10px; font-size: .73rem; font-weight: 700;
+    padding: 0 .45rem; min-width: 1.3rem; height: 1.1rem;
+}
+.excise-group { margin: .4rem 0 0 .8rem; }
+.excise-group-label {
+    font-size: .75rem; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--text-muted);
+    margin-bottom: .25rem;
+}
+[data-theme="dark"] .excise-badge { background: #451a03; color: #fcd34d; border-color: #78350f; }
+[data-theme="dark"] .excise-toggle:hover { background: #1e293b; }

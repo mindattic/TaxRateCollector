@@ -66,6 +66,7 @@ public class DbSchemaTests
             "20260419182631_RealWorldAccuracyFixes",
             "20260419184235_TaxCalculationAccuracy",
             "20260419200000_AddScrapeRunPauseResume",
+            "20260420021229_AddJurisdictionUspsValidation",
         ];
 
         var missing = expected.Where(m => !MigrationApplied(m)).ToList();
@@ -219,7 +220,8 @@ public class DbSchemaTests
         string[] required =
         [
             "Id", "ParentId", "JurisdictionType", "JurisdictionName",
-            "FipsCode", "StateCode", "IsActive",
+            "FipsCode", "StateCode", "IsActive", "IsHomeRuleAdministered",
+            "UspsValidated", "UspsValidatedAt",
         ];
         var missing = required.Where(c => !cols.Contains(c)).ToList();
         Assert.That(missing, Is.Empty,

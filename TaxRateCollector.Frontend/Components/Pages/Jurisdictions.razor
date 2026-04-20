@@ -383,7 +383,9 @@ else if (!isAdmin && HasUnsubscribedContent)
         SaleContext SaleContext, RemittancePoint RemittancePoint,
         decimal? MinAbv, decimal? MaxAbv, string Conditions,
         string StatutoryReference, string EffectiveDate, string ExpirationDate,
-        List<EvidenceFile> Evidence);
+        List<EvidenceFile> Evidence,
+        ProductCategory? ProductCategory = null,
+        TaxType TaxType = TaxType.SalesTax);
 
     private sealed class StagedItem
     {
@@ -426,6 +428,10 @@ else if (!isAdmin && HasUnsubscribedContent)
     private List<JNode> states = [];
     private readonly Dictionary<int, List<JNode>> children = new();
     private readonly HashSet<int> expanded = new();
+
+    // Excise rates — lazy-loaded per jurisdiction; toggle visibility per node
+    private readonly Dictionary<int, List<RateRow>> exciseRates = new();
+    private readonly HashSet<int> exciseExpanded = new();
 
     // Rate row form
     private int? rateFormNodeId;
@@ -583,8 +589,14 @@ else if (!isAdmin && HasUnsubscribedContent)
             : ids;
 
         var catId = selectedCategoryId;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var rates = await db.TaxRates
-            .Where(r => subscribedIds.Contains(r.JurisdictionId) && r.IsCurrent && r.TaxCategoryId == catId)
+            .Where(r => subscribedIds.Contains(r.JurisdictionId)
+                     && r.IsCurrent
+                     && r.TaxCategoryId == catId
+                     && !r.NeedsReview
+                     && (r.EffectiveDate == null || r.EffectiveDate <= today)
+                     && (r.ExpirationDate == null || r.ExpirationDate > today))
             .Select(r => new { r.JurisdictionId, r.Rate, r.Id, r.Name, r.RateBasis, r.Unit,
                 r.SaleContext, r.RemittancePoint, r.MinAbv, r.MaxAbv, r.Conditions,
                 r.StatutoryReference,
@@ -655,6 +667,7 @@ else if (!isAdmin && HasUnsubscribedContent)
         AppDbContext db, List<int> stateIds)
     {
         var catId = selectedCategoryId;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var counties = await db.Jurisdictions
             .Where(co => co.JurisdictionType == JurisdictionType.County && co.IsActive
                          && co.ParentId.HasValue && stateIds.Contains(co.ParentId.Value))
@@ -663,7 +676,10 @@ else if (!isAdmin && HasUnsubscribedContent)
                 CountyId = co.Id,
                 StateId = co.ParentId!.Value,
                 Rate = (decimal?)db.TaxRates
-                    .Where(r => r.JurisdictionId == co.Id && r.IsCurrent && r.TaxCategoryId == catId && r.RateBasis == RateBasis.Percentage)
+                    .Where(r => r.JurisdictionId == co.Id && r.IsCurrent && r.TaxCategoryId == catId
+                             && r.RateBasis == RateBasis.Percentage && !r.NeedsReview
+                             && (r.EffectiveDate == null || r.EffectiveDate <= today)
+                             && (r.ExpirationDate == null || r.ExpirationDate > today))
                     .Sum(r => (decimal?)r.Rate) ?? 0m
             })
             .ToListAsync();
@@ -679,7 +695,10 @@ else if (!isAdmin && HasUnsubscribedContent)
             {
                 CountyId = ci.ParentId!.Value,
                 Rate = (decimal?)db.TaxRates
-                    .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent && r.TaxCategoryId == catId && r.RateBasis == RateBasis.Percentage)
+                    .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent && r.TaxCategoryId == catId
+                             && r.RateBasis == RateBasis.Percentage && !r.NeedsReview
+                             && (r.EffectiveDate == null || r.EffectiveDate <= today)
+                             && (r.ExpirationDate == null || r.ExpirationDate > today))
                     .Sum(r => (decimal?)r.Rate) ?? 0m
             })
             .ToListAsync();
@@ -711,6 +730,7 @@ else if (!isAdmin && HasUnsubscribedContent)
         AppDbContext db, List<int> countyIds)
     {
         var catId = selectedCategoryId;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var cities = await db.Jurisdictions
             .Where(ci => ci.JurisdictionType == JurisdictionType.City && ci.IsActive
                          && ci.ParentId.HasValue && countyIds.Contains(ci.ParentId.Value))
@@ -718,7 +738,10 @@ else if (!isAdmin && HasUnsubscribedContent)
             {
                 CountyId = ci.ParentId!.Value,
                 Rate = (decimal?)db.TaxRates
-                    .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent && r.TaxCategoryId == catId && r.RateBasis == RateBasis.Percentage)
+                    .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent && r.TaxCategoryId == catId
+                             && r.RateBasis == RateBasis.Percentage && !r.NeedsReview
+                             && (r.EffectiveDate == null || r.EffectiveDate <= today)
+                             && (r.ExpirationDate == null || r.ExpirationDate > today))
                     .Sum(r => (decimal?)r.Rate) ?? 0m
             })
             .ToListAsync();
@@ -901,12 +924,104 @@ else if (!isAdmin && HasUnsubscribedContent)
                     }
                 </div>
             }
+
+            @* ── Excise / Special Tax Rates section ──────────────────────────── *@
+            @{
+                var exciseLoaded   = exciseRates.ContainsKey(node.Id);
+                var exciseIsOpen   = exciseExpanded.Contains(node.Id);
+                var exciseNodeRows = exciseLoaded ? exciseRates[node.Id] : [];
+            }
+            <div class="excise-section">
+                <button class="excise-toggle" @onclick="() => ToggleExcise(node.Id)">
+                    @(exciseIsOpen ? "▾" : "▸") Excise &amp; Special Rates
+                    @if (exciseLoaded && exciseNodeRows.Count > 0)
+                    { <span class="excise-badge">@exciseNodeRows.Count</span> }
+                </button>
+                @if (exciseIsOpen)
+                {
+                    @if (!exciseLoaded)
+                    {
+                        <p class="muted small" style="margin:.4rem 0 0 1rem">Loading…</p>
+                    }
+                    else if (exciseNodeRows.Count == 0)
+                    {
+                        <p class="muted small" style="margin:.4rem 0 0 1rem">No excise or special tax rates recorded.</p>
+                    }
+                    else
+                    {
+                        @foreach (var grp in exciseNodeRows.GroupBy(r => r.ProductCategory?.ToString() ?? r.TaxType.ToString()).OrderBy(g => g.Key))
+                        {
+                            <div class="excise-group">
+                                <div class="excise-group-label">@grp.Key</div>
+                                @foreach (var row in grp)
+                                {
+                                    <div class="rate-row-item">
+                                        <div class="rate-row-main">
+                                            <span class="rate-row-name">@row.Name</span>
+                                            <span class="rate-row-value">@FormatRateRowValue(row)</span>
+                                            @if (row.SaleContext != SaleContext.Any)
+                                            { <span class="rate-row-badge">@row.SaleContext</span> }
+                                            @if (row.MinAbv.HasValue || row.MaxAbv.HasValue)
+                                            { <span class="rate-row-badge badge-remit">ABV @(row.MinAbv?.ToString("F1") ?? "0")%–@(row.MaxAbv?.ToString("F1") ?? "∞")%</span> }
+                                            @if (row.RemittancePoint != RemittancePoint.Retailer)
+                                            { <span class="rate-row-badge badge-remit">@row.RemittancePoint</span> }
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(row.Conditions))
+                                        { <div class="rate-row-conditions muted small">@row.Conditions</div> }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                }
+            </div>
         </div>
     };
 
     private void ToggleRateEvidence(int rateRowId)
     {
         if (!rateEvidenceExpanded.Add(rateRowId)) rateEvidenceExpanded.Remove(rateRowId);
+    }
+
+    private async Task ToggleExcise(int jurisdictionId)
+    {
+        if (!exciseExpanded.Add(jurisdictionId))
+        {
+            exciseExpanded.Remove(jurisdictionId);
+            return;
+        }
+        if (!exciseRates.ContainsKey(jurisdictionId))
+            await LoadExciseRatesAsync(jurisdictionId);
+    }
+
+    private async Task LoadExciseRatesAsync(int jurisdictionId)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var rows = await db.TaxRates
+            .Where(r => r.JurisdictionId == jurisdictionId
+                     && r.IsCurrent
+                     && !r.NeedsReview
+                     && r.ProductCategory != null
+                     && (r.EffectiveDate == null || r.EffectiveDate <= today)
+                     && (r.ExpirationDate == null || r.ExpirationDate > today))
+            .OrderBy(r => r.ProductCategory).ThenBy(r => r.Name)
+            .Select(r => new
+            {
+                r.Id, r.Name, r.Rate, r.RateBasis, r.Unit,
+                r.SaleContext, r.RemittancePoint, r.MinAbv, r.MaxAbv,
+                r.Conditions, r.StatutoryReference, r.ProductCategory, r.TaxType,
+                EffectiveDate  = r.EffectiveDate  != null ? r.EffectiveDate.Value.ToString()  : "",
+                ExpirationDate = r.ExpirationDate != null ? r.ExpirationDate.Value.ToString() : ""
+            })
+            .ToListAsync();
+
+        exciseRates[jurisdictionId] = rows.Select(r => new RateRow(
+            r.Id, r.Name, r.Rate, r.RateBasis, r.Unit,
+            r.SaleContext, r.RemittancePoint, r.MinAbv, r.MaxAbv,
+            r.Conditions ?? "", r.StatutoryReference ?? "",
+            r.EffectiveDate, r.ExpirationDate, [],
+            r.ProductCategory, r.TaxType)).ToList();
     }
 
     private static string FormatRateRowValue(RateRow row) => row.Basis switch

@@ -30,12 +30,14 @@ Mark items `[x]` when complete. Tackle in priority order within each section.
 
 ### Data Completeness
 - [ ] Expand seeder to cover all ~3,144 US counties (currently ~200)
+      NOTE: CensusJurisdictionImportService is complete; run Step 3 in Setup page to import
 - [ ] Expand seeder to cover major cities per county (target: 5,000+ cities)
+      NOTE: Same service imports cities; run Step 3
+- [x] Add `UspsValidated` bool + `UspsValidatedAt` timestamp to Jurisdiction entity + migration
 - [ ] USPS Address Validator integration — validate every state, county, city against USPS API
   - Repo reference: https://github.com/mindattic/USPSAddressValidator
-  - Use modern JSON endpoint (not legacy XML)
-  - Run as a background validation job; mark jurisdictions as USPS-verified
-- [ ] Add `UspsValidated` bool + `UspsValidatedAt` timestamp to Jurisdiction entity + migration
+  - ZipImportService already calls USPS CityStateLookup API when key is set + now persists UspsValidated on city Jurisdictions
+  - TODO: Also run batch USPS validation directly on Jurisdiction rows (not just via ZIP import) as a background job
 
 ### Evidence & Provenance
 - [ ] Web scraper: fetch .gov source URL, capture page as PDF print / full-HTML snapshot
@@ -49,7 +51,7 @@ Mark items `[x]` when complete. Tackle in priority order within each section.
 ### Sin / Excise Taxes
 - [x] Add `ProductCategory` enum: Alcohol, Tobacco, Sugar, Cannabis, Firearms, etc.
 - [x] Add per-jurisdiction `ExciseTaxRate` table keyed by (JurisdictionId, ProductCategory) + migration
-- [ ] UI: show excise tax rates in the Jurisdictions tree (collapsible sub-section under each node)
+- [x] UI: show excise tax rates in the Jurisdictions tree (collapsible sub-section under each node)
 - [ ] Include excise rates in Master Table export
 
 ---

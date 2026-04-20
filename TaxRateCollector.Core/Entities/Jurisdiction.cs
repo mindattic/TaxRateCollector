@@ -39,6 +39,16 @@ public class Jurisdiction
     /// </summary>
     public bool IsHomeRuleAdministered { get; set; }
 
+    // ── USPS validation ───────────────────────────────────────────────────────
+    /// <summary>
+    /// True when this jurisdiction's name has been confirmed by the USPS CityStateLookup API.
+    /// Set during ZIP import when UspsApiKey is configured in settings.
+    /// </summary>
+    public bool UspsValidated { get; set; }
+
+    /// <summary>UTC timestamp of the most recent USPS validation. Null if never validated.</summary>
+    public DateTime? UspsValidatedAt { get; set; }
+
     // ── Hierarchy navigation ──────────────────────────────────────────────────
     public Jurisdiction? Parent { get; set; }
     public ICollection<Jurisdiction> Children { get; set; } = new List<Jurisdiction>();
