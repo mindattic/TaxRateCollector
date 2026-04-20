@@ -629,6 +629,96 @@ public class TaxCalculatorTests
 
     // ── Tests: TaxCategoryId filtering ───────────────────────────────────────
 
+    // ── Tests: origin-based sourcing ─────────────────────────────────────────
+
+    [Test]
+    public async Task OriginBased_IntrastateSale_UsesSellerJurisdiction()
+    {
+        var factory = CreateFactory();
+        await using var db = factory.CreateDbContext();
+
+        // Two jurisdictions in the same state (IL)
+        var buyer = new Jurisdiction { JurisdictionName = "Chicago", StateCode = "IL", FipsCode = "17140", JurisdictionType = JurisdictionType.City, IsActive = true };
+        var seller = new Jurisdiction { JurisdictionName = "Springfield", StateCode = "IL", FipsCode = "17170", JurisdictionType = JurisdictionType.City, IsActive = true };
+        db.Jurisdictions.AddRange(buyer, seller);
+
+        var profile = new StateTaxProfile { StateCode = "IL", StateName = "Illinois", IntrastateSourcingRule = SourcingRule.OriginBased, UpdatedAt = DateTime.UtcNow.ToString("o") };
+        db.StateTaxProfiles.Add(profile);
+        await db.SaveChangesAsync();
+
+        db.TaxRates.Add(MakeRate(buyer.Id,  "Chicago Tax",     rate: 0.085m));
+        db.TaxRates.Add(MakeRate(seller.Id, "Springfield Tax", rate: 0.065m));
+        await db.SaveChangesAsync();
+
+        var calc = new TaxCalculator(factory);
+        // Buyer is in Chicago, but seller is in Springfield; IL is origin-based
+        var result = await calc.CalculateAsync(buyer.Id, 100m, 1,
+            new TaxCalcOptions(SellerJurisdictionId: seller.Id));
+
+        // Must use seller (Springfield) rate = 6.5%, not buyer (Chicago) 8.5%
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.TotalTaxAmount, Is.EqualTo(6.5m));
+        Assert.That(result.JurisdictionName, Is.EqualTo("Springfield"));
+    }
+
+    [Test]
+    public async Task OriginBased_InterstateSale_UsesBuyerJurisdiction()
+    {
+        var factory = CreateFactory();
+        await using var db = factory.CreateDbContext();
+
+        var buyer  = new Jurisdiction { JurisdictionName = "Chicago", StateCode = "IL", FipsCode = "17140", JurisdictionType = JurisdictionType.City, IsActive = true };
+        var seller = new Jurisdiction { JurisdictionName = "Houston",  StateCode = "TX", FipsCode = "48201", JurisdictionType = JurisdictionType.City, IsActive = true };
+        db.Jurisdictions.AddRange(buyer, seller);
+
+        // IL is origin-based, but this is an interstate sale (seller in TX)
+        var profile = new StateTaxProfile { StateCode = "IL", StateName = "Illinois", IntrastateSourcingRule = SourcingRule.OriginBased, UpdatedAt = DateTime.UtcNow.ToString("o") };
+        db.StateTaxProfiles.Add(profile);
+        await db.SaveChangesAsync();
+
+        db.TaxRates.Add(MakeRate(buyer.Id,  "Chicago Tax", rate: 0.085m));
+        db.TaxRates.Add(MakeRate(seller.Id, "Houston Tax", rate: 0.082m));
+        await db.SaveChangesAsync();
+
+        var calc = new TaxCalculator(factory);
+        // Interstate sale → destination-based regardless of IL origin rule
+        var result = await calc.CalculateAsync(buyer.Id, 100m, 1,
+            new TaxCalcOptions(SellerJurisdictionId: seller.Id));
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.TotalTaxAmount, Is.EqualTo(8.5m));
+        Assert.That(result.JurisdictionName, Is.EqualTo("Chicago"));
+    }
+
+    [Test]
+    public async Task DestinationBased_IntrastateSale_UsesBuyerJurisdiction()
+    {
+        var factory = CreateFactory();
+        await using var db = factory.CreateDbContext();
+
+        var buyer  = new Jurisdiction { JurisdictionName = "New York City", StateCode = "NY", FipsCode = "36061", JurisdictionType = JurisdictionType.City, IsActive = true };
+        var seller = new Jurisdiction { JurisdictionName = "Albany",        StateCode = "NY", FipsCode = "36001", JurisdictionType = JurisdictionType.City, IsActive = true };
+        db.Jurisdictions.AddRange(buyer, seller);
+
+        // NY is destination-based
+        var profile = new StateTaxProfile { StateCode = "NY", StateName = "New York", IntrastateSourcingRule = SourcingRule.DestinationBased, UpdatedAt = DateTime.UtcNow.ToString("o") };
+        db.StateTaxProfiles.Add(profile);
+        await db.SaveChangesAsync();
+
+        db.TaxRates.Add(MakeRate(buyer.Id,  "NYC Tax",    rate: 0.085m));
+        db.TaxRates.Add(MakeRate(seller.Id, "Albany Tax", rate: 0.04m));
+        await db.SaveChangesAsync();
+
+        var calc = new TaxCalculator(factory);
+        // Even with SellerJurisdictionId set, NY is destination-based → use buyer's rate
+        var result = await calc.CalculateAsync(buyer.Id, 100m, 1,
+            new TaxCalcOptions(SellerJurisdictionId: seller.Id));
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.TotalTaxAmount, Is.EqualTo(8.5m));
+        Assert.That(result.JurisdictionName, Is.EqualTo("New York City"));
+    }
+
     [Test]
     public async Task TaxCategoryId_Filter_LimitsToMatchingCategory()
     {

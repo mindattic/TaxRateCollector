@@ -67,6 +67,7 @@ public class DbSchemaTests
             "20260419184235_TaxCalculationAccuracy",
             "20260419200000_AddScrapeRunPauseResume",
             "20260420021229_AddJurisdictionUspsValidation",
+            "20260420032321_AddChangeLogDescription",
         ];
 
         var missing = expected.Where(m => !MigrationApplied(m)).ToList();
@@ -188,6 +189,7 @@ public class DbSchemaTests
         [
             "Id", "JurisdictionId", "TaxRateId", "RateName",
             "ChangeType", "OldRate", "NewRate", "DetectedAt", "Acknowledged",
+            "ChangeDescription",
         ];
         var missing = required.Where(c => !cols.Contains(c)).ToList();
         Assert.That(missing, Is.Empty,

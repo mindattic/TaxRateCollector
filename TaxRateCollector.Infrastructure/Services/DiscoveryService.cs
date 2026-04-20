@@ -1,28 +1,25 @@
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using TaxRateCollector.Core.Entities;
-using TaxRateCollector.Core.Enums;
 using TaxRateCollector.Core.Interfaces;
 
 namespace TaxRateCollector.Infrastructure.Services;
 
-/// <summary>
-/// Phase 1 stub — walks every jurisdiction and reports what source channels are available.
-/// Phase 2 will implement actual discovery via web scraping, PDF extraction, API calls,
-/// and news article parsing depending on what sources are configured per jurisdiction.
-/// </summary>
 public class DiscoveryService : IDiscoveryService
 {
     private readonly HttpClient http;
+    private readonly SettingsService settings;
+    private readonly ILogger<DiscoveryService> logger;
 
-    public DiscoveryService(HttpClient http)
+    public DiscoveryService(HttpClient http, SettingsService settings, ILogger<DiscoveryService> logger)
     {
-        this.http = http;
+        this.http     = http;
+        this.settings = settings;
+        this.logger   = logger;
     }
 
     public async Task<DiscoveryResult> DiscoverAsync(Jurisdiction jurisdiction, CancellationToken ct = default)
     {
-        // Simulate a small amount of async work per jurisdiction
-        await Task.Delay(20, ct);
-
         var result = new DiscoveryResult
         {
             JurisdictionId   = jurisdiction.Id,
@@ -34,32 +31,81 @@ public class DiscoveryService : IDiscoveryService
 
         if (string.IsNullOrWhiteSpace(jurisdiction.SourceUrl))
         {
-            result.Status    = "Skipped";
+            result.Status     = "Skipped";
             result.SourceUsed = "—";
-            result.Notes     = "No source URL configured — add a SourceUrl to enable discovery";
+            result.Notes      = "No source URL configured — add a SourceUrl to enable discovery";
             return result;
         }
 
-        // Phase 2: choose strategy based on source URL / content type
-        // Possible strategies (to be wired in Phase 2):
-        //   • HTML scraper   — parse a tax rate table from the jurisdiction's website
-        //   • PDF extractor  — download and OCR/parse a PDF rate schedule
-        //   • REST API       — call a government data API endpoint
-        //   • News feed      — extract rate changes mentioned in press releases
-        var scheme = DetermineSourceType(jurisdiction.SourceUrl);
-        result.SourceUsed = jurisdiction.SourceUrl;
-        result.Status     = "NotFound";
-        result.Notes      = $"Phase 2 stub — source type detected: {scheme}. Discovery not yet implemented for this channel.";
+        var url = jurisdiction.SourceUrl;
 
+        if (await IsReachableAsync(url, ct))
+        {
+            result.Status     = "Found";
+            result.SourceUsed = url;
+            return result;
+        }
+
+        if (settings.Current.WaybackMachineFallback)
+        {
+            var archiveUrl = await GetWaybackUrlAsync(url, ct);
+            if (archiveUrl is not null)
+            {
+                result.Status     = "WaybackFallback";
+                result.SourceUsed = archiveUrl;
+                result.Notes      = "Live URL unreachable; using Wayback Machine archive snapshot";
+                return result;
+            }
+        }
+
+        result.Status     = "NotFound";
+        result.SourceUsed = url;
+        result.Notes      = settings.Current.WaybackMachineFallback
+            ? "URL unreachable and no archive snapshot available"
+            : "URL unreachable";
         return result;
     }
 
-    private static string DetermineSourceType(string url)
+    private async Task<bool> IsReachableAsync(string url, CancellationToken ct)
     {
-        var lower = url.ToLowerInvariant();
-        if (lower.EndsWith(".pdf"))    return "PDF";
-        if (lower.Contains("/api/"))   return "REST API";
-        if (lower.Contains("news") || lower.Contains("press")) return "News/Press";
-        return "Web Page";
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(10));
+            var response = await http.SendAsync(
+                new HttpRequestMessage(HttpMethod.Head, url), cts.Token);
+            var code = (int)response.StatusCode;
+            return code >= 200 && code < 400;
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "HEAD request failed for {Url}", url);
+            return false;
+        }
+    }
+
+    private async Task<string?> GetWaybackUrlAsync(string url, CancellationToken ct)
+    {
+        try
+        {
+            var encoded = Uri.EscapeDataString(url);
+            var apiUrl  = $"https://archive.org/wayback/available?url={encoded}";
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(10));
+            var json = await http.GetStringAsync(apiUrl, cts.Token);
+            using var doc = JsonDocument.Parse(json);
+            var snapshots = doc.RootElement.GetProperty("archived_snapshots");
+            if (snapshots.TryGetProperty("closest", out var closest) &&
+                closest.TryGetProperty("available", out var avail) &&
+                avail.GetBoolean())
+            {
+                return closest.GetProperty("url").GetString();
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Wayback Machine lookup failed for {Url}", url);
+        }
+        return null;
     }
 }

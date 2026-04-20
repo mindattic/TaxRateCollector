@@ -16,6 +16,14 @@ public class ChangeLogEntry
     public ChangeType ChangeType { get; set; }
     public decimal? OldRate { get; set; }
     public decimal? NewRate { get; set; }
+
+    /// <summary>
+    /// Human-readable description of non-rate structural changes (ChangeType.StructuralChange).
+    /// E.g. "Basis: Percentage → FlatPerUnit; RemittancePoint: Retailer → Distributor".
+    /// Null for RateChanged / NewJurisdiction / Removed entries.
+    /// </summary>
+    public string? ChangeDescription { get; set; }
+
     public string DetectedAt { get; set; } = string.Empty;
     public bool Acknowledged { get; set; }
 

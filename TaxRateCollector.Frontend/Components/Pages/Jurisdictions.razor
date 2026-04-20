@@ -736,6 +736,7 @@ else if (!isAdmin && HasUnsubscribedContent)
                          && ci.ParentId.HasValue && countyIds.Contains(ci.ParentId.Value))
             .Select(ci => new
             {
+                CityId   = ci.Id,
                 CountyId = ci.ParentId!.Value,
                 Rate = (decimal?)db.TaxRates
                     .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent && r.TaxCategoryId == catId
@@ -746,11 +747,44 @@ else if (!isAdmin && HasUnsubscribedContent)
             })
             .ToListAsync();
 
+        // ── District overlay: for each city compute the max additional district rate
+        // across all ZIP codes in that city.  A district is a Jurisdiction linked via
+        // ZipCode.Districts.  We sum each ZIP's district rates and take the maximum
+        // across all ZIPs in the city so that minCum / maxCum spread reflects the range.
+        var cityIds = cities.Select(c => c.CityId).ToList();
+        var districtMaxByCityId = new Dictionary<int, decimal>();
+
+        if (cityIds.Count > 0)
+        {
+            var districtRateSums = await db.ZipCodes
+                .Where(z => z.CityJurisdictionId != null && cityIds.Contains(z.CityJurisdictionId!.Value))
+                .Select(z => new
+                {
+                    CityId = z.CityJurisdictionId!.Value,
+                    DistrictSum = (decimal?)z.Districts
+                        .SelectMany(d => db.TaxRates
+                            .Where(r => r.JurisdictionId == d.JurisdictionId
+                                     && r.IsCurrent && !r.NeedsReview
+                                     && r.RateBasis == RateBasis.Percentage
+                                     && (r.EffectiveDate == null || r.EffectiveDate <= today)
+                                     && (r.ExpirationDate == null || r.ExpirationDate > today)))
+                        .Sum(r => (decimal?)r.Rate) ?? 0m
+                })
+                .ToListAsync();
+
+            districtMaxByCityId = districtRateSums
+                .GroupBy(x => x.CityId)
+                .ToDictionary(g => g.Key, g => g.Max(x => x.DistrictSum));
+        }
+
         return cities
             .GroupBy(c => c.CountyId)
-            .ToDictionary(g => g.Key, g => (
-                Min: g.Min(c => c.Rate),
-                Max: g.Max(c => c.Rate)));
+            .ToDictionary(g => g.Key, g =>
+            {
+                var min = g.Min(c => c.Rate);
+                var max = g.Max(c => c.Rate + (districtMaxByCityId.GetValueOrDefault(c.CityId)));
+                return (Min: min, Max: max);
+            });
     }
 
     // ── Expand / collapse ─────────────────────────────────────────────────────

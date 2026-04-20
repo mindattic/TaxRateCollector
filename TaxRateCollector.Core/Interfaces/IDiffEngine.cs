@@ -15,4 +15,5 @@ public record RateChange(
     int JurisdictionId,
     ChangeType Type,
     decimal? OldRate,
-    decimal? NewRate);
+    decimal? NewRate,
+    string? Description = null);

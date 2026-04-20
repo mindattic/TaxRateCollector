@@ -25,7 +25,16 @@ public record TaxCalcOptions(
     decimal? Weight = null,
     /// <summary>ABV as a decimal fraction (0.05 = 5%). Filters MinAbv/MaxAbv rate laws.</summary>
     decimal? Abv = null,
-    SaleContext SaleContext = SaleContext.Any);
+    SaleContext SaleContext = SaleContext.Any,
+    /// <summary>
+    /// Jurisdiction ID of the seller's physical location. Required for correct
+    /// intrastate sourcing in origin-based states (IL, TX, TN, PA, etc.).
+    /// When provided and the state uses OriginBased sourcing, rate lookup uses
+    /// the seller's jurisdiction instead of the buyer's (the primary parameter).
+    /// For Modified sourcing (CA), county/state come from seller; city from buyer.
+    /// Ignored for interstate sales (different StateCode) and destination-based states.
+    /// </summary>
+    int? SellerJurisdictionId = null);
 
 /// <summary>Full tax breakdown for a jurisdiction + price + quantity calculation.</summary>
 public record TaxCalcResult(

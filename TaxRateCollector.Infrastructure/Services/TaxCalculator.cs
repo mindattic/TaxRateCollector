@@ -20,10 +20,33 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
 
         var subtotal = price * quantity;
 
+        // ── Origin-based sourcing rule ────────────────────────────────────────
+        // For intrastate sales in origin-based states (IL, TX, TN, PA, etc.) the
+        // applicable rates are those at the SELLER's location, not the buyer's.
+        // When SellerJurisdictionId is supplied and the state uses OriginBased
+        // sourcing, swap the effective jurisdiction used for rate lookup.
+        var effectiveJurisdictionId = jurisdictionId;
+        if (options.SellerJurisdictionId.HasValue)
+        {
+            var sellerJur = await db.Jurisdictions.FindAsync(options.SellerJurisdictionId.Value);
+            if (sellerJur?.StateCode == jur.StateCode) // intrastate only
+            {
+                var profile = await db.StateTaxProfiles
+                    .FirstOrDefaultAsync(p => p.StateCode == jur.StateCode);
+                if (profile?.IntrastateSourcingRule == SourcingRule.OriginBased)
+                {
+                    effectiveJurisdictionId = options.SellerJurisdictionId.Value;
+                    jur = sellerJur;
+                }
+                // Modified (CA): state/county = origin, city = destination.
+                // Full Mixed-tier support requires splitting the query by tier — deferred.
+            }
+        }
+
         // ── Load rates ────────────────────────────────────────────────────────
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var ratesQuery = db.TaxRates
-            .Where(t => t.JurisdictionId == jurisdictionId
+            .Where(t => t.JurisdictionId == effectiveJurisdictionId
                      && t.IsCurrent
                      && !t.NeedsReview
                      && (t.EffectiveDate == null || t.EffectiveDate <= today)

@@ -206,6 +206,110 @@ public class DiffEngineTests
     }
 
     [Test]
+    public async Task StructuralChange_RateBasisChanges_CreatesStructuralChangeEntry()
+    {
+        var factory = MakeFactory();
+        await using var db = factory.CreateDbContext();
+        var (j, run1) = await SeedAsync(db);
+
+        db.TaxRates.Add(new TaxRate
+        {
+            JurisdictionId = j.Id, ScrapeRunId = run1.Id,
+            Name = "Sales Tax", Rate = 0.0625m, RateBasis = RateBasis.Percentage, IsCurrent = false,
+            ScrapedAt = DateTime.UtcNow.AddDays(-1).ToString("o"),
+        });
+
+        var run2 = new ScrapeRun { StartedAt = DateTime.UtcNow.ToString("o"), Status = ScrapeStatus.Running };
+        db.ScrapeRuns.Add(run2);
+        await db.SaveChangesAsync();
+
+        db.TaxRates.Add(new TaxRate
+        {
+            JurisdictionId = j.Id, ScrapeRunId = run2.Id,
+            Name = "Sales Tax", Rate = 0.0625m, RateBasis = RateBasis.FlatPerUnit, IsCurrent = true,
+            ScrapedAt = DateTime.UtcNow.ToString("o"),
+        });
+        await db.SaveChangesAsync();
+
+        var engine = new DiffEngine(factory);
+        await engine.DetectChangesAsync(run2.Id);
+
+        await using var verify = factory.CreateDbContext();
+        var entry = await verify.ChangeLog.SingleAsync();
+        Assert.That(entry.ChangeType, Is.EqualTo(ChangeType.StructuralChange));
+    }
+
+    [Test]
+    public async Task StructuralChange_IsCompoundChanges_CreatesStructuralChangeEntry()
+    {
+        var factory = MakeFactory();
+        await using var db = factory.CreateDbContext();
+        var (j, run1) = await SeedAsync(db);
+
+        db.TaxRates.Add(new TaxRate
+        {
+            JurisdictionId = j.Id, ScrapeRunId = run1.Id,
+            Name = "Sales Tax", Rate = 0.0625m, IsCompound = false, IsCurrent = false,
+            ScrapedAt = DateTime.UtcNow.AddDays(-1).ToString("o"),
+        });
+
+        var run2 = new ScrapeRun { StartedAt = DateTime.UtcNow.ToString("o"), Status = ScrapeStatus.Running };
+        db.ScrapeRuns.Add(run2);
+        await db.SaveChangesAsync();
+
+        db.TaxRates.Add(new TaxRate
+        {
+            JurisdictionId = j.Id, ScrapeRunId = run2.Id,
+            Name = "Sales Tax", Rate = 0.0625m, IsCompound = true, IsCurrent = true,
+            ScrapedAt = DateTime.UtcNow.ToString("o"),
+        });
+        await db.SaveChangesAsync();
+
+        var engine = new DiffEngine(factory);
+        await engine.DetectChangesAsync(run2.Id);
+
+        await using var verify = factory.CreateDbContext();
+        var entry = await verify.ChangeLog.SingleAsync();
+        Assert.That(entry.ChangeType, Is.EqualTo(ChangeType.StructuralChange));
+    }
+
+    [Test]
+    public async Task StructuralChange_ChangeDescription_ContainsChangedFieldName()
+    {
+        var factory = MakeFactory();
+        await using var db = factory.CreateDbContext();
+        var (j, run1) = await SeedAsync(db);
+
+        db.TaxRates.Add(new TaxRate
+        {
+            JurisdictionId = j.Id, ScrapeRunId = run1.Id,
+            Name = "Sales Tax", Rate = 0.0625m, RateBasis = RateBasis.Percentage, IsCurrent = false,
+            ScrapedAt = DateTime.UtcNow.AddDays(-1).ToString("o"),
+        });
+
+        var run2 = new ScrapeRun { StartedAt = DateTime.UtcNow.ToString("o"), Status = ScrapeStatus.Running };
+        db.ScrapeRuns.Add(run2);
+        await db.SaveChangesAsync();
+
+        db.TaxRates.Add(new TaxRate
+        {
+            JurisdictionId = j.Id, ScrapeRunId = run2.Id,
+            Name = "Sales Tax", Rate = 0.0625m, RateBasis = RateBasis.FlatPerUnit, IsCurrent = true,
+            ScrapedAt = DateTime.UtcNow.ToString("o"),
+        });
+        await db.SaveChangesAsync();
+
+        var engine = new DiffEngine(factory);
+        await engine.DetectChangesAsync(run2.Id);
+
+        await using var verify = factory.CreateDbContext();
+        var entry = await verify.ChangeLog.SingleAsync();
+        Assert.That(entry.ChangeDescription, Does.Contain("Basis"));
+        Assert.That(entry.ChangeDescription, Does.Contain("Percentage"));
+        Assert.That(entry.ChangeDescription, Does.Contain("FlatPerUnit"));
+    }
+
+    [Test]
     public async Task Removed_JurisdictionInMultiplePreviousRuns_SingleRemovedEntry()
     {
         // Regression: Distinct() included t.Id so the same removed jurisdiction produced
