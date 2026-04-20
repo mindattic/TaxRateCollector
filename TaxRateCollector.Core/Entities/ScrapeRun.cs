@@ -16,6 +16,8 @@ public class ScrapeRun
     public int TotalCount { get; set; }
     /// <summary>Jurisdictions processed so far. Written by the Worker as it progresses.</summary>
     public int ProcessedCount { get; set; }
+    /// <summary>The Id of the last jurisdiction successfully processed. Used to resume a Paused run.</summary>
+    public int? LastProcessedJurisdictionId { get; set; }
 
     public ICollection<TaxRate> TaxRates { get; set; } = new List<TaxRate>();
 }

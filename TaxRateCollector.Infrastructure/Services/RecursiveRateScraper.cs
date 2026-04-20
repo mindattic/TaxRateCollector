@@ -11,18 +11,15 @@ namespace TaxRateCollector.Infrastructure.Services;
 
 /// <summary>
 /// Recursively traverses a jurisdiction hierarchy (State → County → City → District),
-/// discovers source URLs via the configured <see cref="IDiscoveryService"/>, fetches
-/// raw content, calls the AI extractor (<see cref="IRateLawExtractor"/>) to produce
+/// discovers source URLs, fetches raw content, calls the AI extractor to produce
 /// structured <see cref="ExtractedRateLaw"/> records, then persists each one as a
-/// <see cref="TaxRate"/> row with a <see cref="SourceDocument"/> evidence record.
-///
-/// Idempotency: by default already-current rows (same name + jurisdiction) are skipped.
-/// Set <see cref="RateScrapeOptions.OverwriteExisting"/> = true to refresh them.
+/// <see cref="TaxRate"/> with a <see cref="SourceDocument"/> evidence file on disk.
 /// </summary>
 public sealed class RecursiveRateScraper(
     IDbContextFactory<AppDbContext> dbFactory,
     IDiscoveryService discoveryService,
     IRateLawExtractor extractor,
+    IEvidenceFileStore evidenceStore,
     HttpClient http,
     ILogger<RecursiveRateScraper> logger) : IRecursiveRateScraper
 {
@@ -52,7 +49,7 @@ public sealed class RecursiveRateScraper(
             scrapeRun.TotalCount = queue.Count;
             await db.SaveChangesAsync(ct);
 
-            int progressFlushCounter = 0;
+            int flushCounter = 0;
 
             foreach (var jurisdiction in queue)
             {
@@ -63,53 +60,49 @@ public sealed class RecursiveRateScraper(
                         db, scrapeRun.Id, jurisdiction, options, ct);
 
                     jurisdictionsProcessed++;
-                    rateLawsFound += found;
-                    rateLawsCreated += created;
-                    evidenceCaptured += evidence;
+                    rateLawsFound     += found;
+                    rateLawsCreated   += created;
+                    evidenceCaptured  += evidence;
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    var msg = $"[{jurisdiction.JurisdictionType}] {jurisdiction.JurisdictionName}: {ex.Message}";
+                    errors.Add($"[{jurisdiction.JurisdictionType}] {jurisdiction.JurisdictionName}: {ex.Message}");
                     logger.LogWarning(ex, "Rate scrape failed for jurisdiction {Id}", jurisdiction.Id);
-                    errors.Add(msg);
                 }
 
-                // Flush progress to DB every 10 jurisdictions so the UI can poll it
                 scrapeRun.ProcessedCount = jurisdictionsProcessed;
-                if (++progressFlushCounter % 10 == 0)
+                scrapeRun.LastProcessedJurisdictionId = jurisdiction.Id;
+                if (++flushCounter % 10 == 0)
                     await db.SaveChangesAsync(ct);
             }
 
-            scrapeRun.Status = ScrapeStatus.Completed;
-            scrapeRun.CompletedAt = DateTime.UtcNow.ToString("o");
-            scrapeRun.TotalScraped = jurisdictionsProcessed;
+            scrapeRun.Status          = ScrapeStatus.Completed;
+            scrapeRun.CompletedAt     = DateTime.UtcNow.ToString("o");
+            scrapeRun.TotalScraped    = jurisdictionsProcessed;
             scrapeRun.ChangesDetected = rateLawsCreated;
-            scrapeRun.ErrorCount = errors.Count;
-            scrapeRun.ProcessedCount = jurisdictionsProcessed;
+            scrapeRun.ErrorCount      = errors.Count;
+            scrapeRun.ProcessedCount  = jurisdictionsProcessed;
             await db.SaveChangesAsync(ct);
         }
         catch (OperationCanceledException)
         {
-            scrapeRun.Status = ScrapeStatus.Failed;
+            scrapeRun.Status      = ScrapeStatus.Paused;
             scrapeRun.CompletedAt = DateTime.UtcNow.ToString("o");
             await db.SaveChangesAsync(CancellationToken.None);
             throw;
         }
         catch (Exception ex)
         {
-            scrapeRun.Status = ScrapeStatus.Failed;
+            scrapeRun.Status      = ScrapeStatus.Failed;
             scrapeRun.CompletedAt = DateTime.UtcNow.ToString("o");
-            scrapeRun.ErrorCount = errors.Count + 1;
+            scrapeRun.ErrorCount  = errors.Count + 1;
             errors.Add($"Fatal: {ex.Message}");
             await db.SaveChangesAsync(CancellationToken.None);
         }
 
         return new RateScrapeReport(
-            jurisdictionsProcessed,
-            rateLawsFound,
-            rateLawsCreated,
-            evidenceCaptured,
+            jurisdictionsProcessed, rateLawsFound, rateLawsCreated, evidenceCaptured,
             errors.AsReadOnly());
     }
 
@@ -118,8 +111,6 @@ public sealed class RecursiveRateScraper(
     private static async Task<List<Jurisdiction>> LoadSubtreeAsync(
         AppDbContext db, int rootId, CancellationToken ct)
     {
-        // Load the full subtree in one query by traversing parent→children
-        // using a flat list + in-memory grouping (subtrees are small enough).
         var root = await db.Jurisdictions
             .AsNoTracking()
             .FirstOrDefaultAsync(j => j.Id == rootId, ct)
@@ -139,7 +130,6 @@ public sealed class RecursiveRateScraper(
         var byId = all.ToDictionary(j => j.Id);
         if (!byId.TryGetValue(rootId, out var root)) yield break;
 
-        // BFS — yields root first, then lower tiers according to options
         var queue = new Queue<Jurisdiction>();
         queue.Enqueue(root);
 
@@ -150,9 +140,9 @@ public sealed class RecursiveRateScraper(
 
             foreach (var child in all.Where(j => j.ParentId == node.Id))
             {
-                if (child.JurisdictionType == JurisdictionType.County && !options.IncludeCounties) continue;
-                if (child.JurisdictionType == JurisdictionType.City && !options.IncludeCities) continue;
-                if (child.JurisdictionType == JurisdictionType.District && !options.IncludeDistricts) continue;
+                if (child.JurisdictionType == JurisdictionType.County   && !options.IncludeCounties)  continue;
+                if (child.JurisdictionType == JurisdictionType.City      && !options.IncludeCities)    continue;
+                if (child.JurisdictionType == JurisdictionType.District  && !options.IncludeDistricts) continue;
                 queue.Enqueue(child);
             }
         }
@@ -167,7 +157,6 @@ public sealed class RecursiveRateScraper(
         RateScrapeOptions options,
         CancellationToken ct)
     {
-        // 1. Discover the source URL for this jurisdiction
         var discovery = await discoveryService.DiscoverAsync(jurisdiction, ct);
         if (discovery.Status == "Skipped" || string.IsNullOrWhiteSpace(discovery.SourceUsed))
         {
@@ -175,37 +164,48 @@ public sealed class RecursiveRateScraper(
             return (0, 0, 0);
         }
 
-        // 2. Fetch raw content
-        var (rawContent, mimeType) = await FetchContentAsync(discovery.SourceUsed, ct);
-        if (string.IsNullOrWhiteSpace(rawContent))
-            return (0, 0, 0);
+        var (rawBytes, mimeType) = await FetchBytesAsync(discovery.SourceUsed, ct);
+        if (rawBytes.Length == 0) return (0, 0, 0);
 
-        // 3. Extract structured rate laws via AI extractor
+        // Convert to text for the AI extractor (binary types get a placeholder)
+        var rawText = IsTextMime(mimeType)
+            ? Encoding.UTF8.GetString(rawBytes)
+            : $"[Binary: {mimeType}, {rawBytes.Length:N0} bytes from {discovery.SourceUsed}]";
+
         var extracted = await extractor.ExtractAsync(
-            jurisdiction, rawContent, mimeType, discovery.SourceUsed, ct);
+            jurisdiction, rawText, mimeType, discovery.SourceUsed, ct);
 
-        if (extracted.Count == 0)
-            return (0, 0, 0);
+        if (extracted.Count == 0) return (0, 0, 0);
 
-        // 4. Apply category filter if requested
-        var applicable = options.TaxCategoryId.HasValue
-            ? extracted.Where(e => e.TaxCategoryId == options.TaxCategoryId.Value
-                                   || e.TaxCategoryId == null).ToList()
-            : extracted.ToList();
+        var applicable = (options.TaxCategoryId.HasValue
+            ? extracted.Where(e => e.TaxCategoryId == options.TaxCategoryId || e.TaxCategoryId == null)
+            : extracted)
+            .Where(e => e.Confidence >= options.MinConfidence)
+            .ToList();
 
-        // 5. Filter by confidence
-        applicable = applicable.Where(e => e.Confidence >= options.MinConfidence).ToList();
+        if (applicable.Count == 0) return (0, 0, 0);
 
+        // Save evidence file to disk once per source (shared across all extracted laws)
+        StoredEvidenceFile? storedFile = null;
+        try
+        {
+            storedFile = await evidenceStore.SaveAsync(discovery.SourceUsed, rawBytes, mimeType, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Evidence save failed for {Url}", discovery.SourceUsed);
+        }
+
+        var contentHash = ComputeHash(rawBytes);
+        var now         = DateTime.UtcNow.ToString("o");
         int created = 0, evidenceCount = 0;
-        var now = DateTime.UtcNow.ToString("o");
-        var contentHash = ComputeHash(rawContent);
 
         foreach (var law in applicable)
         {
             var (wasCreated, docCreated) = await UpsertRateLawAsync(
                 db, scrapeRunId, jurisdiction.Id, law,
-                discovery.SourceUsed, rawContent, mimeType, contentHash, now,
-                options.OverwriteExisting, ct);
+                discovery.SourceUsed, rawText, rawBytes, mimeType, contentHash,
+                storedFile, now, options.OverwriteExisting, ct);
 
             if (wasCreated) created++;
             if (docCreated) evidenceCount++;
@@ -228,38 +228,26 @@ public sealed class RecursiveRateScraper(
         int jurisdictionId,
         ExtractedRateLaw law,
         string sourceUrl,
-        string rawContent,
+        string rawText,
+        byte[] rawBytes,
         string mimeType,
         string contentHash,
+        StoredEvidenceFile? storedFile,
         string now,
         bool overwrite,
         CancellationToken ct)
     {
-        // Skip if there's already a pending review for the same rate in this jurisdiction
         var alreadyPending = await db.TaxRates
-            .AnyAsync(t =>
-                t.JurisdictionId == jurisdictionId &&
-                t.Name == law.Name &&
-                t.NeedsReview, ct);
+            .AnyAsync(t => t.JurisdictionId == jurisdictionId && t.Name == law.Name && t.NeedsReview, ct);
+        if (alreadyPending) return (false, false);
 
-        if (alreadyPending)
-            return (false, false);
-
-        // If overwriting, check for an existing live rate (don't retire it yet — approval does that)
         if (!overwrite)
         {
             var liveExists = await db.TaxRates
-                .AnyAsync(t =>
-                    t.JurisdictionId == jurisdictionId &&
-                    t.Name == law.Name &&
-                    t.IsCurrent, ct);
-
-            if (liveExists)
-                return (false, false);
+                .AnyAsync(t => t.JurisdictionId == jurisdictionId && t.Name == law.Name && t.IsCurrent, ct);
+            if (liveExists) return (false, false);
         }
 
-        // Excise taxes remitted upstream (manufacturer/importer/distributor) are already
-        // embedded in the wholesale cost — they must not be re-added at checkout.
         var isIncludedInPrice = law.TaxType == Core.Enums.TaxType.ExciseTax
             && law.RemittancePoint is Core.Enums.RemittancePoint.Manufacturer
                 or Core.Enums.RemittancePoint.Importer
@@ -267,78 +255,87 @@ public sealed class RecursiveRateScraper(
 
         var rate = new TaxRate
         {
-            JurisdictionId     = jurisdictionId,
-            ScrapeRunId        = scrapeRunId,
-            Name               = law.Name,
-            Rate               = law.Rate,
-            RateBasis          = law.Basis,
-            Unit               = law.Unit,
-            TaxType            = law.TaxType,
-            IsIncludedInPrice  = isIncludedInPrice,
-            IsCompound         = law.IsCompound,
-            MaxTaxableAmount   = law.MaxTaxableAmount,
-            IsTemporary        = law.IsTemporary,
-            ProductCategory    = law.ProductCategory,
-            SaleContext        = law.SaleContext,
-            RemittancePoint    = law.RemittancePoint,
-            MinAbv             = law.MinAbv,
-            MaxAbv             = law.MaxAbv,
-            Conditions         = law.Conditions,
-            StatutoryReference = law.StatutoryReference,
-            EffectiveDate      = ParseDate(law.EffectiveDate),
-            ExpirationDate     = ParseDate(law.ExpirationDate),
-            TaxCategoryId      = law.TaxCategoryId,
-            RawEvidence        = law.RawEvidence,
-            ScrapedAt          = now,
-            IsCurrent          = false,   // promoted to true only after human approval
-            NeedsReview        = true,
+            JurisdictionId      = jurisdictionId,
+            ScrapeRunId         = scrapeRunId,
+            Name                = law.Name,
+            Rate                = law.Rate,
+            RateBasis           = law.Basis,
+            Unit                = law.Unit,
+            TaxType             = law.TaxType,
+            IsIncludedInPrice   = isIncludedInPrice,
+            IsCompound          = law.IsCompound,
+            MinTaxableAmount    = law.MinTaxableAmount,
+            MaxTaxableAmount    = law.MaxTaxableAmount,
+            FlatCapPerUnit      = law.FlatCapPerUnit,
+            IsTemporary         = law.IsTemporary,
+            IsRecurring         = law.IsRecurring,
+            AdjustmentFrequency = law.AdjustmentFrequency,
+            AdjustmentMechanism = law.AdjustmentMechanism,
+            ProductCategory     = law.ProductCategory,
+            SaleContext         = law.SaleContext,
+            RemittancePoint     = law.RemittancePoint,
+            MinAbv              = law.MinAbv,
+            MaxAbv              = law.MaxAbv,
+            Conditions          = law.Conditions,
+            StatutoryReference  = law.StatutoryReference,
+            EffectiveDate       = ParseDate(law.EffectiveDate),
+            ExpirationDate      = ParseDate(law.ExpirationDate),
+            TaxCategoryId       = law.TaxCategoryId,
+            RawEvidence         = law.RawEvidence,
+            ScrapedAt           = now,
+            IsCurrent           = false,
+            NeedsReview         = true,
         };
 
         db.TaxRates.Add(rate);
 
-        // Attach evidence document
         var doc = new SourceDocument
         {
-            TaxRate       = rate,
-            SourceType    = InferSourceType(mimeType),
-            SourceUrl     = sourceUrl,
-            MimeType      = mimeType,
-            FetchedAt     = now,
-            ContentHash   = contentHash,
-            EvidenceType  = MimeToEvidenceType(mimeType),
-            RawContent    = rawContent.Length <= 65536 ? rawContent : rawContent[..65536],
-            IsActive      = true,
+            TaxRate          = rate,
+            SourceType       = InferSourceType(mimeType),
+            SourceUrl        = sourceUrl,
+            MimeType         = mimeType,
+            FetchedAt        = now,
+            ContentHash      = contentHash,
+            EvidenceType     = storedFile?.EvidenceType ?? MimeToEvidenceType(mimeType),
+            FileName         = storedFile?.FileName ?? string.Empty,
+            OriginalFileName = Path.GetFileName(new Uri(sourceUrl).AbsolutePath),
+            // Keep a readable snippet inline even when file is on disk
+            RawContent       = rawText.Length <= 8192 ? rawText : rawText[..8192],
+            IsActive         = true,
         };
         db.SourceDocuments.Add(doc);
 
         return (true, true);
     }
 
-    // ── HTTP fetch ────────────────────────────────────────────────────────────
+    // ── HTTP fetch (bytes, preserves binary) ──────────────────────────────────
 
-    private async Task<(string content, string mimeType)> FetchContentAsync(
-        string url, CancellationToken ct)
+    private async Task<(byte[] bytes, string mimeType)> FetchBytesAsync(string url, CancellationToken ct)
     {
         try
         {
             using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
             response.EnsureSuccessStatusCode();
-            var mime = response.Content.Headers.ContentType?.MediaType ?? "text/html";
-            var content = await response.Content.ReadAsStringAsync(ct);
-            return (content, mime);
+            var mime  = response.Content.Headers.ContentType?.MediaType ?? "text/html";
+            var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+            return (bytes, mime);
         }
         catch (Exception ex)
         {
             logger.LogWarning("Failed to fetch {Url}: {Message}", url, ex.Message);
-            return (string.Empty, string.Empty);
+            return ([], string.Empty);
         }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static string ComputeHash(string content)
+    private static bool IsTextMime(string mimeType) =>
+        mimeType.StartsWith("text/") || mimeType == "application/json" || mimeType == "application/xml";
+
+    private static string ComputeHash(byte[] content)
     {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(content));
+        var bytes = SHA256.HashData(content);
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
@@ -362,6 +359,7 @@ public sealed class RecursiveRateScraper(
         "text/csv"         => "csv",
         "application/json" => "json",
         var m when m.StartsWith("application/vnd.openxmlformats") => "xlsx",
-        _                  => "html",
+        var m when m.StartsWith("text/html")                      => "zip",
+        _                                                          => "txt",
     };
 }

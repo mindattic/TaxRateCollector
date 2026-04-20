@@ -47,18 +47,78 @@ public class TaxRate
     public bool IsCompound { get; set; }
 
     /// <summary>
+    /// Lower bound of the taxable transaction amount bracket for this rate.
+    /// Null or 0 = rate applies from the first dollar.
+    ///
+    /// Example — Tennessee single-article, middle bracket:
+    ///   MinTaxableAmount = 1600, MaxTaxableAmount = 3200, Rate = 0.0275
+    ///   → 2.75% applies only on the portion of the sale price between $1,600 and $3,200.
+    /// </summary>
+    public decimal? MinTaxableAmount { get; set; }
+
+    /// <summary>
     /// Maximum taxable transaction amount for this rate law.
     /// When set, the rate applies only up to this dollar amount per transaction.
     ///
     /// Example — Tennessee single-article cap:
     ///   First $1,600 at the general rate (9.75%), then $1,600–$3,200 at 2.75%,
     ///   then nothing above $3,200. Each bracket is a separate TaxRate row with
-    ///   its own MaxTaxableAmount and MinTaxableAmount (stored in Conditions until
-    ///   a structured field is added).
+    ///   MinTaxableAmount and MaxTaxableAmount boundaries.
     ///
     /// Null = no transaction-level cap; rate applies to the full taxable amount.
     /// </summary>
     public decimal? MaxTaxableAmount { get; set; }
+
+    /// <summary>
+    /// Per-unit dollar cap for "lesser of percentage or flat amount" tax structures.
+    /// When set, the calculated tax is capped at this dollar amount per unit if the
+    /// percentage-based calculation would exceed it.
+    ///
+    /// Examples:
+    ///   Federal large cigar: 52.75% of manufacturer's price BUT capped at $0.4026/cigar
+    ///   Vermont premium cigar: 92% of wholesale BUT capped at $4.00/cigar
+    ///
+    /// Null = no per-unit cap; apply the full rate calculation.
+    /// Only meaningful when RateBasis is Percentage or PercentageOfWholesale.
+    /// </summary>
+    public decimal? FlatCapPerUnit { get; set; }
+
+    /// <summary>
+    /// True when this rate counts toward the state's statutory combined local rate cap
+    /// (e.g., Texas 2% combined local limit).
+    /// False for special-purpose districts statutorily excluded from the cap
+    /// (e.g., certain Texas transit authorities, education districts).
+    /// Null = unknown / not applicable (state has no local rate cap).
+    /// </summary>
+    public bool? CountsTowardLocalCap { get; set; }
+
+    /// <summary>
+    /// How frequently this rate automatically adjusts without requiring new legislation.
+    /// Static (the default) means the rate is fixed. Annual/Quarterly/Monthly means the
+    /// rate is re-calculated on a schedule tied to a price index or legislative formula.
+    /// Drives re-scrape scheduling: indexed rates should be re-verified more frequently.
+    /// </summary>
+    public RateAdjustmentFrequency AdjustmentFrequency { get; set; } = RateAdjustmentFrequency.Static;
+
+    /// <summary>
+    /// Human-readable description of how this rate adjusts, when AdjustmentFrequency ≠ Static.
+    /// Examples: "CPI-indexed, recalculated every July 1 (IL Public Act 101-0032)",
+    ///           "Quarterly average wholesale price per gallon (VA Code § 58.1-2217)"
+    /// </summary>
+    public string? AdjustmentMechanism { get; set; }
+
+    /// <summary>
+    /// True when this rate (or its associated exemption) recurs on the same schedule
+    /// each year without new legislation — primarily for annual state tax holidays
+    /// (back-to-school, hurricane preparedness, etc.).
+    ///
+    /// When true, ExpirationDate marks the end of the CURRENT occurrence only; the rule
+    /// automatically recurs next year. Monitoring should track when the next occurrence
+    /// begins, not treat the row as permanently expired after ExpirationDate passes.
+    ///
+    /// False = one-time rate or open-ended (no annual recurrence).
+    /// </summary>
+    public bool IsRecurring { get; set; }
 
     /// <summary>
     /// True when this rate has a known expiration date that is a sunset provision —

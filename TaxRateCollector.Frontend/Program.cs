@@ -80,6 +80,9 @@ builder.Services.AddScoped<IScrapeStrategy, TexasExcelScraper>();
 // ── Core services ─────────────────────────────────────────────────────────────
 builder.Services.AddScoped<IDiffEngine, DiffEngine>();
 builder.Services.AddScoped<IScrapeOrchestrator, ScrapeOrchestrator>();
+builder.Services.AddScoped<IEvidenceFileStore, EvidenceFileStore>();
+builder.Services.AddSingleton<ScrapeJobCoordinator>();
+builder.Services.AddHostedService<ScrapeWorkerService>();
 builder.Services.AddScoped<ITaxCalculator, TaxCalculator>();
 builder.Services.AddScoped<AlertService>();
 builder.Services.AddScoped<IPayPalService, PayPalService>();

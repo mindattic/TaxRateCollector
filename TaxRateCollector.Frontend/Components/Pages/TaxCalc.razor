@@ -1,5 +1,6 @@
 @page "/calc"
 @using Microsoft.EntityFrameworkCore
+@using TaxRateCollector.Core.Enums
 @using TaxRateCollector.Core.Interfaces
 @using TaxRateCollector.Infrastructure.Data
 @inject IDbContextFactory<AppDbContext> DbFactory
@@ -45,31 +46,70 @@
         </div>
     </div>
 
-    <button class="btn-primary" @onclick="CalculateAsync" disabled="@(!CanCalculate)">Calculate</button>
+    <details style="margin-top:8px">
+        <summary style="cursor:pointer;color:var(--muted)">Advanced options</summary>
+        <div class="form-row" style="margin-top:8px">
+            <div class="form-group">
+                <label>ABV % (for excise)</label>
+                <input class="filter-input" type="number" min="0" max="100" step="0.1" @bind="abvPct" placeholder="e.g. 5" />
+            </div>
+            <div class="form-group">
+                <label>Volume per unit (gal)</label>
+                <input class="filter-input" type="number" min="0" step="0.001" @bind="volumeGal" placeholder="e.g. 0.5" />
+            </div>
+            <div class="form-group">
+                <label>Weight per unit (oz)</label>
+                <input class="filter-input" type="number" min="0" step="0.001" @bind="weightOz" placeholder="e.g. 12" />
+            </div>
+            <div class="form-group">
+                <label>Wholesale price ($)</label>
+                <input class="filter-input" type="number" min="0" step="0.01" @bind="wholesalePrice" placeholder="for OTP/cigar rates" />
+            </div>
+        </div>
+    </details>
+
+    <button class="btn-primary" @onclick="CalculateAsync" disabled="@(!CanCalculate)" style="margin-top:12px">Calculate</button>
 </div>
 
 @if (result is not null)
 {
     <div class="calc-result">
-        <div class="result-label">Tax Amount</div>
+        <div class="result-label">Tax to Collect (retailer-remitted)</div>
         <div class="result-value">@result.TotalTaxAmount.ToString("C")</div>
         <div class="result-detail">
             <span>Jurisdiction: <strong>@result.JurisdictionName</strong></span>
             <span>Combined Rate: <strong>@result.TotalPercentageRate.ToString("P4")</strong></span>
             <span>Subtotal: <strong>@((price * quantity).ToString("C"))</strong></span>
+            <span>Invoice Total: <strong>@((price * quantity + result.TotalTaxAmount).ToString("C"))</strong></span>
         </div>
-        @if (result.RateLines.Count > 1)
+        @if (result.TotalIncludedInPriceAmount > 0)
+        {
+            <div class="setup-status-warn" style="margin-top:8px;padding:8px 12px;border-radius:4px">
+                Upstream excise taxes already embedded in product price: <strong>@result.TotalIncludedInPriceAmount.ToString("C")</strong> — do not add to customer invoice.
+            </div>
+        }
+        @if (result.RateLines.Count > 0)
         {
             <table class="data-table" style="margin-top:12px">
-                <thead><tr><th>Rate Name</th><th>Rate</th><th>Basis</th><th>Sale Context</th><th>Tax Amount</th><th>Effective</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th>Rate Name</th><th>Rate</th><th>Basis</th><th>Compound</th>
+                        <th>Sale Context</th><th>Remittance</th><th>Tax Amount</th><th>Effective</th>
+                    </tr>
+                </thead>
                 <tbody>
                     @foreach (var line in result.RateLines)
                     {
-                        <tr>
-                            <td>@line.RateName</td>
-                            <td>@(line.Basis == TaxRateCollector.Core.Enums.RateBasis.Percentage ? line.Rate.ToString("P4") : line.Rate.ToString("F4") + " " + line.Unit)</td>
+                        <tr class="@(line.IsIncludedInPrice ? "row-muted" : "")">
+                            <td>
+                                @line.RateName
+                                @if (line.IsIncludedInPrice) { <span class="badge badge-muted" title="Already embedded in wholesale price">embedded</span> }
+                            </td>
+                            <td>@(line.Basis == TaxRateCollector.Core.Enums.RateBasis.Percentage || line.Basis == TaxRateCollector.Core.Enums.RateBasis.PercentageOfWholesale ? line.Rate.ToString("P4") : line.Rate.ToString("F4") + " " + line.Unit)</td>
                             <td>@line.Basis</td>
+                            <td>@(line.IsCompound ? "✓" : "")</td>
                             <td>@line.SaleContext</td>
+                            <td>@line.RemittancePoint</td>
                             <td>@line.TaxAmount.ToString("C")</td>
                             <td>@line.EffectiveDate</td>
                         </tr>
@@ -91,6 +131,10 @@
     private string selectedName = string.Empty;
     private decimal price = 100m;
     private int quantity = 1;
+    private decimal? abvPct;
+    private decimal? volumeGal;
+    private decimal? weightOz;
+    private decimal? wholesalePrice;
     private TaxCalcResult? result;
     private bool noRate;
 
@@ -158,7 +202,12 @@
     {
         result = null;
         noRate = false;
-        var r = await Calculator.CalculateAsync(selectedId, price, quantity);
+        var opts = new TaxCalcOptions(
+            Abv:            abvPct.HasValue ? abvPct.Value / 100m : null,
+            Volume:         volumeGal,
+            Weight:         weightOz,
+            WholesalePrice: wholesalePrice);
+        var r = await Calculator.CalculateAsync(selectedId, price, quantity, opts);
         if (r is null) noRate = true;
         else result = r;
     }

@@ -58,11 +58,13 @@ public class DiffEngine(IDbContextFactory<AppDbContext> dbFactory) : IDiffEngine
         }
 
         var scrapeJurisdictionIds = newRates.Select(r => r.JurisdictionId).ToHashSet();
-        var previouslyActive = await db.TaxRates
+        var previouslyActive = (await db.TaxRates
             .Where(t => t.ScrapeRunId != scrapeRunId && !scrapeJurisdictionIds.Contains(t.JurisdictionId))
+            .OrderByDescending(t => t.ScrapedAt)
             .Select(t => new { t.JurisdictionId, t.Id, t.Name, t.Rate })
-            .Distinct()
-            .ToListAsync(ct);
+            .ToListAsync(ct))
+            .DistinctBy(t => t.JurisdictionId)
+            .ToList();
 
         foreach (var prev in previouslyActive)
         {

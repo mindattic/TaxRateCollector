@@ -223,7 +223,7 @@ else
     {
         await using var db = await DbFactory.CreateDbContextAsync();
 
-        pricing = await db.PricingConfigs.FirstOrDefaultAsync() ?? new PricingConfig();
+        pricing = await db.PricingConfigs.OrderBy(x => x.Id).FirstOrDefaultAsync() ?? new PricingConfig();
 
         availableStates = await db.Jurisdictions
             .Where(j => j.JurisdictionType == JurisdictionType.State && j.IsActive)

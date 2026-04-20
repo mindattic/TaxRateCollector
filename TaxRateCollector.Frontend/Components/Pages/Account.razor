@@ -135,7 +135,7 @@ else
         {
             await using var db = await DbFactory.CreateDbContextAsync();
 
-            pricePerState = (await db.PricingConfigs.FirstOrDefaultAsync())?.PricePerState ?? 0.01m;
+            pricePerState = (await db.PricingConfigs.OrderBy(x => x.Id).FirstOrDefaultAsync())?.PricePerState ?? 0.01m;
 
             subscriber = await db.Subscribers
                 .FirstOrDefaultAsync(s => s.UserId == userId && s.IsActive);

@@ -278,7 +278,7 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     b.HasIndex("SubscriberId");
 
-                    b.ToTable("BillingRecords");
+                    b.ToTable("BillingRecords", (string)null);
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.ChangeLogEntry", b =>
@@ -371,7 +371,7 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     b.HasIndex("ParentId");
 
-                    b.ToTable("Jurisdictions");
+                    b.ToTable("Jurisdictions", (string)null);
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.LogEntry", b =>
@@ -441,7 +441,7 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("PayPalConfigs");
+                    b.ToTable("PayPalConfigs", (string)null);
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.PricingConfig", b =>
@@ -470,7 +470,7 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("PricingConfigs");
+                    b.ToTable("PricingConfigs", (string)null);
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.ScrapeRun", b =>
@@ -507,9 +507,12 @@ namespace TaxRateCollector.Infrastructure.Migrations
                     b.Property<int>("TotalScraped")
                         .HasColumnType("int");
 
+                    b.Property<int?>("LastProcessedJurisdictionId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
-                    b.ToTable("ScrapeRuns");
+                    b.ToTable("ScrapeRuns", (string)null);
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.SourceDocument", b =>
@@ -566,7 +569,7 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     b.HasIndex("TaxRateId");
 
-                    b.ToTable("SourceDocuments");
+                    b.ToTable("SourceDocuments", (string)null);
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.StateCategoryRule", b =>
@@ -614,7 +617,7 @@ namespace TaxRateCollector.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("[TaxCategoryId] IS NOT NULL");
 
-                    b.ToTable("StateCategoryRules");
+                    b.ToTable("StateCategoryRules", (string)null);
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.StateTaxProfile", b =>
@@ -638,6 +641,10 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     b.Property<bool>("HasLocalRateCap")
                         .HasColumnType("bit");
+
+                    b.Property<string>("IntrastateSourcingRule")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("IsSstMember")
                         .HasColumnType("bit");
@@ -678,7 +685,7 @@ namespace TaxRateCollector.Infrastructure.Migrations
                     b.HasIndex("StateCode")
                         .IsUnique();
 
-                    b.ToTable("StateTaxProfiles");
+                    b.ToTable("StateTaxProfiles", (string)null);
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.SubscribedCategory", b =>
@@ -710,7 +717,7 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     b.HasIndex("SubscriberId", "CategoryId");
 
-                    b.ToTable("SubscribedCategories");
+                    b.ToTable("SubscribedCategories", (string)null);
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.SubscribedState", b =>
@@ -743,7 +750,7 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     b.HasIndex("SubscriberId", "StateCode");
 
-                    b.ToTable("SubscribedStates");
+                    b.ToTable("SubscribedStates", (string)null);
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.Subscriber", b =>
@@ -789,7 +796,7 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Subscribers");
+                    b.ToTable("Subscribers", (string)null);
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.TaxCategory", b =>
@@ -827,7 +834,7 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     b.HasIndex("TopLevelType");
 
-                    b.ToTable("TaxCategories");
+                    b.ToTable("TaxCategories", (string)null);
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.TaxCategoryRule", b =>
@@ -874,7 +881,7 @@ namespace TaxRateCollector.Infrastructure.Migrations
                     b.HasIndex("TaxCategoryId", "JurisdictionId")
                         .IsUnique();
 
-                    b.ToTable("TaxCategoryRules");
+                    b.ToTable("TaxCategoryRules", (string)null);
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.TaxRate", b =>
@@ -885,15 +892,29 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("AdjustmentFrequency")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AdjustmentMechanism")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Conditions")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool?>("CountsTowardLocalCap")
+                        .HasColumnType("bit");
 
                     b.Property<DateOnly?>("EffectiveDate")
                         .HasColumnType("date");
 
                     b.Property<DateOnly?>("ExpirationDate")
                         .HasColumnType("date");
+
+                    b.Property<decimal?>("FlatCapPerUnit")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("decimal(18,6)");
 
                     b.Property<bool>("IsCompound")
                         .HasColumnType("bit");
@@ -902,6 +923,9 @@ namespace TaxRateCollector.Infrastructure.Migrations
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsIncludedInPrice")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsRecurring")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsTemporary")
@@ -921,6 +945,10 @@ namespace TaxRateCollector.Infrastructure.Migrations
                     b.Property<decimal?>("MinAbv")
                         .HasPrecision(18, 6)
                         .HasColumnType("decimal(18,6)");
+
+                    b.Property<decimal?>("MinTaxableAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -986,7 +1014,7 @@ namespace TaxRateCollector.Infrastructure.Migrations
                     b.HasIndex("JurisdictionId", "ProductCategory", "TaxType", "IsCurrent")
                         .HasDatabaseName("IX_TaxRates_JurisdictionId_ProductCategory_TaxType_Current");
 
-                    b.ToTable("TaxRates");
+                    b.ToTable("TaxRates", (string)null);
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.ZipCodeDistrict", b =>
@@ -1011,7 +1039,7 @@ namespace TaxRateCollector.Infrastructure.Migrations
                     b.HasIndex("ZipCode", "JurisdictionId")
                         .IsUnique();
 
-                    b.ToTable("ZipCodeDistricts");
+                    b.ToTable("ZipCodeDistricts", (string)null);
                 });
 
             modelBuilder.Entity("TaxRateCollector.Core.Entities.ZipCodeRecord", b =>
@@ -1064,7 +1092,7 @@ namespace TaxRateCollector.Infrastructure.Migrations
 
                     b.HasIndex("StateFips");
 
-                    b.ToTable("ZipCodes");
+                    b.ToTable("ZipCodes", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

@@ -88,7 +88,7 @@ public sealed class ClaudeRateLawExtractor(
 {
   "Name": "Human-readable name, e.g. 'General Sales Tax' or 'Beer Excise ≤3.2% ABV'",
   "Rate": 0.065,
-  "Basis": "Percentage|FlatPerUnit|FlatPerVolume|FlatPerWeight|FlatPerProofGallon",
+  "Basis": "Percentage|FlatPerUnit|FlatPerVolume|FlatPerWeight|FlatPerProofGallon|PercentageOfWholesale",
   "Unit": "per gallon",
   "TaxType": "SalesTax|UseTax|ExciseTax|OccupancyTax|RentalSurcharge",
   "ProductCategory": null,
@@ -104,8 +104,13 @@ public sealed class ClaudeRateLawExtractor(
   "Confidence": 0.95,
   "RawEvidence": "exact text snippet from source proving this rate",
   "IsCompound": false,
+  "MinTaxableAmount": null,
   "MaxTaxableAmount": null,
-  "IsTemporary": false
+  "FlatCapPerUnit": null,
+  "IsTemporary": false,
+  "IsRecurring": false,
+  "AdjustmentFrequency": "Static",
+  "AdjustmentMechanism": null
 }
 """);
         sb.AppendLine("Rules:");
@@ -113,9 +118,16 @@ public sealed class ClaudeRateLawExtractor(
         sb.AppendLine("- TaxType: SalesTax for general sales tax; ExciseTax for alcohol/tobacco/fuel/cannabis/firearms; OccupancyTax for hotel/lodging; RentalSurcharge for rental cars");
         sb.AppendLine("- ProductCategory: set for excise taxes — one of: Alcohol, Beer, Wine, Spirits, Tobacco, Cigarettes, Cannabis, Sugar, SoftDrinks, Firearms, Ammunition, Fuel, Hotel, RentalCar, Lottery, Gaming. Null for sales/use tax.");
         sb.AppendLine("- RemittancePoint: Distributor or Manufacturer for state alcohol/tobacco excise; Retailer for sales tax and restaurant-level taxes");
+        sb.AppendLine("- Basis: PercentageOfWholesale for OTP tobacco/cigar taxes assessed on wholesale or manufacturer price; Percentage for rates on retail price");
+        sb.AppendLine("- RemittancePoint: MarketplaceFacilitator when a platform (Amazon, Etsy, eBay) is required by law to collect and remit on behalf of third-party sellers");
         sb.AppendLine("- IsCompound: true only when the source explicitly states the tax applies to (price + all other taxes), not just the sale price (e.g. Chicago Matching Tax)");
-        sb.AppendLine("- MaxTaxableAmount: dollar cap per transaction if the source states the tax stops applying above a threshold (e.g. Tennessee single-article cap at $1,600). Null otherwise.");
+        sb.AppendLine("- MinTaxableAmount: lower bound dollar threshold for tiered bracket rates (e.g. TN single-article: middle tier starts at $1,600). Null if rate applies from $0.");
+        sb.AppendLine("- MaxTaxableAmount: upper bound dollar threshold per transaction (e.g. TN single-article cap at $1,600 for tier 1). Null if no cap.");
+        sb.AppendLine("- FlatCapPerUnit: dollar cap per unit for 'lesser of percentage or flat' structures (e.g. federal cigar: 52.75% capped at $0.4026/unit). Null if no per-unit cap.");
         sb.AppendLine("- IsTemporary: true if the source states a sunset date or refers to the rate as temporary, expiring, or subject to legislative renewal");
+        sb.AppendLine("- IsRecurring: true for annual tax holidays (back-to-school, hurricane prep) where the exemption repeats each year on the same approximate schedule");
+        sb.AppendLine("- AdjustmentFrequency: Static (fixed rate) | Annual (recalculates yearly, e.g. IL fuel CPI) | Quarterly (e.g. VA fuel avg wholesale) | Monthly (rare)");
+        sb.AppendLine("- AdjustmentMechanism: describe the indexing formula when AdjustmentFrequency is not Static (e.g. 'CPI-indexed, recalculated July 1 per Public Act 101-0032')");
         sb.AppendLine("- One object per ABV bracket; one object per SaleContext if rates differ");
         sb.AppendLine("- Confidence: 1.0 = explicit table cell; 0.8 = clearly stated in prose; 0.6 = inferred");
         sb.AppendLine("- TaxCategoryId: always null (categories are assigned during human review)");
@@ -190,11 +202,16 @@ public sealed class ClaudeRateLawExtractor(
                     TaxCategoryId:      null,
                     Confidence:         d.Confidence,
                     RawEvidence:        d.RawEvidence,
-                    TaxType:            ParseEnum(d.TaxType, TaxType.SalesTax),
-                    ProductCategory:    ParseNullableEnum<ProductCategory>(d.ProductCategory),
-                    IsCompound:         d.IsCompound,
-                    MaxTaxableAmount:   d.MaxTaxableAmount,
-                    IsTemporary:        d.IsTemporary))
+                    TaxType:              ParseEnum(d.TaxType, TaxType.SalesTax),
+                    ProductCategory:      ParseNullableEnum<ProductCategory>(d.ProductCategory),
+                    IsCompound:           d.IsCompound,
+                    MinTaxableAmount:     d.MinTaxableAmount,
+                    MaxTaxableAmount:     d.MaxTaxableAmount,
+                    FlatCapPerUnit:       d.FlatCapPerUnit,
+                    IsTemporary:          d.IsTemporary,
+                    IsRecurring:          d.IsRecurring,
+                    AdjustmentFrequency:  ParseEnum(d.AdjustmentFrequency, RateAdjustmentFrequency.Static),
+                    AdjustmentMechanism:  d.AdjustmentMechanism))
                 .ToList()
                 .AsReadOnly();
         }
@@ -252,8 +269,13 @@ public sealed class ClaudeRateLawExtractor(
         public int? TaxCategoryId        { get; set; }
         public float Confidence          { get; set; } = 0.8f;
         public string RawEvidence        { get; set; } = "";
-        public bool IsCompound           { get; set; }
-        public decimal? MaxTaxableAmount { get; set; }
-        public bool IsTemporary          { get; set; }
+        public bool IsCompound              { get; set; }
+        public decimal? MinTaxableAmount    { get; set; }
+        public decimal? MaxTaxableAmount    { get; set; }
+        public decimal? FlatCapPerUnit      { get; set; }
+        public bool IsTemporary             { get; set; }
+        public bool IsRecurring             { get; set; }
+        public string AdjustmentFrequency   { get; set; } = "Static";
+        public string? AdjustmentMechanism  { get; set; }
     }
 }

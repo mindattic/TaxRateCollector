@@ -14,8 +14,12 @@ a, .btn-link {
 }
 
 .btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
+    outline: none;
+    box-shadow: none;
 }
+.btn-primary:focus-visible  { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--brand); }
+.btn-secondary:focus-visible { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--border); }
+.btn-danger:focus-visible    { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #dc2626; }
 
 .content {
     padding-top: 1.1rem;
@@ -331,6 +335,7 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
     font-size: 0.9rem;
     cursor: pointer;
     transition: background 0.15s;
+    outline: none;
 }
 .btn-primary:hover:not(:disabled) { background: var(--brand-dark); }
 .btn-primary:disabled { opacity: 0.55; cursor: default; }
@@ -343,8 +348,11 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
     border-radius: 6px;
     font-size: 0.85rem;
     cursor: pointer;
+    transition: background .15s, border-color .15s;
+    outline: none;
 }
-.btn-secondary:hover { background: #f5f5f5; }
+.btn-secondary:hover  { background: #e8e8e8; border-color: #bbb; }
+.btn-secondary:active { background: #ddd; }
 
 .btn-tiny {
     background: transparent;
@@ -354,8 +362,11 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
     border-radius: 4px;
     font-size: 0.76rem;
     cursor: pointer;
+    outline: none;
+    transition: background .15s, border-color .15s;
 }
-.btn-tiny:hover { background: #eee; }
+.btn-tiny:hover  { background: #e8e8e8; border-color: #bbb; }
+.btn-tiny:active { background: #ddd; }
 
 .btn-danger-tiny {
     background: transparent;
@@ -2205,7 +2216,14 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
     transition: border-color .2s, opacity .2s;
 }
 .setup-card-done { border-color: #86efac; }
-.setup-card-header { margin-bottom: .5rem; }
+.setup-card-header {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+    margin-bottom: .5rem;
+}
+.setup-card-actions {
+    display: flex; gap: .5rem; align-items: center;
+    flex-shrink: 0; align-self: flex-end;
+}
 .setup-card-title {
     font-size: 1rem; font-weight: 700; margin: 0 0 .35rem;
     display: flex; align-items: center; gap: .6rem;
@@ -2230,7 +2248,10 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
     font-size: .85rem;
 }
 .setup-status-ok    { background: #f0fdf4; color: #15803d; border: 1px solid #86efac; }
+.setup-status-warn  { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; }
 .setup-status-error { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
+.scrape-progress-wrap { height: 6px; background: #e5e7eb; border-radius: 3px; margin: .6rem 0 .25rem; overflow: hidden; }
+.scrape-progress-bar  { height: 100%; background: var(--brand); border-radius: 3px; transition: width .4s ease; }
 .setup-status-warn  { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; }
 
 /* URL check results list */
@@ -2246,6 +2267,7 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
 [data-theme="dark"] .setup-card { background: #1e293b; border-color: #334155; }
 [data-theme="dark"] .setup-card-done { border-color: #14532d; }
 [data-theme="dark"] .setup-status-ok    { background: #052e16; color: #86efac; border-color: #14532d; }
+[data-theme="dark"] .setup-status-warn  { background: #1c1200; color: #fcd34d; border-color: #78350f; }
 [data-theme="dark"] .setup-status-error { background: #450a0a; color: #fca5a5; border-color: #7f1d1d; }
 [data-theme="dark"] .setup-status-warn  { background: #431407; color: #fcd34d; border-color: #78350f; }
 [data-theme="dark"] .num-todo { background: #334155; color: #94a3b8; }
@@ -2263,15 +2285,6 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
 
 [data-theme="dark"] .tab-role-badge { background: #1e3a5f; color: #93c5fd; border-color: #1d4ed8; }
 
-/* ── Add Evidence button ──────────────────────────────────────────────────── */
-.btn-add-evidence {
-    display: inline-flex; align-items: center; gap: .35rem;
-    padding: .35rem .85rem; font-size: .82rem; font-weight: 600;
-    background: var(--accent-subtle); color: var(--brand-dark);
-    border: 1.5px dashed var(--brand); border-radius: 6px; cursor: pointer;
-    transition: background .15s, border-color .15s;
-}
-.btn-add-evidence:hover { background: #d0f0e0; border-style: solid; }
 
 /* ── Add Evidence modal ───────────────────────────────────────────────────── */
 .evidence-modal-backdrop {
@@ -2402,13 +2415,16 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
     border-radius: 6px; padding: .75rem; margin-bottom: .6rem;
 }
 .rate-form-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: .4rem .6rem;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: .5rem .6rem;
 }
 .rate-form-grid label {
     display: flex; flex-direction: column; gap: .2rem;
     font-size: .8rem; font-weight: 600; color: var(--text-muted);
 }
+/* Row 1: Name(2 cols) | Basis | Rate */
+.rate-form-name { grid-column: span 2; }
+/* Row 4: Conditions spans full width */
 .rate-form-full { grid-column: 1 / -1; }
 .rate-form-actions {
     display: flex; gap: .5rem; justify-content: flex-end;

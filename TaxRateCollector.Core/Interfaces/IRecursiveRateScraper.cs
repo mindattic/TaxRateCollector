@@ -67,5 +67,10 @@ public record ExtractedRateLaw(
     TaxType TaxType = TaxType.SalesTax,
     ProductCategory? ProductCategory = null,
     bool IsCompound = false,
+    decimal? MinTaxableAmount = null,
     decimal? MaxTaxableAmount = null,
-    bool IsTemporary = false);
+    decimal? FlatCapPerUnit = null,
+    bool IsTemporary = false,
+    bool IsRecurring = false,
+    RateAdjustmentFrequency AdjustmentFrequency = RateAdjustmentFrequency.Static,
+    string? AdjustmentMechanism = null);

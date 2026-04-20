@@ -7,6 +7,8 @@ public enum ScrapeStatus
     Running,
     Completed,
     Failed,
+    /// <summary>Run was stopped by the user mid-way; can be resumed from where it left off.</summary>
+    Paused,
     /// <summary>Rate was entered manually through the UI, not via a scrape job.</summary>
     Manual
 }

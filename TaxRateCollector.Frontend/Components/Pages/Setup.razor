@@ -11,12 +11,13 @@
 @inject IZipImportService zipSvc
 @inject ISstTaxonomyImportService sstSvc
 @inject IDiscoveryService DiscoveryService
-@inject IScrapeOrchestrator Orchestrator
+@inject ScrapeJobCoordinator ScrapeCoordinator
 @inject SettingsService settings
 @inject IHttpClientFactory HttpClientFactory
 @inject IJSRuntime JS
 @inject IConfiguration Configuration
 @rendermode InteractiveServer
+@implements IAsyncDisposable
 
 <PageTitle>Setup — TaxRateCollector</PageTitle>
 
@@ -180,6 +181,13 @@ else
         <label class="setting-label">Use Wayback Machine if source URL returns 404</label>
         <input type="checkbox" @bind="settings.Current.WaybackMachineFallback" />
     </div>
+    <div class="setting-row" style="margin-top:.6rem">
+        <label class="setting-label">
+            Full-page capture for HTML evidence
+            <span class="setting-hint">Off: HTML only (fast). On: bundles CSS/images/scripts into a zip.</span>
+        </label>
+        <input type="checkbox" @bind="settings.Current.FullPageCapture" />
+    </div>
     <div class="settings-actions" style="margin-top:.75rem;gap:.6rem">
         <button class="btn-primary" @onclick="SaveConfig" disabled="@configBusy">Save Preferences</button>
         @if (!string.IsNullOrEmpty(configMsg)) { <span class="save-confirm">@configMsg</span> }
@@ -265,11 +273,13 @@ else
 <!-- ── Run All ─────────────────────────────────────────────────────────────── -->
 <div class="setup-card">
     <div class="setup-card-header">
-        <h2 class="setup-card-title">Run All Import Steps</h2>
-        <p class="setup-card-desc">
-            Runs steps 1→4 in sequence: validate URLs, import SST taxonomy, import Census jurisdictions,
-            then import ZIP codes. Skips steps that have already completed.
-        </p>
+        <div>
+            <h2 class="setup-card-title">Run All Import Steps</h2>
+            <p class="setup-card-desc">
+                Runs steps 1→4 in sequence: validate URLs, import SST taxonomy, import Census jurisdictions,
+                then import ZIP codes. Skips steps that have already completed.
+            </p>
+        </div>
     </div>
     @if (!string.IsNullOrEmpty(runAllMsg))
     {
@@ -285,15 +295,17 @@ else
 <!-- ── Step 2: SST Taxonomy ──────────────────────────────────────────────────── -->
 <div class="setup-card @(step2Ok ? "setup-card-done" : "")">
     <div class="setup-card-header">
-        <h2 class="setup-card-title">
-            <span class="setup-step-num @(step2Ok ? "num-done" : (step1Ok ? "num-active" : "num-todo"))">@(step2Ok ? "✓" : "2")</span>
-            SST Product/Service Taxonomy
-        </h2>
-        <p class="setup-card-desc">
-            Downloads the SSUTA Agreement PDF, extracts Appendix C defined terms, and builds
-            the product/service category tree used to scope tax rates per product type.
-            Source: <span class="mono-sm">@TruncateUrl(settings.Current.SstAgreementUrl)</span>
-        </p>
+        <div>
+            <h2 class="setup-card-title">
+                <span class="setup-step-num @(step2Ok ? "num-done" : (step1Ok ? "num-active" : "num-todo"))">@(step2Ok ? "✓" : "2")</span>
+                SST Product/Service Taxonomy
+            </h2>
+            <p class="setup-card-desc">
+                Downloads the SSUTA Agreement PDF, extracts Appendix C defined terms, and builds
+                the product/service category tree used to scope tax rates per product type.
+                Source: <span class="mono-sm">@TruncateUrl(settings.Current.SstAgreementUrl)</span>
+            </p>
+        </div>
     </div>
     @if (!string.IsNullOrEmpty(sstMsg))
     {
@@ -482,21 +494,38 @@ else
             </p>
         </div>
         <div class="setup-card-actions">
-            @if (!scrapeRunning)
+            @if (!ScrapeCoordinator.IsRunning)
             {
                 <button class="btn-primary" @onclick="StartScrape" disabled="@(!step5Ok)">▶ Run Scrape</button>
+                @if (pausedScrapeRunId.HasValue)
+                {
+                    <button class="btn-secondary" @onclick="ResumeScrape">↩ Resume</button>
+                }
             }
             else
             {
-                <button class="btn-secondary" @onclick="StopScrape">■ Stop</button>
+                <button class="btn-secondary" @onclick="() => ScrapeCoordinator.RequestPause()">⏸ Pause</button>
             }
         </div>
     </div>
-    @if (scrapeRunning)
+    @if (activeScrapeRun is not null)
     {
-        <div class="setup-status setup-status-ok"><span class="pipeline-running-dot"></span> Running…</div>
+        var pct = activeScrapeRun.TotalCount > 0
+            ? (int)(100.0 * activeScrapeRun.ProcessedCount / activeScrapeRun.TotalCount)
+            : 0;
+        <div class="scrape-progress-wrap">
+            <div class="scrape-progress-bar" style="width:@(pct)%"></div>
+        </div>
+        <div class="setup-status setup-status-ok">
+            <span class="pipeline-running-dot"></span>
+            @activeScrapeRun.ProcessedCount.ToString("N0") / @activeScrapeRun.TotalCount.ToString("N0") jurisdictions (@pct%)
+        </div>
     }
-    @if (scrapeStatus is not null && !scrapeRunning)
+    @if (pausedScrapeRunId.HasValue && !ScrapeCoordinator.IsRunning)
+    {
+        <div class="setup-status setup-status-warn">⏸ Paused — run #@pausedScrapeRunId can be resumed.</div>
+    }
+    @if (scrapeStatus is not null && !ScrapeCoordinator.IsRunning)
     {
         <div class="setup-status @(scrapeStatus.StartsWith("✗") ? "setup-status-error" : "setup-status-ok")">@scrapeStatus</div>
     }
@@ -566,7 +595,7 @@ else
         <div class="log-level-pills">
             @foreach (var f in new[] { "All", "Found", "NotFound", "Skipped", "Error" })
             {
-                <button class="log-level-pill disc-filter-pill @(f == "All" ? "disc-pill-all" : $"disc-pill-{f.ToLower()}") @(discoveryFilter == f ? "log-pill-active" : "")"
+                <button class="@(discoveryFilter == f ? "btn-primary" : "btn-secondary")"
                         @onclick="() => discoveryFilter = f">@f</button>
             }
         </div>
@@ -669,9 +698,9 @@ else
         <div class="setting-row">
             <label class="setting-label">Mode</label>
             <div class="theme-toggle">
-                <button class="theme-btn @(paypal.Mode == "sandbox" ? "theme-active" : "")"
+                <button class="@(paypal.Mode == "sandbox" ? "btn-primary" : "btn-secondary")"
                         @onclick='() => paypal.Mode = "sandbox"'>Sandbox</button>
-                <button class="theme-btn @(paypal.Mode == "live" ? "theme-active" : "")"
+                <button class="@(paypal.Mode == "live" ? "btn-primary" : "btn-secondary")"
                         @onclick='() => paypal.Mode = "live"'>Live</button>
             </div>
         </div>
@@ -812,8 +841,9 @@ else
     {
         await Refresh();
         await using var db = await DbFactory.CreateDbContextAsync();
-        pricing = await db.PricingConfigs.FirstOrDefaultAsync();
-        paypal  = await db.PayPalConfigs.FirstOrDefaultAsync();
+        pricing = await db.PricingConfigs.OrderBy(x => x.Id).FirstOrDefaultAsync();
+        paypal  = await db.PayPalConfigs.OrderBy(x => x.Id).FirstOrDefaultAsync();
+        _ = PollScrapeProgressAsync(_pollCts.Token);
     }
 
     private async Task Refresh()
@@ -1000,28 +1030,57 @@ else
         url.Length <= 55 ? url : url[..52] + "…";
 
     // ── Scrape state ──────────────────────────────────────────────────────────
-    private bool scrapeRunning;
-    private CancellationTokenSource? scrapeCts;
     private string? scrapeStatus;
+    private int? pausedScrapeRunId;
+    private ScrapeRun? activeScrapeRun;
+    private CancellationTokenSource _pollCts = new();
 
-    private async Task StartScrape()
+    private void StartScrape()
     {
-        scrapeRunning = true;
-        scrapeStatus  = null;
-        scrapeCts     = new CancellationTokenSource();
-        StateHasChanged();
-        try
-        {
-            var changed = await Orchestrator.RunFullScrapeAsync(scrapeCts.Token);
-            scrapeStatus = $"✓ Done — {changed} change(s) detected";
-            await Refresh();
-        }
-        catch (OperationCanceledException) { scrapeStatus = "Stopped."; }
-        catch (Exception ex) { scrapeStatus = $"✗ {ex.Message}"; }
-        finally { scrapeRunning = false; StateHasChanged(); }
+        scrapeStatus = null;
+        ScrapeCoordinator.TryEnqueueStart();
     }
 
-    private void StopScrape() => scrapeCts?.Cancel();
+    private void ResumeScrape()
+    {
+        if (pausedScrapeRunId is null) return;
+        scrapeStatus = null;
+        ScrapeCoordinator.TryEnqueueResume(pausedScrapeRunId.Value);
+    }
+
+    private async Task PollScrapeProgressAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                await using var db = await DbFactory.CreateDbContextAsync(ct);
+
+                activeScrapeRun = await db.ScrapeRuns
+                    .Where(r => r.Status == ScrapeStatus.Running)
+                    .OrderByDescending(r => r.Id)
+                    .FirstOrDefaultAsync(ct);
+
+                pausedScrapeRunId = activeScrapeRun is null
+                    ? await db.ScrapeRuns
+                        .Where(r => r.Status == ScrapeStatus.Paused)
+                        .OrderByDescending(r => r.Id)
+                        .Select(r => (int?)r.Id)
+                        .FirstOrDefaultAsync(ct)
+                    : null;
+
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _pollCts.CancelAsync();
+        _pollCts.Dispose();
+    }
 
     // ── Discovery state ───────────────────────────────────────────────────────
     private bool discoveryRunning;

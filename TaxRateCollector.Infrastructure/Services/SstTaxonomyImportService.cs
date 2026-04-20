@@ -134,42 +134,8 @@ public class SstTaxonomyImportService(
 
     // ── Defined-term parser ───────────────────────────────────────────────────
 
-    // Matches patterns like: "Candy" means  OR  "Candy" - (some PDFs use em-dash)
-    private static readonly Regex TermPattern = new(
-        """[""]([^""]+)[""][""]\s*(means|refers to|is defined as)""",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
     private static Dictionary<string, string> ParseDefinedTerms(string text)
-    {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var matches = TermPattern.Matches(text);
-
-        for (int i = 0; i < matches.Count; i++)
-        {
-            var termName = NormalizeTerm(matches[i].Groups[1].Value);
-            var defStart = matches[i].Index + matches[i].Length;
-            var defEnd   = i + 1 < matches.Count ? matches[i + 1].Index : Math.Min(defStart + 1200, text.Length);
-            var definition = CleanDefinition(text[defStart..defEnd]);
-
-            if (!string.IsNullOrWhiteSpace(termName) && definition.Length > 10)
-                result[termName] = definition;
-        }
-
-        return result;
-    }
-
-    private static string NormalizeTerm(string raw) =>
-        Regex.Replace(raw.Trim(), @"\s+", " ");
-
-    private static string CleanDefinition(string raw)
-    {
-        // Strip page headers/footers, excessive whitespace, and trailing noise
-        var cleaned = Regex.Replace(raw, @"\n\s*\d+\s*\n", " ");  // page numbers
-        cleaned = Regex.Replace(cleaned, @"\s{3,}", "  ");
-        cleaned = cleaned.Trim().TrimEnd('.').Trim();
-        if (cleaned.Length > 600) cleaned = cleaned[..600].Trim() + "…";
-        return cleaned;
-    }
+        => SstDefinitionParser.ParseDefinedTerms(text);
 
     // ── Database write ────────────────────────────────────────────────────────
 
@@ -240,18 +206,10 @@ public class SstTaxonomyImportService(
     }
 
     private static string ResolveDescription(TaxCategoryDef def, Dictionary<string, string> pdfDefinitions)
-    {
-        foreach (var key in PdfTermVariants(def.Name))
-        {
-            if (pdfDefinitions.TryGetValue(key, out var pdfDef))
-                return pdfDef;
-        }
-        return def.KnownDescription;
-    }
+        => SstDefinitionParser.ResolveDescription(def, pdfDefinitions);
 
-    private static TaxCategory BuildEntity(TaxCategoryDef def, string description, int? parentId)
-    {
-        return new TaxCategory
+    private static TaxCategory BuildEntity(TaxCategoryDef def, string description, int? parentId) =>
+        new()
         {
             Name         = def.Name,
             TopLevelType = def.TopLevel,
@@ -260,20 +218,4 @@ public class SstTaxonomyImportService(
             ParentId     = parentId,
             Description  = description,
         };
-    }
-
-    // Try exact name, then without parenthetical, then abbreviated forms
-    private static IEnumerable<string> PdfTermVariants(string name)
-    {
-        yield return name;
-        var noParens = Regex.Replace(name, @"\s*\([^)]+\)", "").Trim();
-        if (noParens != name) yield return noParens;
-        // Some SSUTA PDFs use slightly different phrasing
-        yield return name.Replace(" (General)", "").Trim();
-        yield return name.Replace("&", "and").Trim();
-        yield return name.Replace(" (OTC)", "").Trim();
-        yield return name.Replace(" (Downloaded)", "").Trim();
-        yield return name.Replace(" (Physical Media)", "").Trim();
-        yield return name.Replace(" (Unprepared)", "").Trim();
-    }
 }

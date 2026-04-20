@@ -145,7 +145,16 @@
             new("Excise Tax",
                 "A tax on the manufacture, sale, or use of a specific product — typically motor fuel, tobacco, and alcohol. " +
                 "Unlike sales tax, excise tax is usually applied upstream (at the manufacturer or distributor level) and is embedded " +
-                "in the final retail price. Tracked separately in the <strong>ExciseTaxRates</strong> table."),
+                "in the final retail price. Collected at a fixed point in the supply chain (manufacturer, importer, or distributor) " +
+                "and stored using the <strong>RemittancePoint</strong> field on TaxRate rows."),
+
+            new("Transaction Privilege Tax",
+                "Arizona's version of sales tax. Despite the similar effect, it is technically a tax on the <em>seller's privilege</em> " +
+                "of doing business, not on the buyer's purchase. Practically, sellers pass it on to buyers. Arizona TPT is origin-based " +
+                "for intrastate sales and is administered by the Arizona Department of Revenue (ADOR) together with city taxes under " +
+                "a single license — unusual compared to other states.",
+                "TPT",
+                Badge: "AZ only", BadgeClass: "badge-warn"),
 
             new("Nexus",
                 "The legal connection between a seller and a state that creates an obligation to collect and remit sales tax in that state. " +
@@ -156,7 +165,14 @@
             new("Economic Nexus",
                 "Post-<em>South Dakota v. Wayfair</em> (2018) doctrine allowing states to require tax collection from out-of-state sellers " +
                 "based purely on sales volume, without any physical presence. Most states set the threshold at $100,000 in annual sales " +
-                "or 200 separate transactions into that state."),
+                "or 200 separate transactions into that state. <em>All</em> interstate remote sales use destination-based sourcing regardless " +
+                "of the state's intrastate rule."),
+
+            new("Marketplace Facilitator",
+                "A platform (Amazon, eBay, Etsy, Walmart Marketplace, etc.) that facilitates third-party sales and is required by law " +
+                "to collect and remit sales tax on those sales. Post-<em>Wayfair</em>, all 45 taxing states + D.C. have marketplace " +
+                "facilitator laws. When a sale goes through a facilitator, the third-party seller has <em>no</em> collection obligation " +
+                "for that transaction. Tracked via <code>RemittancePoint.MarketplaceFacilitator</code> on TaxRate rows."),
 
             new("Taxability",
                 "Whether a particular product or service is subject to sales tax in a given jurisdiction. Not the rate — just the yes/no/reduced " +
@@ -164,23 +180,328 @@
                 "(a special lower rate, e.g., Tennessee's 4% food rate), or <em>Special Rule</em> (depends on additional conditions like " +
                 "preparation method or transaction context)."),
 
+            new("Tangible Personal Property",
+                "Physical, movable property — the classic taxable item in most states. Goods you can touch: furniture, electronics, clothing, " +
+                "vehicles, equipment. The default rule in nearly all states is that TPP sales are taxable unless specifically exempted. " +
+                "Contrasts with services and digital goods, which are taxable only if the state explicitly extends its tax to them.",
+                "TPP"),
+
+            new("Digital Goods",
+                "Electronically delivered products: music, videos, ebooks, apps, software downloads, and online games. Taxability varies " +
+                "dramatically by state. SST member states use the <em>Digital Goods</em> category in Appendix C. Non-SST states often " +
+                "have inconsistent or silent statutes. Roughly 30 states now tax at least some digital goods, but the boundaries differ — " +
+                "a streaming subscription taxable in one state may be exempt in the next."),
+
+            new("Software as a Service",
+                "Cloud-delivered software accessed via a browser or API — no local installation. Highly contested taxability. Some states " +
+                "treat it as a taxable digital service or data processing; others exempt it as a non-tangible service. No consistent SST " +
+                "definition exists. Because the 'product' is delivered at the server, sourcing rules also vary (some states use the " +
+                "customer's primary-use location; others prorate across all users). Requires jurisdiction-level <strong>StateCategoryRule</strong> " +
+                "rows with Special Rule or Exempt treatment for most states.",
+                "SaaS"),
+
+            new("Exemption Certificate",
+                "A document a buyer provides to a seller to claim a sales tax exemption at the time of purchase. Common types: " +
+                "resale (buyer will resell the goods), manufacturer (direct-use exemption), agricultural, governmental, and non-profit. " +
+                "The seller must retain the certificate to document why tax was not collected; otherwise the seller is liable. " +
+                "Multi-state sellers use the SST Uniform Exemption Certificate (SSTGB Form F0003) across all SST member states."),
+
+            new("Resale Certificate",
+                "A subset of exemption certificates used when the buyer is purchasing goods specifically for resale, not for personal " +
+                "or business consumption. The buyer's sales tax registration number is typically required. If the goods are later used " +
+                "personally (rather than resold), the buyer must self-remit use tax. Resale certificates must be renewed periodically " +
+                "and validated for each vendor relationship."),
+
+            new("Tax Holiday",
+                "A temporary period (usually a weekend) when a state suspends sales tax on specific categories of goods — commonly " +
+                "back-to-school clothing, school supplies, hurricane preparedness items, or energy-efficient appliances. The exemption " +
+                "applies to qualifying items up to price thresholds that vary by state. Tax holidays appear as date-bounded rate overrides " +
+                "in the scraper's output."),
+
             new("Destination-Based Sourcing",
                 "The majority rule: sales tax is owed to the jurisdiction where the buyer <em>receives</em> the goods, not where the " +
                 "seller is located. This is why a company in California selling to a customer in Texas owes Texas sales tax (once nexus is established), " +
-                "not California tax."),
+                "not California tax. All interstate remote sales use destination sourcing post-<em>Wayfair</em>. " +
+                "Stored as <code>SourcingRule.DestinationBased</code>."),
 
             new("Origin-Based Sourcing",
-                "The minority rule used by a few states (and for intrastate sales in some others): tax is owed based on where the " +
-                "<em>seller</em> is located. California, Texas, and Arizona use origin sourcing for sales within the state but " +
-                "destination sourcing for remote sales."),
+                "The minority rule used by approximately 12 states for <em>intrastate</em> sales: tax is owed based on where the " +
+                "<em>seller</em> is located. States: AZ, IL, MS, MO, OH, PA, TN, TX, UT, VA, and CA (Modified). " +
+                "The seller applies their own city/county rate rather than the buyer's. Does not apply to interstate remote sales. " +
+                "Stored as <code>SourcingRule.OriginBased</code>."),
+
+            new("Modified Sourcing",
+                "A hybrid rule used primarily by <strong>California</strong>: state and county rate components are origin-sourced " +
+                "(seller's location), while city and special district components are destination-sourced (buyer's location). " +
+                "The result is that a CA intrastate sale has a split-sourcing calculation. Stored as <code>SourcingRule.Modified</code>."),
 
             new("General Rate",
                 "The standard sales tax rate applied to fully taxable goods with no special category treatment. " +
-                "The base rate from which exemptions and reduced rates are carved out."),
+                "The base rate from which exemptions and reduced rates are carved out. Stored on <strong>StateTaxProfile</strong> " +
+                "as the state-level anchor; county and city rates layer on top."),
 
             new("Effective Rate",
                 "The total rate a customer actually pays at a given location: <code>State Rate + County Rate + City Rate + Special District Rate</code>. " +
-                "Varies by the exact delivery address. A purchase in Austin, TX at 8.25% is: 6.25% (TX state) + 2% (combined local)."),
+                "Varies by the exact delivery address. A purchase in Austin, TX at 8.25% is: 6.25% (TX state) + 2% (combined local). " +
+                "Computed by summing all active ancestor <strong>TaxRate</strong> rows in the jurisdiction chain."),
+        ]),
+
+        new("Taxability Categories",
+        [
+            new("Food & Food Ingredients",
+                "SSUTA Appendix C category. Defined as <em>substances sold for ingestion or chewing by humans, consumed for taste or nutritional value.</em> " +
+                "Excludes alcoholic beverages, tobacco, candy, and prepared food. Most SST states exempt this category entirely; a few " +
+                "(e.g., Tennessee, Mississippi) apply a reduced rate rather than full exemption. California taxes food ingredients at 0% " +
+                "but has its own definitions that diverge from SST in edge cases."),
+
+            new("Prepared Food",
+                "SSUTA Appendix C category. Food sold in a heated state, sold with eating utensils provided by the seller, or two or more " +
+                "food ingredients mixed or combined by the seller for sale as a single item. Generally taxable in all states — " +
+                "the food-ingredient exemption does not extend to restaurant meals or deli items. The hot/cold distinction is a " +
+                "frequent audit issue (e.g., a cold sandwich vs. a heated one)."),
+
+            new("Candy",
+                "SSUTA Appendix C category. Defined as a preparation of sugar, honey, or other natural or artificial sweeteners " +
+                "combined with chocolate, fruits, nuts, or other ingredients — <em>where the product does not contain flour</em>. " +
+                "This distinction matters: a Kit Kat bar (contains flour) is classified as food ingredients in many SST states " +
+                "and is exempt, while a Milky Way (no flour) is candy and is taxable. States treat this differently — check the " +
+                "SST Taxability Matrix for each member state."),
+
+            new("Clothing",
+                "SSUTA Appendix C category. Human wearing apparel for general use. Many SST states exempt general clothing. " +
+                "New York exempts clothing items under $110 per item but taxes formal wear and items above the threshold. " +
+                "Pennsylvania exempts most clothing. Sports equipment and protective gear are usually taxable even when general " +
+                "clothing is exempt. Accessories (belts, handbags, jewelry) are typically taxable."),
+
+            new("Drugs & Medical",
+                "SSUTA Appendix C categories covering prescription drugs (universally exempt), over-the-counter drugs, dietary supplements, " +
+                "and medical equipment. Prescription drugs are exempt in all states. OTC drugs are exempt in most SST states but " +
+                "taxable in some non-SST states. Dietary supplements are a frequent gray area — the SST definition excludes them " +
+                "from the drug exemption, but some states extend exemption anyway."),
+
+            new("Motor Vehicles",
+                "Generally subject to a separate registration/title fee or use tax administered by the DMV rather than standard " +
+                "sales tax. Rates and structures differ substantially from general sales tax. Trades, dealer incentives, and " +
+                "dealer-installed options all affect the taxable base. Not modeled as standard TaxRate rows."),
+
+            new("Digital Goods (SST Category)",
+                "SSUTA Appendix C categories for electronically transferred products: <em>Specified Digital Products</em> " +
+                "(digital audio, digital audiovisual works, digital books) and <em>Computer Software</em> (delivered electronically). " +
+                "SST member states must either tax or exempt these consistently per their Taxability Matrix disclosure. " +
+                "Non-SST states' treatment is governed by their own statutes and is frequently undefined or contested."),
+
+            new("Services",
+                "The Services branch of the SSUTA Appendix C taxonomy. Unlike goods, services are taxable in a state <em>only</em> if " +
+                "the state affirmatively extends its sales tax to that service category. No default taxability. Major service categories: " +
+                "telecommunications, information services, data processing, repair services, personal services, and admission charges. " +
+                "States vary enormously — New Mexico taxes almost all services; most states tax only a narrow list."),
+
+            new("Telecommunications",
+                "SSUTA Appendix C service category, subject to detailed federal and state rules under the Federal Telecommunications " +
+                "Act. Mobile services (voice + data) are taxed under a parallel regime: federal USF, state/local telecom taxes, and " +
+                "E911 fees — many of which fall outside standard sales tax. VOIP taxability is contested in several states. " +
+                "Intrastate vs. interstate calls may be taxed differently. Generally sourced to the customer's primary location."),
+        ]),
+
+        new("Excise Taxes",
+        [
+            new("Motor Fuel Excise Tax",
+                "A per-gallon tax on gasoline, diesel, and alternative fuels (CNG, LNG, hydrogen). Levied at the distributor level " +
+                "and embedded in the pump price. Federal rate (2025): 18.4¢/gal gasoline, 24.4¢/gal diesel. State rates range from " +
+                "~14¢ (Alaska) to ~66¢/gal (Pennsylvania). Many states index their rate to the CPI or average wholesale price, causing " +
+                "annual or quarterly automatic adjustments — these are tracked using <code>RateAdjustmentFrequency.Annual</code> or " +
+                "<code>Quarterly</code> on the TaxRate row."),
+
+            new("Tobacco Excise Tax",
+                "Per-pack tax on cigarettes and per-weight or per-unit taxes on cigars, snuff, pipe tobacco, and smokeless tobacco. " +
+                "Federal cigarette rate: $1.0066/pack. State rates range from 17¢/pack (Missouri) to $4.35/pack (New York). " +
+                "Cigars and other tobacco products (OTP) use percentage-of-wholesale pricing in most states — " +
+                "see <strong>OTP</strong> and <strong>Percentage of Wholesale</strong>."),
+
+            new("Other Tobacco Products",
+                "The category covering all tobacco products <em>other than</em> cigarettes: cigars, pipe tobacco, snuff, chewing tobacco, " +
+                "and newer products like heated tobacco. Tax rate basis is almost always <em>percentage of wholesale price</em> rather " +
+                "than per-unit. Common state rates: RI 80% of wholesale, NY 75% of wholesale (cigars), CA 56.93% of wholesale. " +
+                "Federal OTP rate: 52.75% of manufacturer's sale price for large cigars. Stored with <code>RateBasis.PercentageOfWholesale</code>.",
+                "OTP"),
+
+            new("Alcohol Excise Tax",
+                "Federal and state per-unit taxes on beer, wine, and spirits. Federal rates (post-CBMA): beer $3.50–$18/barrel, " +
+                "wine $1.07–$3.40/gallon, spirits $2.70–$13.50/proof gallon (tiered by volume and ownership). " +
+                "States layer additional rates on top. Rate basis varies: beer uses <code>FlatPerVolume</code> (per barrel or per gallon), " +
+                "spirits use <code>FlatPerProofGallon</code>, wine uses <code>FlatPerVolume</code>."),
+
+            new("Proof Gallon",
+                "The unit of measurement for distilled spirits taxation. One proof gallon = one liquid gallon of spirits at exactly " +
+                "50% alcohol by volume (100 proof). A gallon of 80-proof whiskey = 0.8 proof gallons. Federal and most state spirits " +
+                "excise taxes are expressed as dollars per proof gallon. " +
+                "Stored with <code>RateBasis.FlatPerProofGallon</code>.",
+                "PG"),
+
+            new("Average Wholesale Price",
+                "The reference price used to compute OTP and some fuel excise taxes expressed as a percentage-of-wholesale. " +
+                "Determined by each state's revenue department, typically on a quarterly basis using survey data from distributors. " +
+                "Rate basis = <code>PercentageOfWholesale</code>; the rate percentage is applied against the AWP at time of sale. " +
+                "Because AWP fluctuates, OTP effective tax amounts change even when the statutory rate stays constant.",
+                "AWP"),
+
+            new("Three-Tier Distribution System",
+                "The alcohol supply chain structure mandated by most states post-Prohibition: " +
+                "<strong>Supplier/Brewer → Licensed Distributor → Licensed Retailer → Consumer.</strong> " +
+                "Excise taxes are collected and remitted by the <em>distributor</em> tier, not the retailer. " +
+                "Direct-to-consumer shipping (e.g., winery clubs) is handled differently and varies by state permit law. " +
+                "Tracked via <code>RemittancePoint.Distributor</code>."),
+
+            new("Craft Beverage Modernization Act",
+                "Federal legislation (2017, made permanent 2020) that created tiered federal excise tax rates for small craft producers: " +
+                "breweries producing under 2M barrels/year, wineries under 250,000 gallons, and small distilleries pay reduced federal rates. " +
+                "Affects rate lookup for small producers — the federal rate row depends on total annual production volume.",
+                "CBMA"),
+
+            new("Environmental / Carbon Tax",
+                "Taxes on carbon emissions, fuel combustion, or hazardous materials. California's cap-and-trade program " +
+                "effectively creates a carbon allowance cost embedded in fuel prices. Some states levy per-barrel fees on petroleum " +
+                "products for spill funds. Rate adjustment frequencies are often monthly or quarterly based on allowance auction prices. " +
+                "Tracked with <code>RateAdjustmentFrequency.Monthly</code> or <code>Quarterly</code>."),
+        ]),
+
+        new("Rate Mechanics",
+        [
+            new("Rate Basis",
+                "Describes <em>how</em> a tax rate is applied to determine the tax amount due. " +
+                "Stored as the <code>RateBasis</code> enum on each TaxRate row. " +
+                "Sales tax is always <code>Percentage</code>; excise taxes use the full range of bases depending on the product.",
+                "RateBasis"),
+
+            new("Percentage",
+                "Rate basis: a decimal fraction of the retail sale price. The most common basis — all sales tax rates use this. " +
+                "Example: 6.5% → stored as 0.065. Tax = Rate × Sale Price.",
+                "RateBasis.Percentage"),
+
+            new("Flat Per Unit",
+                "Rate basis: a fixed dollar amount per countable unit sold, regardless of retail price. " +
+                "Example: $0.231 per cigarette pack, $0.05 per disposable bag. Tax = Rate × Quantity. " +
+                "Used for tobacco, bag fees, and some beverage container deposits.",
+                "RateBasis.FlatPerUnit"),
+
+            new("Flat Per Volume",
+                "Rate basis: a fixed dollar amount per volume unit (gallon, liter, barrel). " +
+                "Example: $0.184/gallon (federal gasoline excise), $1.07/gallon (federal wine excise). " +
+                "Tax = Rate × Volume. Used for motor fuel, beer, and wine excise taxes.",
+                "RateBasis.FlatPerVolume"),
+
+            new("Flat Per Weight",
+                "Rate basis: a fixed dollar amount per weight unit (ounce, pound, gram). " +
+                "Example: $1.20/oz of tobacco in some state OTP schedules. Tax = Rate × Weight.",
+                "RateBasis.FlatPerWeight"),
+
+            new("Flat Per Proof Gallon",
+                "Rate basis: a fixed dollar amount per proof gallon of distilled spirits. " +
+                "Example: federal spirits excise $13.50/proof gallon (over 100,000 PG/yr). " +
+                "Tax = Rate × Proof Gallons. See <em>Proof Gallon</em>.",
+                "RateBasis.FlatPerProofGallon"),
+
+            new("Percentage of Wholesale",
+                "Rate basis: a decimal fraction applied to the <em>wholesale</em> price, not the retail price. " +
+                "Used almost exclusively for OTP (cigars, pipe tobacco, snuff). " +
+                "Example: Rhode Island 80% of wholesale means if a cigar costs the distributor $1.00, the tax is $0.80. " +
+                "Tax = Rate × Wholesale Cost.",
+                "RateBasis.PercentageOfWholesale"),
+
+            new("Remittance Point",
+                "Where in the supply chain the tax is collected and remitted to the government. Sales tax is always remitted by the " +
+                "<strong>Retailer</strong> (or <strong>MarketplaceFacilitator</strong>). Excise taxes on alcohol and tobacco are " +
+                "remitted by the <strong>Distributor</strong> or <strong>Manufacturer</strong>/<strong>Importer</strong>. " +
+                "Stored as <code>RemittancePoint</code> enum on TaxRate rows.",
+                "RemittancePoint"),
+
+            new("Sourcing Rule",
+                "Determines which jurisdiction's rate applies to an intrastate transaction: " +
+                "<code>DestinationBased</code> (buyer's location — default for 38+ states and all interstate sales), " +
+                "<code>OriginBased</code> (seller's location — 12 states for intrastate), or " +
+                "<code>Modified</code> (California split: state/county = origin, city/district = destination). " +
+                "Stored as <code>SourcingRule</code> enum on <strong>StateTaxProfile</strong>.",
+                "SourcingRule"),
+
+            new("Rate Adjustment Frequency",
+                "How often a tax rate changes automatically without new legislation. " +
+                "<code>Static</code>: fixed until legislature acts (all sales tax rates; most excise). " +
+                "<code>Annual</code>: recalculates once per year (NJ fuel tax Jan 1; IL fuel tax CPI Jul 1). " +
+                "<code>Quarterly</code>: recalculates each quarter based on price index (VA motor fuel AWP). " +
+                "<code>Monthly</code>: rare; used in some carbon allowance systems. " +
+                "Non-static rates need more frequent scrape cycles.",
+                "RateAdjustmentFrequency"),
+
+            new("Indexed Rate",
+                "A tax rate whose value is automatically adjusted by a government formula — typically tied to the CPI, an average " +
+                "wholesale price, or a commodity index — without requiring new legislation. Motor fuel taxes in many states are indexed. " +
+                "Indexed rates carry a non-<code>Static</code> <strong>RateAdjustmentFrequency</strong> and must be re-scraped at each " +
+                "adjustment date to keep the TaxRate table current."),
+
+            new("Rate Cap",
+                "A state-imposed ceiling on the combined local sales tax rate that a county or city may levy. " +
+                "Stored on <strong>StateTaxProfile</strong> as <code>LocalRateCap</code>. When set, the sum of all local tiers " +
+                "cannot exceed this value, regardless of individual ordinances. Example: Tennessee caps the local rate at 2.75%."),
+        ]),
+
+        new("Compliance & Administration",
+        [
+            new("Filing Period",
+                "The interval at which a seller must file a sales tax return and remit collected tax: monthly, quarterly, or annual. " +
+                "States typically assign the period based on the seller's average monthly tax liability — high-volume sellers file monthly. " +
+                "Filing deadlines are usually the 20th or last day of the month following the period end. Late filing triggers penalty and interest."),
+
+            new("Remittance",
+                "The act of paying collected sales or excise tax to the appropriate tax authority. Sellers collect tax from buyers, " +
+                "hold it in trust, and then remit it to each state/locality by the filing deadline. In a three-tier excise system, " +
+                "the distributor remits to the state; the retailer never touches the excise tax directly."),
+
+            new("Voluntary Disclosure Agreement",
+                "A program allowing businesses with undetected prior-period nexus exposure to come forward, pay back taxes, and " +
+                "receive a limited lookback period and waiver of penalties. Most states offer VDAs through the Multistate Tax Commission " +
+                "(MTC) Voluntary Disclosure Program or directly. Typically limits back-period exposure to 3–4 years rather than the " +
+                "full statute of limitations.",
+                "VDA"),
+
+            new("Lookback Period",
+                "The number of prior years a state can assess in an audit or VDA. Typically 3–4 years for sales tax. " +
+                "Extended lookback (up to 6–8 years) applies in cases of fraud or substantial underreporting. " +
+                "A VDA typically shortens the lookback to 3 years in exchange for voluntary compliance."),
+
+            new("Statute of Limitations",
+                "The maximum period after a return is filed during which a state can assess additional tax, penalties, or interest. " +
+                "Typically 3 years for sales tax (from the return due date). Extended to 6 years if the taxpayer understated by more " +
+                "than 25%; unlimited if no return was filed. Varies by state.",
+                "SOL"),
+
+            new("Audit",
+                "A formal examination of a business's books and records by a state tax authority to verify that the correct amount " +
+                "of sales tax was collected and remitted. Auditors request purchase invoices, resale certificates, exemption " +
+                "certificates, and sales records. Common triggers: anomalous tax-to-revenue ratios, high exemption claims, nexus " +
+                "from business registration data, or random selection."),
+
+            new("Amnesty Program",
+                "A time-limited state initiative offering penalty and/or interest waivers to businesses that voluntarily register " +
+                "and pay past-due taxes during the program window. Similar to a VDA but announced publicly and available to all " +
+                "qualifying businesses without case-by-case negotiation. States typically run amnesty programs every 5–10 years."),
+
+            new("Penalty & Interest",
+                "Failure to file or pay sales tax on time results in: <strong>Late-filing penalty</strong> (typically 5–25% of tax due), " +
+                "<strong>Late-payment penalty</strong> (5–10%), and <strong>Interest</strong> (usually the federal short-term rate + 3%, " +
+                "accruing daily). Some states also impose a <em>negligence</em> penalty (20–25%) for systematic non-compliance."),
+
+            new("Certificate of Compliance",
+                "An SST-specific designation. A <em>Certified Service Provider</em> (CSP) or <em>Certified Automated System</em> (CAS) " +
+                "that passes SST testing receives a Certificate of Compliance, meaning the software/service is certified to calculate " +
+                "sales tax correctly for SST member states. Sellers using a certified system receive full liability relief for errors " +
+                "caused by SST-provided data.",
+                "CSP / CAS"),
+
+            new("Economic Nexus Threshold",
+                "The dollar or transaction volume trigger that creates economic nexus in a state. The <em>Wayfair</em> standard: " +
+                "$100,000 in annual sales <em>or</em> 200 separate transactions. Some states use $100,000 <em>and</em> 200 transactions " +
+                "(more lenient), or have lower thresholds ($10,000 for ND). Most states measure the prior calendar year; some use " +
+                "rolling 12 months. Exceeding the threshold triggers a collection obligation as of the following registration date."),
         ]),
 
         new("Jurisdictions & Geography",
@@ -280,6 +601,47 @@
                 "Phase 1 of the data pipeline. For each jurisdiction with a configured SourceUrl, routes the request to the " +
                 "appropriate IScrapeStrategy (CSV, HTML table, Excel, PDF, API) and writes the parsed rates as new TaxRate rows. " +
                 "Detects changes against the previous run via the diff engine."),
+
+            new("StateTaxProfile",
+                "A record describing the <em>structural</em> characteristics of a state's sales tax system. Fields: " +
+                "<code>GeneralRate</code>, <code>IsSstMember</code>, <code>LocalAuthorityType</code> (SstUniform / Piggyback / HomeRule / Independent), " +
+                "<code>LocalRateCap</code>, <code>SourcingRule</code>, and <code>RevenueAgencyUrl</code>. " +
+                "One row per state; StateCode is the unique key. Created during the SST import step."),
+
+            new("LocalAuthorityType",
+                "An enum on <strong>StateTaxProfile</strong> describing how local jurisdictions relate to state taxability rules: " +
+                "<code>SstUniform</code> — local rates piggyback, definitions locked to SSUTA; " +
+                "<code>Piggyback</code> — local rates add on but may differ slightly; " +
+                "<code>HomeRule</code> — local jurisdictions define and administer their own taxes (Colorado, Louisiana); " +
+                "<code>Independent</code> — state has no centralized local tax system or the relationship is complex."),
+
+            new("Diff Engine",
+                "The internal service (<code>DiffEngine</code>) that compares a freshly scraped rate against the most recent stored " +
+                "TaxRate for that jurisdiction and category. If the rate changed, a new TaxRate row is written with the current " +
+                "<code>ScrapeRunId</code>; if unchanged, the existing row is left in place and no insert occurs. " +
+                "This keeps a full history of rate changes without storing duplicate rows for stable jurisdictions."),
+
+            new("IScrapeStrategy",
+                "The interface implemented by each format-specific scraper: <code>CsvScraper</code>, <code>HtmlTableScraper</code>, " +
+                "<code>ExcelScraper</code>, <code>PdfScraper</code>, and <code>ApiScraper</code>. " +
+                "The <code>RecursiveRateScraper</code> selects the appropriate strategy based on the MIME type or file extension " +
+                "of the source document. Strategies return a normalized list of rate rows that feed the diff engine."),
+
+            new("ClaudeRateLawExtractor",
+                "The AI extraction service that processes unstructured source documents (PDFs, HTML pages, Excel files) using Claude. " +
+                "Given document content and a jurisdiction context, it returns structured rate data including amounts, RateBasis, " +
+                "effective dates, and category scoping. The output feeds into the standard scraper pipeline and is stored as TaxRate rows " +
+                "with the source document linked as evidence."),
+
+            new("SourceUrl",
+                "The URL of the authoritative government source for a jurisdiction's tax rate. Stored on the <strong>Jurisdiction</strong> " +
+                "entity. Populated by the Discovery phase. The Scrape phase fetches this URL and routes it through the appropriate " +
+                "IScrapeStrategy. A null SourceUrl means the jurisdiction has not yet been discovered and will be skipped during scraping."),
+
+            new("Subscriber",
+                "A paying user of the TaxRateCollector SaaS product. Subscribers select states and are billed by county count at " +
+                "~$0.01/county/month. Access to rate data is restricted to the counties within their subscribed states. " +
+                "Stored in the <strong>Subscribers</strong> and <strong>SubscriberStates</strong> tables; billing is handled via PayPal."),
         ]),
     ];
 }

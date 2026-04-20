@@ -11,5 +11,14 @@ public enum RemittancePoint
     Importer,
     Distributor,
     Retailer,
-    Consumer
+    Consumer,
+
+    /// <summary>
+    /// A marketplace platform (Amazon, Etsy, eBay, Walmart Marketplace, etc.) collects and
+    /// remits sales tax on behalf of third-party sellers under marketplace facilitator laws.
+    /// Effective in all 45 taxing states + DC post-Wayfair (2018–2019). When RemittancePoint
+    /// = MarketplaceFacilitator, the third-party seller has NO collection obligation for
+    /// that sale — the platform handles it. Affects accounting treatment and nexus filings.
+    /// </summary>
+    MarketplaceFacilitator,
 }

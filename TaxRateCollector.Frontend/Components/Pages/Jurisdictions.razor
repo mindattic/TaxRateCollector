@@ -777,7 +777,7 @@ else if (!isAdmin && HasUnsubscribedContent)
                 }
                 @if (isAdmin && rateFormNodeId != node.Id)
                 {
-                    <button class="btn-add-evidence" @onclick="() => StartAddRate(node.Id)">+ Add Rate Law</button>
+                    <button class="btn-primary" @onclick="() => StartAddRate(node.Id)">+ Add Rate Law</button>
                 }
             </div>
 
@@ -786,7 +786,7 @@ else if (!isAdmin && HasUnsubscribedContent)
             {
                 <div class="rate-row-form">
                     <div class="rate-form-grid">
-                        <label>Name<input class="filter-input" @bind="rateFormName" placeholder="e.g. General Sales Tax" /></label>
+                        <label class="rate-form-name">Name<input class="filter-input" @bind="rateFormName" placeholder="e.g. General Sales Tax" /></label>
                         <label>Basis
                             <select class="filter-select" @bind="rateFormBasis">
                                 @foreach (var b in Enum.GetValues<RateBasis>())
@@ -892,7 +892,7 @@ else if (!isAdmin && HasUnsubscribedContent)
                                     }
                                     @if (isAdmin && row.Id > 0)
                                     {
-                                        <button class="btn-add-evidence" style="margin-top:.5rem"
+                                        <button class="btn-primary" style="margin-top:.5rem"
                                                 @onclick="() => OpenEvidenceModal(node, row.Id, row.Name)">+ Add Evidence</button>
                                     }
                                 </div>

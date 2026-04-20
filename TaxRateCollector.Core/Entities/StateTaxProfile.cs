@@ -30,6 +30,17 @@ public class StateTaxProfile
     public LocalTaxAuthorityType LocalTaxAuthorityType { get; set; }
 
     /// <summary>
+    /// Whether intrastate sales are taxed at the seller's location (origin) or the buyer's
+    /// location (destination). Applies to in-state transactions only — all interstate remote
+    /// sales are destination-based post-Wayfair.
+    ///
+    /// Origin-based states (12): AZ, IL, MS, MO, NM, OH, PA, TN, TX, UT, VA.
+    /// California is Modified (state/county = origin; city/district = destination).
+    /// Default DestinationBased for all other states.
+    /// </summary>
+    public SourcingRule IntrastateSourcingRule { get; set; } = SourcingRule.DestinationBased;
+
+    /// <summary>
     /// True if the state caps total combined local rates
     /// (e.g., Texas caps combined local tax at 2%).
     /// </summary>

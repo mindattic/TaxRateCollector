@@ -344,6 +344,145 @@ public class ClaudeExtractionParserTests
         Assert.That(longestRun, Is.LessThanOrEqualTo(maxChars));
     }
 
+    // ── Tests: new excise accuracy fields (TaxCalculationAccuracy migration) ──
+
+    [Test]
+    public async Task NewExciseFields_MappedFromDto()
+    {
+        const string json = """
+        [{
+          "Name": "Chicago Matching Tax",
+          "Rate": 0.03,
+          "Basis": "Percentage",
+          "Unit": "",
+          "TaxType": "ExciseTax",
+          "ProductCategory": "Beer",
+          "SaleContext": "Any",
+          "RemittancePoint": "Retailer",
+          "MinAbv": null, "MaxAbv": null,
+          "Conditions": "",
+          "StatutoryReference": "MCC 3-45-050",
+          "EffectiveDate": "2024-01-01",
+          "ExpirationDate": "",
+          "TaxCategoryId": null,
+          "Confidence": 0.9,
+          "RawEvidence": "3% matching tax on price + all other taxes",
+          "IsCompound": true,
+          "MinTaxableAmount": 1600.00,
+          "MaxTaxableAmount": 3200.00,
+          "FlatCapPerUnit": 0.4026,
+          "IsTemporary": true,
+          "IsRecurring": false,
+          "AdjustmentFrequency": "Annual",
+          "AdjustmentMechanism": "CPI-indexed, recalculated July 1"
+        }]
+        """;
+
+        var extractor = CreateExtractor(json);
+        var result = await extractor.ExtractAsync(
+            TestJurisdiction(), "content", "text/html", "https://test.gov");
+
+        Assert.That(result, Has.Count.EqualTo(1));
+        var law = result[0];
+        Assert.Multiple(() =>
+        {
+            Assert.That(law.IsCompound,           Is.True,                            "IsCompound");
+            Assert.That(law.MinTaxableAmount,     Is.EqualTo(1600.00m),               "MinTaxableAmount");
+            Assert.That(law.MaxTaxableAmount,     Is.EqualTo(3200.00m),               "MaxTaxableAmount");
+            Assert.That(law.FlatCapPerUnit,       Is.EqualTo(0.4026m),                "FlatCapPerUnit");
+            Assert.That(law.IsTemporary,          Is.True,                            "IsTemporary");
+            Assert.That(law.IsRecurring,          Is.False,                           "IsRecurring");
+            Assert.That(law.AdjustmentFrequency,  Is.EqualTo(RateAdjustmentFrequency.Annual), "AdjustmentFrequency");
+            Assert.That(law.AdjustmentMechanism,  Is.EqualTo("CPI-indexed, recalculated July 1"), "AdjustmentMechanism");
+        });
+    }
+
+    [Test]
+    public async Task NewExciseFields_DefaultsWhenAbsent()
+    {
+        var extractor = CreateExtractor(SingleRateLawJson());
+        var result = await extractor.ExtractAsync(
+            TestJurisdiction(), "content", "text/html", "https://test.gov");
+
+        Assert.That(result, Has.Count.EqualTo(1));
+        var law = result[0];
+        Assert.Multiple(() =>
+        {
+            Assert.That(law.IsCompound,           Is.False,                                   "IsCompound default");
+            Assert.That(law.MinTaxableAmount,     Is.Null,                                    "MinTaxableAmount default");
+            Assert.That(law.MaxTaxableAmount,     Is.Null,                                    "MaxTaxableAmount default");
+            Assert.That(law.FlatCapPerUnit,       Is.Null,                                    "FlatCapPerUnit default");
+            Assert.That(law.IsTemporary,          Is.False,                                   "IsTemporary default");
+            Assert.That(law.IsRecurring,          Is.False,                                   "IsRecurring default");
+            Assert.That(law.AdjustmentFrequency,  Is.EqualTo(RateAdjustmentFrequency.Static), "AdjustmentFrequency default");
+            Assert.That(law.AdjustmentMechanism,  Is.Null,                                    "AdjustmentMechanism default");
+        });
+    }
+
+    [Test]
+    public async Task AdjustmentFrequency_UnknownValue_FallsBackToStatic()
+    {
+        const string json = """
+        [{
+          "Name": "Fuel Tax",
+          "Rate": 0.019,
+          "Basis": "Percentage",
+          "Unit": "",
+          "TaxType": "ExciseTax",
+          "ProductCategory": "Fuel",
+          "SaleContext": "Any",
+          "RemittancePoint": "Distributor",
+          "MinAbv": null, "MaxAbv": null,
+          "Conditions": "", "StatutoryReference": "",
+          "EffectiveDate": "", "ExpirationDate": "",
+          "TaxCategoryId": null,
+          "Confidence": 0.9,
+          "RawEvidence": "fuel excise",
+          "AdjustmentFrequency": "BIANNUAL_INVALID"
+        }]
+        """;
+
+        var extractor = CreateExtractor(json);
+        var result = await extractor.ExtractAsync(
+            TestJurisdiction(), "content", "text/html", "https://test.gov");
+
+        Assert.That(result, Has.Count.EqualTo(1));
+        Assert.That(result[0].AdjustmentFrequency, Is.EqualTo(RateAdjustmentFrequency.Static),
+            "Unknown AdjustmentFrequency value should fall back to Static");
+    }
+
+    [Test]
+    public async Task IsRecurring_True_MappedCorrectly()
+    {
+        const string json = """
+        [{
+          "Name": "Tax Holiday",
+          "Rate": 0.0,
+          "Basis": "Percentage",
+          "Unit": "",
+          "TaxType": "SalesTax",
+          "ProductCategory": null,
+          "SaleContext": "Any",
+          "RemittancePoint": "Retailer",
+          "MinAbv": null, "MaxAbv": null,
+          "Conditions": "Back-to-school exemption", "StatutoryReference": "",
+          "EffectiveDate": "", "ExpirationDate": "",
+          "TaxCategoryId": null,
+          "Confidence": 0.8,
+          "RawEvidence": "annual back-to-school holiday",
+          "IsRecurring": true,
+          "IsTemporary": false
+        }]
+        """;
+
+        var extractor = CreateExtractor(json);
+        var result = await extractor.ExtractAsync(
+            TestJurisdiction(), "content", "text/html", "https://test.gov");
+
+        Assert.That(result[0].IsRecurring, Is.True);
+        Assert.That(result[0].IsTemporary, Is.False);
+    }
+
     // ── HTTP stubs ────────────────────────────────────────────────────────────
 
     private sealed class FixedHttpHandler(string body, HttpStatusCode code = HttpStatusCode.OK)

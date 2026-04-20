@@ -17,6 +17,11 @@ public class AppSettings
     [JsonPropertyName("default_update_frequency_days")] public int DefaultUpdateFrequencyDays { get; set; } = 90;
     [JsonPropertyName("evidence_auto_fetch")] public bool EvidenceAutoFetch { get; set; } = false;
     [JsonPropertyName("wayback_machine_fallback")] public bool WaybackMachineFallback { get; set; } = true;
+    /// <summary>
+    /// When true, HTML evidence is saved as a zip bundling the page and all linked
+    /// CSS/script/image assets. When false (default), only the raw HTML is zipped.
+    /// </summary>
+    [JsonPropertyName("full_page_capture")] public bool FullPageCapture { get; set; } = false;
 
     // ── Census data source URLs ───────────────────────────────────────────────
     [JsonPropertyName("census_county_gaz_url")]

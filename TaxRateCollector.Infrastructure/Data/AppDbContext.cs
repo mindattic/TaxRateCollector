@@ -60,7 +60,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
             e.Property(t => t.Rate).HasPrecision(18, 6);
             e.Property(t => t.MinAbv).HasPrecision(18, 6);
             e.Property(t => t.MaxAbv).HasPrecision(18, 6);
+            e.Property(t => t.MinTaxableAmount).HasPrecision(18, 2);
             e.Property(t => t.MaxTaxableAmount).HasPrecision(18, 2);
+            e.Property(t => t.FlatCapPerUnit).HasPrecision(18, 6);
+            e.Property(t => t.AdjustmentFrequency).HasConversion<string>();
             e.Property(t => t.RateBasis).HasConversion<string>();
             e.Property(t => t.SaleContext).HasConversion<string>();
             e.Property(t => t.RemittancePoint).HasConversion<string>();
@@ -219,6 +222,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
             e.Property(p => p.GeneralSalesTaxRate).HasPrecision(18, 6);
             e.Property(p => p.LocalRateCap).HasPrecision(18, 6);
             e.Property(p => p.EconomicNexusThresholdAmount).HasPrecision(18, 2);
+            e.Property(p => p.IntrastateSourcingRule).HasConversion<string>();
         });
 
         modelBuilder.Entity<StateCategoryRule>(e =>

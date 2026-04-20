@@ -114,10 +114,10 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
         Report(progress, "Downloading", 4, 4, 0, 0, 0, "Building place→county map…");
 
         // ── 3. Parse files ────────────────────────────────────────────────────
-        var counties    = ParseGazetteerCounties(await File.ReadAllTextAsync(CountyCache, ct));
-        var places      = ParseGazetteerPlaces(await File.ReadAllTextAsync(PlaceCache,   ct));
-        var zctaCounty  = ParseZctaCountyMap(await File.ReadAllTextAsync(ZctaCountyCache, ct));
-        var placeCounty = BuildPlaceCountyFromZcta(await File.ReadAllTextAsync(ZctaPlaceCache, ct), zctaCounty);
+        var counties    = CensusGazetteerParser.ParseGazetteerCounties(await File.ReadAllTextAsync(CountyCache, ct), FipsToStateCode);
+        var places      = CensusGazetteerParser.ParseGazetteerPlaces(await File.ReadAllTextAsync(PlaceCache, ct), FipsToStateCode);
+        var zctaCounty  = CensusGazetteerParser.ParseZctaCountyMap(await File.ReadAllTextAsync(ZctaCountyCache, ct));
+        var placeCounty = CensusGazetteerParser.BuildPlaceCountyFromZcta(await File.ReadAllTextAsync(ZctaPlaceCache, ct), zctaCounty);
 
         // ── 4. Import counties ────────────────────────────────────────────────
         await using var db = await dbFactory.CreateDbContextAsync(ct);
@@ -145,7 +145,7 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
 
     private async Task<(int Created, int Skipped)> ImportCountiesAsync(
         AppDbContext db,
-        List<GazCounty> counties,
+        List<CensusGazetteerParser.GazCounty> counties,
         IProgress<CensusImportProgress>? progress,
         CancellationToken ct)
     {
@@ -258,7 +258,7 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
 
     private async Task<(int Created, int Skipped)> ImportCitiesAsync(
         AppDbContext db,
-        List<GazPlace> places,
+        List<CensusGazetteerParser.GazPlace> places,
         Dictionary<string, string> placeCountyMap,   // placeFips(7) → countyFips(5)
         IProgress<CensusImportProgress>? progress,
         CancellationToken ct)
@@ -492,190 +492,12 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
         return fixed_;
     }
 
-    // ── ZCTA crosswalk parsers (shared column names with ZipImportService) ────
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /// <summary>Returns zcta(5) → countyFips(5) using largest AREALAND_PART.</summary>
-    private static Dictionary<string, string> ParseZctaCountyMap(string content)
-    {
-        var best  = new Dictionary<string, (string CountyFips, long Area)>(StringComparer.Ordinal);
-        var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (lines.Length < 2) return new();
-
-        var header  = lines[0].Split('|');
-        int iZcta   = ColIdx(header, "GEOID_ZCTA5_20");
-        int iCounty = ColIdx(header, "GEOID_COUNTY_20");
-        int iArea   = ColIdx(header, "AREALAND_PART");
-        if (iZcta < 0 || iCounty < 0) return new();
-
-        for (int i = 1; i < lines.Length; i++)
-        {
-            var cols = lines[i].Split('|');
-            if (cols.Length <= Math.Max(iZcta, iCounty)) continue;
-
-            var zcta   = cols[iZcta].Trim();
-            var county = cols[iCounty].Trim();
-            long area  = iArea >= 0 && cols.Length > iArea && long.TryParse(cols[iArea].Trim(), out var a) ? a : 0;
-
-            if (zcta.Length != 5 || county.Length != 5) continue;
-            if (!best.TryGetValue(zcta, out var prev) || area > prev.Area)
-                best[zcta] = (county, area);
-        }
-        return best.ToDictionary(kv => kv.Key, kv => kv.Value.CountyFips);
-    }
-
-    /// <summary>
-    /// Joins the ZCTA-to-place crosswalk with the zcta→county map to derive
-    /// placeFips(7) → countyFips(5) using the largest AREALAND_PART intersection.
-    /// The ZCTA-to-place crosswalk file contains GEOID_PLACE_20 (7-digit place FIPS).
-    /// </summary>
-    private static Dictionary<string, string> BuildPlaceCountyFromZcta(
-        string placeContent, Dictionary<string, string> zctaToCounty)
-    {
-        var best  = new Dictionary<string, (string CountyFips, long Area)>(StringComparer.Ordinal);
-        var lines = placeContent.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (lines.Length < 2) return new();
-
-        var header = lines[0].Split('|');
-        int iZcta  = ColIdx(header, "GEOID_ZCTA5_20");
-        int iPlace = ColIdx(header, "GEOID_PLACE_20");
-        int iArea  = ColIdx(header, "AREALAND_PART");
-        if (iZcta < 0 || iPlace < 0) return new(); // column absent — fallback stays active
-
-        for (int i = 1; i < lines.Length; i++)
-        {
-            var cols = lines[i].Split('|');
-            if (cols.Length <= Math.Max(iZcta, iPlace)) continue;
-
-            var zcta  = cols[iZcta].Trim();
-            var place = cols[iPlace].Trim().PadLeft(7, '0');
-            long area = iArea >= 0 && cols.Length > iArea && long.TryParse(cols[iArea].Trim(), out var a) ? a : 0;
-
-            if (zcta.Length != 5 || place.Length != 7) continue;
-            if (!zctaToCounty.TryGetValue(zcta, out var countyFips)) continue;
-
-            if (!best.TryGetValue(place, out var prev) || area > prev.Area)
-                best[place] = (countyFips, area);
-        }
-        return best.ToDictionary(kv => kv.Key, kv => kv.Value.CountyFips);
-    }
-
-    // ── File parsers ──────────────────────────────────────────────────────────
-
-    private sealed record GazCounty(string Fips, string Name, string StateFips, string StateCode);
-    private sealed record GazPlace(string Fips, string Name, string StateFips, string StateCode);
-
-    /// <summary>
-    /// Gazetteer county file (pipe-delimited as of 2025, tab-delimited in earlier years).
-    /// Header: USPS|GEOID|GEOIDFQ|ANSICODE|NAME|ALAND|AWATER|ALAND_SQMI|AWATER_SQMI|INTPTLAT|INTPTLONG
-    /// GEOID = 5-digit county FIPS (e.g., "01001")
-    /// </summary>
-    private static List<GazCounty> ParseGazetteerCounties(string content)
-    {
-        var result = new List<GazCounty>(3200);
-        var lines  = content.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (lines.Length < 2) return result;
-
-        var delim  = lines[0].Contains('|') ? '|' : '\t';
-        var header = lines[0].Split(delim);
-        int iUsps  = ColIdx(header, "USPS");
-        int iGeoid = ColIdx(header, "GEOID");
-        int iName  = ColIdx(header, "NAME");
-        if (iGeoid < 0 || iName < 0) return result;
-
-        for (int i = 1; i < lines.Length; i++)
-        {
-            var cols = lines[i].Split(delim);
-            if (cols.Length <= Math.Max(iGeoid, iName)) continue;
-
-            var fips      = cols[iGeoid].Trim().PadLeft(5, '0');
-            var name      = cols[iName].Trim();
-            var stateFips = fips.Length >= 2 ? fips[..2] : "";
-            var stateCode = iUsps >= 0 && cols.Length > iUsps
-                          ? cols[iUsps].Trim()
-                          : FipsToStateCode.GetValueOrDefault(stateFips, "");
-
-            if (fips.Length == 5 && !string.IsNullOrEmpty(name))
-                result.Add(new GazCounty(fips, name, stateFips, stateCode));
-        }
-
-        return result;
-    }
-
-    /// <summary>
-    /// Gazetteer places file (pipe-delimited as of 2025, tab-delimited in earlier years).
-    /// Header: USPS|GEOID|GEOIDFQ|ANSICODE|NAME|LSAD|FUNCSTAT|ALAND|AWATER|ALAND_SQMI|AWATER_SQMI|INTPTLAT|INTPTLONG
-    /// GEOID = 7-digit place FIPS: 2-digit state + 5-digit place (e.g., "0100100")
-    /// </summary>
-    private static List<GazPlace> ParseGazetteerPlaces(string content)
-    {
-        var result = new List<GazPlace>(35000);
-        var lines  = content.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (lines.Length < 2) return result;
-
-        var delim  = lines[0].Contains('|') ? '|' : '\t';
-        var header = lines[0].Split(delim);
-        int iUsps  = ColIdx(header, "USPS");
-        int iGeoid = ColIdx(header, "GEOID");
-        int iName  = ColIdx(header, "NAME");
-        if (iGeoid < 0 || iName < 0) return result;
-
-        for (int i = 1; i < lines.Length; i++)
-        {
-            var cols = lines[i].Split(delim);
-            if (cols.Length <= Math.Max(iGeoid, iName)) continue;
-
-            var fips      = cols[iGeoid].Trim().PadLeft(7, '0');
-            var name      = cols[iName].Trim();
-            var stateFips = fips.Length >= 2 ? fips[..2] : "";
-            var stateCode = iUsps >= 0 && cols.Length > iUsps
-                          ? cols[iUsps].Trim()
-                          : FipsToStateCode.GetValueOrDefault(stateFips, "");
-
-            if (fips.Length == 7 && !string.IsNullOrEmpty(name))
-                result.Add(new GazPlace(fips, name, stateFips, stateCode));
-        }
-
-        return result;
-    }
-
-    /// <summary>
-    /// Pipe-delimited place-to-county relationship file.
-    /// Header: GEOID_PLC_20 | GEOID_CNTY_20 | NAME_PLC_20 | NAMELSAD_CNTY_20 | ... | AREALAND_INT | ...
-    /// Returns: placeFips(7) → primary countyFips(5) by largest land-area intersection.
-    /// </summary>
-    private static Dictionary<string, string> ParsePlaceCountyRel(string content)
-    {
-        var best  = new Dictionary<string, (string CountyFips, long Area)>(StringComparer.Ordinal);
-        var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (lines.Length < 2) return new();
-
-        var header  = lines[0].Split('|');
-        int iPlace  = ColIdx(header, "GEOID_PLC_20");
-        int iCounty = ColIdx(header, "GEOID_CNTY_20");
-        int iArea   = ColIdx(header, "AREALAND_INT");
-        if (iPlace < 0 || iCounty < 0) return new();
-
-        for (int i = 1; i < lines.Length; i++)
-        {
-            var cols = lines[i].Split('|');
-            if (cols.Length <= Math.Max(iPlace, iCounty)) continue;
-
-            var placeRaw  = cols[iPlace].Trim();
-            var countyRaw = cols[iCounty].Trim();
-            long area     = iArea >= 0 && cols.Length > iArea && long.TryParse(cols[iArea].Trim(), out var a) ? a : 0;
-
-            // Normalize to bare FIPS (strip any "1600000US" or similar prefix)
-            var placeFips  = ExtractFips(placeRaw,  7);
-            var countyFips = ExtractFips(countyRaw, 5);
-
-            if (placeFips == null || countyFips == null) continue;
-
-            if (!best.TryGetValue(placeFips, out var prev) || area > prev.Area)
-                best[placeFips] = (countyFips, area);
-        }
-
-        return best.ToDictionary(kv => kv.Key, kv => kv.Value.CountyFips);
-    }
+    // Intentional early-return sentinel to anchor the removal block below.
+    // ParseZctaCountyMap, BuildPlaceCountyFromZcta, ParseGazetteerCounties,
+    // ParseGazetteerPlaces, ParsePlaceCountyRel, ExtractFips, and ColIdx
+    // are now in CensusGazetteerParser (internal, tested).
 
     // ── File download ─────────────────────────────────────────────────────────
 
@@ -699,29 +521,6 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
             var content = await http.GetStringAsync(url, ct);
             await File.WriteAllTextAsync(localPath, content, ct);
         }
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private static int ColIdx(string[] header, string name)
-    {
-        for (int i = 0; i < header.Length; i++)
-            if (string.Equals(header[i].Trim(), name, StringComparison.OrdinalIgnoreCase))
-                return i;
-        return -1;
-    }
-
-    /// <summary>
-    /// Census GEOIDs sometimes include a "summary level" prefix (e.g., "0500000US01001").
-    /// Strip everything before the last <length> digits.
-    /// </summary>
-    private static string? ExtractFips(string raw, int length)
-    {
-        if (string.IsNullOrEmpty(raw)) return null;
-        var digits = new string(raw.Where(char.IsDigit).ToArray());
-        if (digits.Length < length) return null;
-        var fips = digits[^length..];
-        return fips;
     }
 
     private static string Normalize(string s) =>

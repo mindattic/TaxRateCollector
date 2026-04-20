@@ -20,14 +20,14 @@ public class PayPalService(IDbContextFactory<AppDbContext> dbFactory, IHttpClien
     public async Task<bool> IsConfiguredAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        var cfg = await db.PayPalConfigs.FirstOrDefaultAsync();
+        var cfg = await db.PayPalConfigs.OrderBy(x => x.Id).FirstOrDefaultAsync();
         return cfg is { } c && !string.IsNullOrWhiteSpace(c.ClientId) && !string.IsNullOrWhiteSpace(c.ClientSecret);
     }
 
     public async Task<PayPalOrderResult> CreateOrderAsync(decimal amount, string currency, string description)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        var cfg = await db.PayPalConfigs.FirstOrDefaultAsync();
+        var cfg = await db.PayPalConfigs.OrderBy(x => x.Id).FirstOrDefaultAsync();
 
         if (cfg is null || string.IsNullOrWhiteSpace(cfg.ClientId) || string.IsNullOrWhiteSpace(cfg.ClientSecret))
         {
@@ -88,7 +88,7 @@ public class PayPalService(IDbContextFactory<AppDbContext> dbFactory, IHttpClien
         }
 
         await using var db = await dbFactory.CreateDbContextAsync();
-        var cfg = await db.PayPalConfigs.FirstOrDefaultAsync();
+        var cfg = await db.PayPalConfigs.OrderBy(x => x.Id).FirstOrDefaultAsync();
         if (cfg is null) return false;
 
         try
