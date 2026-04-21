@@ -169,7 +169,7 @@ public class ScrapeOrchestrator(
     public async Task<int> RunBulkForStateAsync(
         string stateCode,
         int? taxCategoryId = null,
-        bool needsReview = false,
+        bool needsReview = true,
         CancellationToken ct = default)
     {
         var bulk = bulkScrapers.FirstOrDefault(s =>

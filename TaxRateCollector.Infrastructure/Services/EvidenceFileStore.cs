@@ -63,7 +63,7 @@ public sealed class EvidenceFileStore(
 
         // Extract body content (fall back to full document if no body)
         var bodyNode  = doc.DocumentNode.SelectSingleNode("//body") ?? doc.DocumentNode;
-        var bodyHtml  = LinkifyUrls(bodyNode.InnerHtml.Trim());
+        var bodyHtml  = HighlightRates(LinkifyUrls(bodyNode.InnerHtml.Trim()));
 
         var titleAttr = System.Net.WebUtility.HtmlEncode(title);
         var urlAttr   = System.Net.WebUtility.HtmlEncode(sourceUrl);
@@ -73,7 +73,6 @@ public sealed class EvidenceFileStore(
             <html lang="en">
             <head>
               <meta charset="utf-8">
-              <base target="_blank">
               <title>{{titleAttr}}</title>
               <style>
                 body { font-family: sans-serif; font-size: 14px; line-height: 1.5; padding: 1rem; color: #222; }
@@ -84,7 +83,7 @@ public sealed class EvidenceFileStore(
             <body>
               <div class="ev-banner">
                 <strong>{{titleAttr}}</strong><br>
-                <a href="{{urlAttr}}">{{urlAttr}}</a>
+                <a href="{{urlAttr}}" target="_blank" rel="noopener noreferrer">{{urlAttr}}</a>
               </div>
               {{bodyHtml}}
             </body>
@@ -113,6 +112,13 @@ public sealed class EvidenceFileStore(
     private static readonly Regex BareUrlPattern =
         new(@"(?<!href=[""']|src=[""']|action=[""'])https?://[^\s<>""']+",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex RatePattern =
+        new(@"\b\d+(?:\.\d+)?\s*%", RegexOptions.Compiled);
+
+    private static string HighlightRates(string html) =>
+        RatePattern.Replace(html, m =>
+            $"<mark style=\"background:#ffe066;padding:0 2px;border-radius:2px\">{m.Value}</mark>");
 
     private static string LinkifyUrls(string html) =>
         BareUrlPattern.Replace(html, m =>

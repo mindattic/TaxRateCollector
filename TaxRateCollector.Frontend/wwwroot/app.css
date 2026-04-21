@@ -1094,16 +1094,14 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
     background: var(--bg);
 }
 .evidence-reader-text {
-    margin: 0; padding: 1.25rem 1.5rem;
+    margin: 0; padding: 0;
     font-size: 0.82rem; font-family: 'Cascadia Code', 'Fira Code', monospace;
     white-space: pre-wrap; word-break: break-word;
     color: var(--text); line-height: 1.6;
-    user-select: none; pointer-events: none;
 }
 .evidence-reader-frame {
     width: 100%; height: 100%;
     border: none; display: block;
-    pointer-events: none;
 }
 .evidence-reader-shield {
     position: absolute; inset: 0;
@@ -2534,6 +2532,45 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
     text-align: center; padding: 3rem; color: var(--text-muted);
 }
 .review-empty-icon { font-size: 2.5rem; display: block; margin-bottom: .5rem; }
+
+/* ── Review evidence viewer ─────────────────────────────────────────────────── */
+.review-viewer-backdrop {
+    position: fixed; inset: 0; z-index: 1100;
+    background: rgba(0,0,0,.55);
+    display: flex; align-items: center; justify-content: center;
+}
+.review-viewer-modal {
+    width: 90vw; height: 90vh;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,.4);
+}
+.review-viewer-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: .6rem 1rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+}
+.review-viewer-title {
+    font-weight: 600; font-size: .9rem;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.review-viewer-body {
+    flex: 1; overflow: hidden; position: relative;
+}
+.review-viewer-frame {
+    width: 100%; height: 100%; border: none; display: block;
+}
+.review-viewer-actions {
+    display: flex; gap: .75rem; padding: .75rem 1rem;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0; justify-content: flex-end;
+}
 
 .review-filter-bar {
     display: flex; flex-wrap: wrap; gap: .4rem;

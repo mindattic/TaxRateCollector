@@ -97,21 +97,13 @@ else
                         @if (!string.IsNullOrEmpty(r.Conditions))
                         { <div class="review-conditions muted small">@r.Conditions</div> }
 
-                        @if (!string.IsNullOrEmpty(r.RawEvidence))
-                        {
-                            <details class="review-evidence">
-                                <summary class="muted small">Source evidence</summary>
-                                <blockquote class="review-evidence-text">@r.RawEvidence</blockquote>
-                                @if (!string.IsNullOrEmpty(r.SourceUrl))
-                                {
-                                    <a class="review-source-link muted small" href="@r.SourceUrl" target="_blank" rel="noopener">
-                                        ↗ @r.SourceUrl
-                                    </a>
-                                }
-                            </details>
-                        }
-
-                        <div class="review-actions">
+                                        <div class="review-actions">
+                            @if (!string.IsNullOrEmpty(r.EvidenceFileName))
+                            {
+                                <button class="btn-secondary" @onclick="() => OpenViewer(r)">
+                                    📎 View Evidence
+                                </button>
+                            }
                             <button class="btn-approve" @onclick="() => Approve(r)" disabled="@busy">
                                 ✓ Approve
                             </button>
@@ -135,12 +127,58 @@ else
     <div class="review-status-toast">@statusMessage</div>
 }
 
+@if (viewerRow is not null)
+{
+    <div class="review-viewer-backdrop" @onclick="CloseViewer">
+        <div class="review-viewer-modal" @onclick:stopPropagation="true">
+            <div class="review-viewer-header">
+                <span class="review-viewer-title">@viewerRow.JurisdictionPath — @viewerRow.Name</span>
+                <button class="evidence-reader-close" @onclick="CloseViewer">✕</button>
+            </div>
+            <div class="review-viewer-body">
+                <iframe src="/evidence/@viewerRow.EvidenceFileName"
+                        class="review-viewer-frame"
+                        allow="fullscreen"
+                        referrerpolicy="no-referrer"></iframe>
+            </div>
+            <div class="review-viewer-actions">
+                <button class="btn-approve" @onclick="ApproveFromViewer" disabled="@busy">
+                    ✓ Approve
+                </button>
+                <button class="btn-reject" @onclick="RejectFromViewer" disabled="@busy">
+                    ✕ Reject
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<StateGroup>? groups;
     private int pendingCount;
     private string? filterState;
     private bool busy;
     private string statusMessage = "";
+    private ReviewRow? viewerRow;
+
+    private void OpenViewer(ReviewRow row) { viewerRow = row; StateHasChanged(); }
+    private void CloseViewer() { viewerRow = null; StateHasChanged(); }
+
+    private async Task ApproveFromViewer()
+    {
+        if (viewerRow is null) return;
+        var row = viewerRow;
+        CloseViewer();
+        await Approve(row);
+    }
+
+    private async Task RejectFromViewer()
+    {
+        if (viewerRow is null) return;
+        var row = viewerRow;
+        CloseViewer();
+        await Reject(row);
+    }
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -162,7 +200,7 @@ else
             .Where(d => rateIds.Contains(d.TaxRateId) && d.IsActive)
             .ToListAsync();
         var docByRate = docs.GroupBy(d => d.TaxRateId)
-            .ToDictionary(g => g.Key, g => g.First());
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(d => d.Id).First());
 
         // Load jurisdiction parents for breadcrumb path
         var jurisdictionIds = rates.Select(r => r.JurisdictionId).Distinct().ToList();
@@ -195,7 +233,9 @@ else
                         JurisdictionId:   r.JurisdictionId,
                         JurisdictionPath: BuildPath(r.Jurisdiction),
                         RawEvidence:      r.RawEvidence,
-                        SourceUrl:        doc?.SourceUrl ?? "");
+                        SourceUrl:        doc?.SourceUrl ?? "",
+                        EvidenceFileName: doc?.FileName ?? "",
+                        EvidenceType:     doc?.EvidenceType ?? "");
                 }).ToList()))
             .ToList();
 
@@ -303,7 +343,8 @@ else
         SaleContext SaleContext, RemittancePoint RemittancePoint,
         string Conditions, string StatutoryReference, string EffectiveDate,
         string ScrapedAt, int JurisdictionId, string JurisdictionPath,
-        string RawEvidence, string SourceUrl)
+        string RawEvidence, string SourceUrl,
+        string EvidenceFileName, string EvidenceType)
     {
         public int Id                  { get; } = Id;
         public string Name             { get; } = Name;
@@ -322,6 +363,8 @@ else
         public string JurisdictionPath { get; } = JurisdictionPath;
         public string RawEvidence      { get; } = RawEvidence;
         public string SourceUrl        { get; } = SourceUrl;
+        public string EvidenceFileName { get; } = EvidenceFileName;
+        public string EvidenceType     { get; } = EvidenceType;
 
         public bool Dismissed          { get; set; }
         public string DismissedLabel   { get; set; } = "";
