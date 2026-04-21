@@ -643,7 +643,8 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
 .rate-range-high   { color: var(--red);  font-weight: 600; }
 .rate-range-sep    { color: var(--text-muted); }
 .rate-range-single { color: var(--accent); font-weight: 600; }
-.rate-range-empty  { color: var(--text-muted); }
+.rate-range-empty    { color: var(--text-muted); }
+.rate-range-unloaded { color: #bbb; font-size: .85em; }
 
 /* Rate cell action buttons (save / cancel) */
 .rate-cell-wrap { display: inline-flex; align-items: center; gap: 4px; flex-wrap: nowrap; }

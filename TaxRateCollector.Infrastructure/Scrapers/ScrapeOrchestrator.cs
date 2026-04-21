@@ -166,12 +166,42 @@ public class ScrapeOrchestrator(
 
     // ── Bulk state scraper ────────────────────────────────────────────────────
 
+    public async Task<int> RunBulkForStateAsync(
+        string stateCode,
+        int? taxCategoryId = null,
+        bool needsReview = false,
+        CancellationToken ct = default)
+    {
+        var bulk = bulkScrapers.FirstOrDefault(s =>
+            s.StateCode.Equals(stateCode, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"No bulk scraper registered for state '{stateCode}'.");
+
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var run = new ScrapeRun { StartedAt = DateTime.UtcNow.ToString("o"), Status = ScrapeStatus.Running };
+        db.ScrapeRuns.Add(run);
+        await db.SaveChangesAsync(ct);
+
+        await RunBulkScraperAsync(db, run, bulk, stateCode, ct,
+            taxCategoryId: taxCategoryId, needsReview: needsReview, overwriteExisting: true);
+
+        run.Status       = ScrapeStatus.Completed;
+        run.CompletedAt  = DateTime.UtcNow.ToString("o");
+        run.TotalScraped = run.ProcessedCount;
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation("RunBulkForStateAsync {State}: {Count} rates saved", stateCode, run.TotalScraped);
+        return run.TotalScraped;
+    }
+
     private async Task RunBulkScraperAsync(
         AppDbContext db,
         ScrapeRun run,
         IStateBulkScraper bulk,
         string stateCode,
-        CancellationToken ct)
+        CancellationToken ct,
+        int? taxCategoryId = null,
+        bool needsReview = true,
+        bool overwriteExisting = false)
     {
         logger.LogInformation("Running bulk scraper for {State}", stateCode);
         var results = await bulk.ScrapeAsync(ct);
@@ -207,12 +237,23 @@ public class ScrapeOrchestrator(
                 continue;
             }
 
-            // Skip if a live rate with the same name already exists (no-overwrite default)
-            var liveExists = await db.TaxRates
-                .AnyAsync(t => t.JurisdictionId == jurisdiction.Id
-                               && t.Name == result.RateName
-                               && t.IsCurrent, ct);
-            if (liveExists) continue;
+            if (overwriteExisting)
+            {
+                var stale = await db.TaxRates
+                    .Where(t => t.JurisdictionId == jurisdiction.Id
+                                && t.Name == result.RateName
+                                && t.IsCurrent)
+                    .ToListAsync(ct);
+                foreach (var s in stale) s.IsCurrent = false;
+            }
+            else
+            {
+                var liveExists = await db.TaxRates
+                    .AnyAsync(t => t.JurisdictionId == jurisdiction.Id
+                                   && t.Name == result.RateName
+                                   && t.IsCurrent, ct);
+                if (liveExists) continue;
+            }
 
             // Save evidence file
             StoredEvidenceFile? storedFile = null;
@@ -232,6 +273,7 @@ public class ScrapeOrchestrator(
             {
                 JurisdictionId      = jurisdiction.Id,
                 ScrapeRunId         = run.Id,
+                TaxCategoryId       = taxCategoryId,
                 Name                = result.RateName,
                 Rate                = result.Rate,
                 RateBasis           = RateBasis.Percentage,
@@ -239,8 +281,8 @@ public class ScrapeOrchestrator(
                 RemittancePoint     = RemittancePoint.Retailer,
                 EffectiveDate       = ParseDate(result.EffectiveDate),
                 ScrapedAt           = now,
-                IsCurrent           = false,
-                NeedsReview         = true,
+                IsCurrent           = true,
+                NeedsReview         = needsReview,
             };
             db.TaxRates.Add(rate);
 
@@ -258,6 +300,8 @@ public class ScrapeOrchestrator(
                 RawContent       = string.Empty,
                 IsActive         = true,
             });
+
+            run.ProcessedCount++;
         }
 
         await db.SaveChangesAsync(ct);

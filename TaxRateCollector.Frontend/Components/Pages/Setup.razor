@@ -6,11 +6,7 @@
 @using TaxRateCollector.Core.Interfaces
 @using TaxRateCollector.Infrastructure.Data
 @using TaxRateCollector.Infrastructure.Services
-@using TaxRateCollector.Infrastructure.Seeding
 @inject IDbContextFactory<AppDbContext> DbFactory
-@inject ICensusJurisdictionImportService censusSvc
-@inject IZipImportService zipSvc
-@inject ISstTaxonomyImportService sstSvc
 @inject SettingsService settings
 @inject IHttpClientFactory HttpClientFactory
 @inject IJSRuntime JS
@@ -21,17 +17,17 @@
 <div class="page-header">
     <h1 class="page-title">Setup</h1>
     <p class="page-sub">
-        One-time data population. Complete these steps in order to fill the database
-        from authoritative external sources before running the scrape pipeline.
+        Admin configuration. Schema population (Census jurisdictions, ZIP crosswalks, SST taxonomy)
+        runs automatically at startup — no manual import steps needed.
     </p>
 </div>
 
 <!-- ── Phase guide ──────────────────────────────────────────────────────────── -->
 <div class="setup-card" style="border-style:dashed">
-    <p style="margin:0;font-weight:600">Complete the four phases in order:</p>
+    <p style="margin:0;font-weight:600">Admin tasks on this page:</p>
     <ol style="margin:.5rem 0 0 1.1rem;padding:0;line-height:1.9">
-        <li><strong>Phase 1 — Configuration</strong> Set the source URLs and scraping preferences the import pipeline needs. Do this once before running any imports.</li>
-        <li><strong>Phase 2 — Schema</strong> Populate the database from authoritative external sources — SST taxonomy, Census jurisdictions, and ZIP crosswalks.</li>
+        <li><strong>Phase 1 — Configuration</strong> Set the source URLs and scraping preferences. Do this once before first startup so the import pipeline has the right data sources.</li>
+        <li><strong>Phase 2 — Schema</strong> Read-only status. All jurisdiction, ZIP, and category data is populated automatically when the app starts.</li>
         <li><strong>Phase 3 — Scraping</strong> <em class="muted">(Coming soon)</em> Automatically discover and scrape current tax rates for every jurisdiction.</li>
         <li><strong>Phase 4 — Business</strong> Set subscription pricing and PayPal credentials. Do this before opening subscriptions to customers.</li>
     </ol>
@@ -44,7 +40,7 @@
 @if (urlResults.Count > 0 && failedUrlCount > 0)
 {
     <div class="ds-alert ds-alert-error">
-        <strong>@failedUrlCount source(s) unreachable</strong> — update the broken URLs below and save before importing.
+        <strong>@failedUrlCount source(s) unreachable</strong> — update the broken URLs below and save before the next startup.
     </div>
 }
 else if (urlResults.Count > 0)
@@ -62,7 +58,7 @@ else
         <div>
             <h2 class="setup-card-title">Data Source URLs</h2>
             <p class="setup-card-desc">
-                These point to the files the import pipeline downloads. They default to the current 2025 Census Bureau
+                These point to the files the import pipeline downloads at startup. They default to the current 2025 Census Bureau
                 files and the latest SSUTA Agreement PDF. Update them if the Census Bureau publishes a new year or
                 the SST Governing Board publishes a new amendment. Clear the cache after updating to force a fresh download.
             </p>
@@ -125,7 +121,7 @@ else
         <button class="btn-secondary" @onclick="() => CheckSources()" disabled="@checkingUrls">
             @(checkingUrls ? "Checking…" : "Check Sources")
         </button>
-        <button class="btn-primary" @onclick="SaveConfig" disabled="@(configBusy || !step1Ok)">Save URLs</button>
+        <button class="btn-primary" @onclick="SaveConfig" disabled="@configBusy">Save URLs</button>
         @if (!string.IsNullOrEmpty(configMsg)) { <span class="save-confirm">@configMsg</span> }
     </div>
     @if (checkingUrls || urlResults.Count > 0)
@@ -195,128 +191,34 @@ else
 <!-- ── Phase 2: Schema ───────────────────────────────────────────────────────── -->
 <div class="setup-phase-label">Phase 2 — Schema</div>
 
-<div class="setup-card setup-card-primary">
+<div class="setup-card">
     <div class="setup-card-header">
         <div>
-            <h2 class="setup-card-title">Populate Database</h2>
+            <h2 class="setup-card-title">Database Status</h2>
             <p class="setup-card-desc">
-                Wipes all jurisdictions, tax categories, and rate data, then rebuilds everything from
-                authoritative sources in sequence. Steps run in order — each unlocks the next.
+                All jurisdiction, ZIP, and category data is seeded automatically when the app starts.
+                To repopulate, use <em>Truncate All Data</em> in Maintenance below, then restart the app.
             </p>
         </div>
-        <div class="setup-card-actions">
-            @if (pipelineState == PipelineState.Running)
-            {
-                <button class="btn-secondary btn-lg" @onclick="PausePipeline">⏸ Pause</button>
-            }
-            else if (pipelineState == PipelineState.Paused)
-            {
-                <button class="btn-primary btn-lg" @onclick="ResumePipeline">↩ Resume</button>
-                <button class="btn-secondary" @onclick="StartPipeline">↺ Restart</button>
-            }
-            else
-            {
-                <button class="btn-primary btn-lg" @onclick="StartPipeline">
-                    @(pipelineState == PipelineState.Complete ? "↺ Re-run Pipeline" : "▶ Run Pipeline")
-                </button>
-            }
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;margin-top:.5rem">
+        <div class="stat-cell">
+            <span class="stat-value">@taxCategoryCount.ToString("N0")</span>
+            <span class="stat-label">Tax categories</span>
+        </div>
+        <div class="stat-cell">
+            <span class="stat-value">@countyCount.ToString("N0")</span>
+            <span class="stat-label">Counties</span>
+        </div>
+        <div class="stat-cell">
+            <span class="stat-value">@cityCount.ToString("N0")</span>
+            <span class="stat-label">Cities</span>
+        </div>
+        <div class="stat-cell">
+            <span class="stat-value">@zipCount.ToString("N0")</span>
+            <span class="stat-label">ZIP codes</span>
         </div>
     </div>
-
-    @if (!string.IsNullOrEmpty(runAllMsg))
-    {
-        <div class="setup-status @(runAllMsg.StartsWith("✗") ? "setup-status-error" : (runAllMsg.StartsWith("⏸") ? "setup-status-warn" : "setup-status-ok"))">@runAllMsg</div>
-    }
-
-    <ol class="setup-steps setup-steps-inline">
-        <!-- Step 1: Validate URLs -->
-        <li class="setup-step @StepClass(PipelineStep.ValidateUrls)">
-            <span class="step-icon">@StepIcon(PipelineStep.ValidateUrls, "1")</span>
-            <div class="step-body">
-                <strong>Validate source URLs</strong>
-                <span class="step-desc">
-                    @if (step1Ok) { <span class="step-count-ok">All @urlResults.Count URLs reachable</span> }
-                    else if (currentStep == PipelineStep.ValidateUrls) { <span class="step-count-warn">Checking…</span> }
-                    else { <span class="step-count-warn">Pending</span> }
-                </span>
-            </div>
-        </li>
-        <!-- Step 2: Wipe -->
-        <li class="setup-step @StepClass(PipelineStep.Clear)">
-            <span class="step-icon">@StepIcon(PipelineStep.Clear, "2")</span>
-            <div class="step-body">
-                <strong>Wipe all jurisdictions, categories &amp; rates</strong>
-                <span class="step-desc">
-                    @if (wipeCompleted) { <span class="step-count-ok">Wiped — clean slate ready</span> }
-                    else if (currentStep == PipelineStep.Clear) { <span class="step-count-warn">Clearing…</span> }
-                    else { <span class="step-count-warn">Pending — removes all existing jurisdiction, category, and rate data</span> }
-                </span>
-            </div>
-        </li>
-        <!-- Step 3: SST taxonomy -->
-        <li class="setup-step @StepClass(PipelineStep.SstTaxonomy)">
-            <span class="step-icon">@StepIcon(PipelineStep.SstTaxonomy, "3")</span>
-            <div class="step-body">
-                <strong>SST product/service taxonomy</strong>
-                <span class="step-desc">
-                    @if (step2Ok) { <span class="step-count-ok">@taxCategoryCount.ToString("N0") categories imported</span> }
-                    else if (sstRunning) { <span class="step-count-warn">Importing… @sstMsg</span> }
-                    else { <span class="step-count-warn">Pending — SSUTA Appendix C category tree</span> }
-                </span>
-            </div>
-        </li>
-        <!-- Step 4: Seed -->
-        <li class="setup-step @StepClass(PipelineStep.Seed)">
-            <span class="step-icon">@StepIcon(PipelineStep.Seed, "4")</span>
-            <div class="step-body">
-                <strong>Seed country, states &amp; tax profiles</strong>
-                <span class="step-desc">
-                    @if (seedCompleted) { <span class="step-count-ok">United States · 51 state jurisdictions &amp; tax profiles seeded</span> }
-                    else if (currentStep == PipelineStep.Seed) { <span class="step-count-warn">Seeding…</span> }
-                    else { <span class="step-count-warn">Pending — country, 50 states + DC, sourcing rules, local rate caps</span> }
-                </span>
-            </div>
-        </li>
-        <!-- Step 5: Census -->
-        <li class="setup-step @StepClass(PipelineStep.Census)">
-            <span class="step-icon">@StepIcon(PipelineStep.Census, "5")</span>
-            <div class="step-body">
-                <strong>Census jurisdictions — counties &amp; cities</strong>
-                <span class="step-desc">
-                    @if (step3Ok) { <span class="step-count-ok">@countyCount.ToString("N0") counties · @cityCount.ToString("N0") cities</span> }
-                    else if (censusRunning) { <span class="step-count-warn">@importMsg</span> }
-                    else { <span class="step-count-warn">Pending — ~3,200 counties and ~30,000 cities (20–40 min)</span> }
-                </span>
-            </div>
-        </li>
-        <!-- Step 6: ZIP -->
-        <li class="setup-step @StepClass(PipelineStep.Zips)">
-            <span class="step-icon">@StepIcon(PipelineStep.Zips, "6")</span>
-            <div class="step-body">
-                <strong>ZIP code crosswalks</strong>
-                <span class="step-desc">
-                    @if (step4Ok) { <span class="step-count-ok">@zipCount.ToString("N0") ZIP codes linked</span> }
-                    else if (zipRunning) { <span class="step-count-warn">@zipProgress.Processed.ToString("N0") / @(zipProgress.Total > 0 ? zipProgress.Total.ToString("N0") : "…") processed</span> }
-                    else { <span class="step-count-warn">Pending — ~33,000 ZIP codes (15–30 min)</span> }
-                </span>
-            </div>
-        </li>
-    </ol>
-
-    @if (censusRunning || zipRunning)
-    {
-        <div class="discovery-progress-wrap" style="margin-top:.75rem">
-            @if (zipRunning && zipProgress.Total > 0)
-            {
-                var pct = (int)Math.Round(zipProgress.Processed * 100.0 / zipProgress.Total);
-                <div class="discovery-progress-bar" style="width:@pct%"></div>
-            }
-            else
-            {
-                <div class="progress-bar-indeterminate"></div>
-            }
-        </div>
-    }
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════════ -->
@@ -334,7 +236,6 @@ else
                 Once Phase 2 is complete, the scrape pipeline will automatically discover and collect
                 current tax rates for every jurisdiction — government APIs, agency web pages, and official PDFs.
                 Rates are validated, change-logged, and linked to source evidence.
-                Complete Phase 2 first before this phase becomes active.
             </p>
         </div>
         <div class="setup-card-actions">
@@ -496,7 +397,7 @@ else
             <p class="setup-card-desc">
                 Permanently deletes all collected data. The schema (tables, indexes, migrations) is preserved.
                 Login credentials and payment configuration are <strong>not</strong> cleared.
-                You will need to re-run the Phase 2 import pipeline after truncating.
+                Restart the app after truncating to repopulate from scratch.
             </p>
         </div>
     </div>
@@ -516,44 +417,8 @@ else
 </div>
 
 @code {
-    // ── Pipeline state machine ────────────────────────────────────────────────
-    private enum PipelineState { None, Running, Paused, Complete }
-    private enum PipelineStep  { None, ValidateUrls, Clear, SstTaxonomy, Seed, Census, Zips }
-
-    private PipelineState pipelineState = PipelineState.None;
-    private PipelineStep  currentStep   = PipelineStep.None;
-    private bool wipeCompleted;
-    private bool seedCompleted;
-    private CancellationTokenSource? pipelineCts;
-
-    private string StepClass(PipelineStep step)
-    {
-        if (StepIsDone(step)) return "step-ok";
-        if (currentStep == step && pipelineState == PipelineState.Running) return "step-active";
-        return "step-todo";
-    }
-
-    private string StepIcon(PipelineStep step, string num) =>
-        StepIsDone(step) ? "✓" : num;
-
-    private bool StepIsDone(PipelineStep step) => step switch
-    {
-        PipelineStep.ValidateUrls => step1Ok,
-        PipelineStep.Clear        => wipeCompleted,
-        PipelineStep.SstTaxonomy  => step2Ok,
-        PipelineStep.Seed         => seedCompleted,
-        PipelineStep.Census       => step3Ok,
-        PipelineStep.Zips         => step4Ok,
-        _                         => false,
-    };
-
-    // ── Counts ────────────────────────────────────────────────────────────────
+    // ── Counts (for status display) ───────────────────────────────────────────
     private int countyCount, cityCount, zipCount, taxCategoryCount;
-
-    private bool step1Ok => urlResults.Count > 0 && urlResults.Values.All(v => v);
-    private bool step2Ok => taxCategoryCount > 0;
-    private bool step3Ok => countyCount > 0 && cityCount > 0;
-    private bool step4Ok => zipCount > 0;
 
     // ── URL validation ────────────────────────────────────────────────────────
     private bool checkingUrls;
@@ -569,13 +434,6 @@ else
         ["SstTaxabilityMatrix"] = ("SST Taxability Matrix (web)",           () => settings.Current.SstTaxabilityMatrixUrl),
         ["SstMemberStates"]     = ("SST Member States page (web)",          () => settings.Current.SstMemberStatesUrl),
     };
-
-    // ── Import running state ──────────────────────────────────────────────────
-    private bool censusRunning, zipRunning, sstRunning;
-    private string? importMsg;
-    private string? sstMsg;
-    private string? runAllMsg;
-    private ZipImportProgress zipProgress = new(0, 0, 0, 0, 0);
 
     // ── Config / admin state ──────────────────────────────────────────────────
     private bool configBusy;
@@ -609,133 +467,6 @@ else
         taxCategoryCount = await db.TaxCategories.CountAsync();
     }
 
-    // ── Pipeline entry points ─────────────────────────────────────────────────
-
-    private async Task StartPipeline()
-    {
-        wipeCompleted = false;
-        seedCompleted = false;
-        runAllMsg     = null;
-        await RunPipelineAsync(fresh: true);
-    }
-
-    private Task ResumePipeline() => RunPipelineAsync(fresh: false);
-
-    private void PausePipeline() => pipelineCts?.Cancel();
-
-    private async Task RunPipelineAsync(bool fresh)
-    {
-        pipelineState = PipelineState.Running;
-        pipelineCts   = new CancellationTokenSource();
-        var ct = pipelineCts.Token;
-        StateHasChanged();
-
-        try
-        {
-            // Step 1: Validate URLs
-            currentStep = PipelineStep.ValidateUrls;
-            runAllMsg   = "Step 1/6 — Checking source URLs…";
-            StateHasChanged();
-            await CheckSources(ct);
-            if (!step1Ok)
-            {
-                runAllMsg     = "✗ URL check failed — fix broken URLs in Phase 1 first.";
-                pipelineState = PipelineState.None;
-                currentStep   = PipelineStep.None;
-                return;
-            }
-
-            // Step 2: Wipe (fresh start only — resume skips if already wiped)
-            if (fresh || !wipeCompleted)
-            {
-                currentStep = PipelineStep.Clear;
-                runAllMsg   = "Step 2/6 — Wiping all jurisdictions, categories, and rate data…";
-                StateHasChanged();
-                await WipeAllDataAsync(ct);
-                wipeCompleted = true;
-                seedCompleted = false;
-                await Refresh();
-                StateHasChanged();
-            }
-
-            // Step 3: SST taxonomy
-            if (!step2Ok)
-            {
-                currentStep = PipelineStep.SstTaxonomy;
-                runAllMsg   = "Step 3/6 — Importing SST taxonomy…";
-                StateHasChanged();
-                await RunSstImportAsync(ct);
-                if (sstMsg?.StartsWith("✗") == true)
-                {
-                    runAllMsg     = $"✗ SST import failed: {sstMsg}";
-                    pipelineState = PipelineState.None;
-                    currentStep   = PipelineStep.None;
-                    return;
-                }
-            }
-
-            // Step 4: Seed Country + States + Tax Profiles
-            if (!seedCompleted)
-            {
-                currentStep = PipelineStep.Seed;
-                runAllMsg   = "Step 4/6 — Seeding country, states, and tax profiles…";
-                StateHasChanged();
-                await SeedJurisdictionsAsync(ct);
-                seedCompleted = true;
-                await Refresh();
-                StateHasChanged();
-            }
-
-            // Step 5: Census
-            if (!step3Ok)
-            {
-                currentStep = PipelineStep.Census;
-                runAllMsg   = "Step 5/6 — Importing Census jurisdictions…";
-                StateHasChanged();
-                await RunCensusImportAsync(ct);
-                if (importMsg?.StartsWith("✗") == true)
-                {
-                    runAllMsg     = $"✗ Census import failed: {importMsg}";
-                    pipelineState = PipelineState.None;
-                    currentStep   = PipelineStep.None;
-                    return;
-                }
-            }
-
-            // Step 6: ZIPs
-            if (!step4Ok)
-            {
-                currentStep = PipelineStep.Zips;
-                runAllMsg   = "Step 6/6 — Importing ZIP crosswalks…";
-                StateHasChanged();
-                await RunZipImportAsync(ct);
-                if (importMsg?.StartsWith("✗") == true)
-                {
-                    runAllMsg     = $"✗ ZIP import failed: {importMsg}";
-                    pipelineState = PipelineState.None;
-                    currentStep   = PipelineStep.None;
-                    return;
-                }
-            }
-
-            runAllMsg     = "✓ Pipeline complete.";
-            pipelineState = PipelineState.Complete;
-            currentStep   = PipelineStep.None;
-        }
-        catch (OperationCanceledException)
-        {
-            runAllMsg     = "⏸ Pipeline paused — click Resume to continue.";
-            pipelineState = PipelineState.Paused;
-        }
-        catch (Exception ex)
-        {
-            runAllMsg     = $"✗ {ex.Message}";
-            pipelineState = PipelineState.None;
-            currentStep   = PipelineStep.None;
-        }
-        finally { StateHasChanged(); }
-    }
-
     // ── URL check ────────────────────────────────────────────────────────────
 
     private async Task CheckSources(CancellationToken ct = default)
@@ -766,121 +497,8 @@ else
         StateHasChanged();
     }
 
-    // ── Full wipe ─────────────────────────────────────────────────────────────
-
-    private async Task WipeAllDataAsync(CancellationToken ct)
-    {
-        await using var db = await DbFactory.CreateDbContextAsync(ct);
-
-        // Null ZIP→jurisdiction links (no DB-level cascade for these nullable columns).
-        await db.ZipCodes
-            .Where(z => z.CountyJurisdictionId != null || z.CityJurisdictionId != null)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(z => z.CountyJurisdictionId, (int?)null)
-                .SetProperty(z => z.CityJurisdictionId,   (int?)null), ct);
-
-        // Delete jurisdictions bottom-up (ParentId FK is Restrict; TaxRates cascade).
-        foreach (var type in new[] {
-            JurisdictionType.City, JurisdictionType.County,
-            JurisdictionType.State, JurisdictionType.Country })
-        {
-            var ids = await db.Jurisdictions
-                .Where(j => j.JurisdictionType == type)
-                .Select(j => j.Id).ToListAsync(ct);
-            if (ids.Count > 0)
-                await db.Jurisdictions.Where(j => ids.Contains(j.Id)).ExecuteDeleteAsync(ct);
-        }
-
-        // Wipe tax categories (self-referential FK — disable constraints to allow bulk delete).
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM TaxCategoryRules", ct);
-        await db.Database.ExecuteSqlRawAsync("ALTER TABLE TaxCategories NOCHECK CONSTRAINT ALL", ct);
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM TaxCategories", ct);
-        await db.Database.ExecuteSqlRawAsync("ALTER TABLE TaxCategories WITH CHECK CHECK CONSTRAINT ALL", ct);
-
-        // Wipe scrape history and source evidence.
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM SourceDocuments", ct);
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM ScrapeRuns", ct);
-
-        // Wipe state tax profiles (will be re-seeded in step 4).
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM StateTaxProfiles", ct);
-    }
-
-    // ── Seed Country + States + Tax Profiles ─────────────────────────────────
-
-    private async Task SeedJurisdictionsAsync(CancellationToken ct)
-    {
-        await using var db = await DbFactory.CreateDbContextAsync(ct);
-        await JurisdictionSeeder.SeedAsync(db);
-        await StateTaxProfileSeeder.SeedAsync(db);
-    }
-
-    // ── SST import ───────────────────────────────────────────────────────────
-
-    private async Task RunSstImportAsync(CancellationToken ct)
-    {
-        sstRunning = true;
-        sstMsg     = null;
-        StateHasChanged();
-        try
-        {
-            var p = new Progress<string>(msg => { sstMsg = msg; InvokeAsync(StateHasChanged); });
-            var r = await sstSvc.ImportAsync(p, ct);
-            sstMsg = r.Success
-                ? $"{r.CategoriesCreated:N0} categories in {r.Elapsed:m\\:ss}"
-                : $"✗ {r.Error}";
-            await Refresh();
-        }
-        catch (OperationCanceledException) { throw; }
-        catch (Exception ex) { sstMsg = $"✗ {ex.Message}"; }
-        finally { sstRunning = false; StateHasChanged(); }
-    }
-
-    // ── Census import ─────────────────────────────────────────────────────────
-
-    private async Task RunCensusImportAsync(CancellationToken ct)
-    {
-        censusRunning = true;
-        importMsg     = "Starting…";
-        StateHasChanged();
-        try
-        {
-            var p = new Progress<CensusImportProgress>(snap =>
-            {
-                importMsg = $"{snap.Stage}: {snap.Processed:N0}/{snap.Total:N0}";
-                InvokeAsync(StateHasChanged);
-            });
-            var r = await censusSvc.ImportAsync(p, ct);
-            importMsg = $"{r.CountiesCreated:N0} counties · {r.CitiesCreated:N0} cities in {r.Elapsed:m\\:ss}";
-            await Refresh();
-        }
-        catch (OperationCanceledException) { throw; }
-        catch (Exception ex) { importMsg = $"✗ {ex.Message}"; }
-        finally { censusRunning = false; StateHasChanged(); }
-    }
-
-    // ── ZIP import ────────────────────────────────────────────────────────────
-
-    private async Task RunZipImportAsync(CancellationToken ct)
-    {
-        zipRunning    = true;
-        zipProgress   = new(0, 0, 0, 0, 0);
-        StateHasChanged();
-        try
-        {
-            var p = new Progress<ZipImportProgress>(snap =>
-            {
-                zipProgress = snap;
-                InvokeAsync(StateHasChanged);
-            });
-            await zipSvc.ImportAsync(p, ct);
-            await Refresh();
-        }
-        catch (OperationCanceledException) { throw; }
-        catch (Exception ex) { importMsg = $"✗ {ex.Message}"; }
-        finally { zipRunning = false; StateHasChanged(); }
-    }
-
     // ── Config save ───────────────────────────────────────────────────────────
+
     private async Task SaveConfig()
     {
         configBusy = true;
@@ -894,6 +512,7 @@ else
     }
 
     // ── Pricing ───────────────────────────────────────────────────────────────
+
     private async Task SavePricing()
     {
         if (pricing is null) return;
@@ -911,6 +530,7 @@ else
     }
 
     // ── PayPal ────────────────────────────────────────────────────────────────
+
     private async Task SavePayPal()
     {
         if (paypal is null) return;
@@ -935,6 +555,7 @@ else
     }
 
     // ── Backup ────────────────────────────────────────────────────────────────
+
     private async Task CreateBackup()
     {
         if (string.IsNullOrWhiteSpace(backupPath)) return;
@@ -979,6 +600,7 @@ else
     }
 
     // ── Truncate ──────────────────────────────────────────────────────────────
+
     private async Task TruncateAll()
     {
         var confirmed = await JS.InvokeAsync<bool>("confirm",
@@ -1009,7 +631,8 @@ else
             await db.Database.ExecuteSqlRawAsync("ALTER TABLE TaxCategories WITH CHECK CHECK CONSTRAINT ALL");
             await db.Database.ExecuteSqlRawAsync("DELETE FROM Jurisdictions");
             await db.Database.ExecuteSqlRawAsync("DELETE FROM StateTaxProfiles");
-            truncateMsg = "✓ All data cleared.";
+            truncateMsg = "✓ All data cleared. Restart the app to repopulate.";
+            await Refresh();
         }
         catch (Exception ex) { truncateMsg = $"✗ {ex.Message}"; }
         finally { truncateBusy = false; StateHasChanged(); }

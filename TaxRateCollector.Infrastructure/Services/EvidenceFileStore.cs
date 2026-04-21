@@ -1,5 +1,5 @@
-using System.IO.Compression;
 using System.Text;
+using System.Text.RegularExpressions;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
 using TaxRateCollector.Core.Interfaces;
@@ -7,8 +7,6 @@ using TaxRateCollector.Core.Interfaces;
 namespace TaxRateCollector.Infrastructure.Services;
 
 public sealed class EvidenceFileStore(
-    SettingsService settings,
-    HttpClient http,
     ILogger<EvidenceFileStore> logger) : IEvidenceFileStore
 {
     public async Task<StoredEvidenceFile> SaveAsync(
@@ -20,127 +18,137 @@ public sealed class EvidenceFileStore(
         Directory.CreateDirectory(SettingsService.EvidenceDirectory);
 
         var (evidenceType, extension) = ClassifyMime(mimeType);
-        var fileName = GenerateFileName(extension);
-        var fullPath = Path.Combine(SettingsService.EvidenceDirectory, fileName);
 
-        if (evidenceType == "zip")
+        string? slug = null;
+        byte[] toWrite;
+
+        if (IsHtml(mimeType))
         {
-            if (settings.Current.FullPageCapture)
-                await SaveFullPageZipAsync(sourceUrl, content, fullPath, ct);
-            else
-                await SaveSimpleZipAsync(content, fullPath, ct);
+            (toWrite, slug) = StripHtmlBytes(sourceUrl, content);
+        }
+        else if (IsTextual(mimeType))
+        {
+            toWrite = WrapTextBytes(sourceUrl, content);
         }
         else
         {
-            await File.WriteAllBytesAsync(fullPath, content, ct);
+            toWrite = content;
         }
+
+        var fileName = GenerateFileName(extension, slug);
+        var fullPath = Path.Combine(SettingsService.EvidenceDirectory, fileName);
+
+        await File.WriteAllBytesAsync(fullPath, toWrite, ct);
+
+        logger.LogDebug("Evidence saved: {File} ({Bytes} bytes)", fileName, toWrite.Length);
 
         var size = new FileInfo(fullPath).Length;
         return new StoredEvidenceFile(fileName, evidenceType, size);
     }
 
-    // ── Simple zip: just the HTML as index.html ───────────────────────────────
-
-    private static async Task SaveSimpleZipAsync(byte[] htmlBytes, string destPath, CancellationToken ct)
+    private static (byte[] Bytes, string? Slug) StripHtmlBytes(string sourceUrl, byte[] htmlBytes)
     {
-        await using var fs  = new FileStream(destPath, FileMode.Create, FileAccess.Write);
-        using var zip       = new ZipArchive(fs, ZipArchiveMode.Create, leaveOpen: false);
-        var entry           = zip.CreateEntry("index.html", CompressionLevel.Optimal);
-        await using var es  = entry.Open();
-        await es.WriteAsync(htmlBytes, ct);
+        var html = Encoding.UTF8.GetString(htmlBytes);
+        var doc  = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        // Extract title before stripping
+        var titleNode = doc.DocumentNode.SelectSingleNode("//title");
+        var title     = System.Net.WebUtility.HtmlDecode(titleNode?.InnerText.Trim() ?? "");
+
+        // Remove noise nodes
+        foreach (var tag in new[] { "script", "style", "link", "meta", "noscript", "iframe", "nav", "header", "footer" })
+            foreach (var node in doc.DocumentNode.SelectNodes($"//{tag}") ?? Enumerable.Empty<HtmlNode>())
+                node.Remove();
+
+        // Extract body content (fall back to full document if no body)
+        var bodyNode  = doc.DocumentNode.SelectSingleNode("//body") ?? doc.DocumentNode;
+        var bodyHtml  = LinkifyUrls(bodyNode.InnerHtml.Trim());
+
+        var titleAttr = System.Net.WebUtility.HtmlEncode(title);
+        var urlAttr   = System.Net.WebUtility.HtmlEncode(sourceUrl);
+
+        var stripped = $$"""
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <base target="_blank">
+              <title>{{titleAttr}}</title>
+              <style>
+                body { font-family: sans-serif; font-size: 14px; line-height: 1.5; padding: 1rem; color: #222; }
+                .ev-banner { background: #f0f4f8; border-bottom: 1px solid #d0d8e0; padding: .4rem .8rem; margin: -1rem -1rem 1rem; font-size: .8em; word-break: break-all; }
+                .ev-banner a { color: #0055aa; }
+              </style>
+            </head>
+            <body>
+              <div class="ev-banner">
+                <strong>{{titleAttr}}</strong><br>
+                <a href="{{urlAttr}}">{{urlAttr}}</a>
+              </div>
+              {{bodyHtml}}
+            </body>
+            </html>
+            """;
+
+        var slug = string.IsNullOrEmpty(title) ? null : Slugify(title);
+        return (Encoding.UTF8.GetBytes(stripped), slug);
     }
 
-    // ── Full page zip: HTML + linked CSS / JS / images ────────────────────────
-
-    private async Task SaveFullPageZipAsync(
-        string pageUrl,
-        byte[] htmlBytes,
-        string destPath,
-        CancellationToken ct)
+    private static byte[] WrapTextBytes(string sourceUrl, byte[] content)
     {
-        var baseUri      = new Uri(pageUrl);
-        var htmlText     = Encoding.UTF8.GetString(htmlBytes);
-        var assetEntries = new Dictionary<string, byte[]>();   // zip path → bytes
+        var body = Encoding.UTF8.GetString(content).Trim();
+        return Encoding.UTF8.GetBytes($"URL: {sourceUrl}\n\nBODY:\n{body}");
+    }
 
-        // Parse asset URLs via HtmlAgilityPack
-        var doc = new HtmlDocument();
-        doc.LoadHtml(htmlText);
+    private static string GenerateFileName(string extension, string? slug = null)
+    {
+        var ts   = DateTime.UtcNow.ToString("yyyyMMdd");
+        var rand = Guid.NewGuid().ToString("N")[..6];
+        return string.IsNullOrEmpty(slug)
+            ? $"scraped_{ts}_{rand}{extension}"
+            : $"{slug}_{ts}_{rand}{extension}";
+    }
 
-        var assetUrls = new List<(string attr, HtmlNode node)>();
-        foreach (var node in doc.DocumentNode.SelectNodes("//link[@href]") ?? Enumerable.Empty<HtmlNode>())
-            assetUrls.Add(("href", node));
-        foreach (var node in doc.DocumentNode.SelectNodes("//script[@src]") ?? Enumerable.Empty<HtmlNode>())
-            assetUrls.Add(("src", node));
-        foreach (var node in doc.DocumentNode.SelectNodes("//img[@src]") ?? Enumerable.Empty<HtmlNode>())
-            assetUrls.Add(("src", node));
-        foreach (var node in doc.DocumentNode.SelectNodes("//source[@src]") ?? Enumerable.Empty<HtmlNode>())
-            assetUrls.Add(("src", node));
+    private static readonly Regex BareUrlPattern =
+        new(@"(?<!href=[""']|src=[""']|action=[""'])https?://[^\s<>""']+",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        foreach (var (attr, node) in assetUrls)
+    private static string LinkifyUrls(string html) =>
+        BareUrlPattern.Replace(html, m =>
         {
-            var rawHref = node.GetAttributeValue(attr, "");
-            if (string.IsNullOrWhiteSpace(rawHref) || rawHref.StartsWith("data:")) continue;
+            var url     = m.Value.TrimEnd('.', ',', ')', ']', ';');
+            var encoded = System.Net.WebUtility.HtmlEncode(url);
+            return $"<a href=\"{encoded}\" target=\"_blank\" rel=\"noopener noreferrer\">{encoded}</a>";
+        });
 
-            if (!Uri.TryCreate(baseUri, rawHref, out var assetUri)) continue;
-
-            var zipPath = AssetZipPath(assetUri);
-            if (assetEntries.ContainsKey(zipPath)) continue;
-
-            try
-            {
-                var assetBytes = await http.GetByteArrayAsync(assetUri, ct);
-                assetEntries[zipPath] = assetBytes;
-                // Rewrite the href/src to the relative zip path
-                node.SetAttributeValue(attr, zipPath);
-            }
-            catch (Exception ex)
-            {
-                logger.LogDebug("Could not fetch asset {Url}: {Msg}", assetUri, ex.Message);
-            }
-        }
-
-        // Re-serialise the modified HTML
-        var modifiedHtml = Encoding.UTF8.GetBytes(doc.DocumentNode.OuterHtml);
-
-        await using var fs = new FileStream(destPath, FileMode.Create, FileAccess.Write);
-        using var zip      = new ZipArchive(fs, ZipArchiveMode.Create, leaveOpen: false);
-
-        var htmlEntry      = zip.CreateEntry("index.html", CompressionLevel.Optimal);
-        await using (var es = htmlEntry.Open())
-            await es.WriteAsync(modifiedHtml, ct);
-
-        foreach (var (zipPath, bytes) in assetEntries)
-        {
-            var entry = zip.CreateEntry(zipPath, CompressionLevel.Optimal);
-            await using var es = entry.Open();
-            await es.WriteAsync(bytes, ct);
-        }
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private static string GenerateFileName(string extension)
+    private static string Slugify(string title)
     {
-        var ts   = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
-        var rand = Guid.NewGuid().ToString("N")[..8];
-        return $"scraped_{ts}_{rand}{extension}";
+        var s = title.ToLowerInvariant();
+        s = Regex.Replace(s, @"[^a-z0-9\s-]", "");
+        s = Regex.Replace(s, @"\s+", "-");
+        s = Regex.Replace(s, @"-{2,}", "-");
+        s = s.Trim('-');
+        if (s.Length > 60) s = s[..60].TrimEnd('-');
+        return s;
     }
 
-    private static string AssetZipPath(Uri uri)
-    {
-        // Turn https://example.gov/css/main.css → assets/css/main.css
-        var segments = uri.AbsolutePath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        return Path.Combine("assets", segments).Replace('\\', '/');
-    }
+    private static bool IsHtml(string mimeType) =>
+        mimeType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase) ||
+        mimeType.StartsWith("text/xhtml", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsTextual(string mimeType) =>
+        mimeType.StartsWith("text/", StringComparison.OrdinalIgnoreCase) ||
+        mimeType.StartsWith("application/json", StringComparison.OrdinalIgnoreCase) ||
+        mimeType.StartsWith("application/xml", StringComparison.OrdinalIgnoreCase);
 
     private static (string evidenceType, string extension) ClassifyMime(string mimeType) =>
         mimeType switch
         {
-            "application/pdf"                                                    => ("pdf",  ".pdf"),
-            "text/csv"                                                           => ("csv",  ".csv"),
-            var m when m.StartsWith("application/vnd.openxmlformats")           => ("xlsx", ".xlsx"),
-            var m when m.StartsWith("application/vnd.ms-excel")                 => ("xlsx", ".xlsx"),
-            var m when m.StartsWith("text/html") || m.StartsWith("text/xhtml")  => ("zip",  ".zip"),
-            _                                                                    => ("txt",  ".txt"),
+            "application/pdf"                                          => ("pdf",  ".pdf"),
+            var m when m.StartsWith("application/vnd.openxmlformats") => ("xlsx", ".xlsx"),
+            var m when m.StartsWith("application/vnd.ms-excel")       => ("xlsx", ".xlsx"),
+            var m when IsHtml(m)                                       => ("html", ".html"),
+            _                                                          => ("txt",  ".txt"),
         };
 }

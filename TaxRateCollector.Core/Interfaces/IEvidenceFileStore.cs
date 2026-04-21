@@ -4,7 +4,7 @@ public interface IEvidenceFileStore
 {
     /// <summary>
     /// Persists fetched content to the evidence directory and returns file metadata.
-    /// HTML  → zip containing index.html (+ assets when FullPageCapture = true).
+    /// HTML  → plain-text file: "Source: &lt;url&gt;\n\n&lt;extracted text&gt;".
     /// PDF / CSV / XLSX → saved directly with the correct extension.
     /// Anything else   → saved as .txt.
     /// </summary>

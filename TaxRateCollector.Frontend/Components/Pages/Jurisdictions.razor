@@ -262,7 +262,7 @@ else if (!isAdmin && HasUnsubscribedContent)
                     }
                     else
                     {
-                        <pre class="evidence-reader-text">@evidenceReaderContent</pre>
+                        <pre class="evidence-reader-text">@RenderWithLinks(evidenceReaderContent)</pre>
                     }
                 }
                 else if (evidenceReaderFile.EvidenceType == "xlsx")
@@ -1193,24 +1193,30 @@ else if (!isAdmin && HasUnsubscribedContent)
     // ── Range display ──────────────────────────────────────────────────────────
     private RenderFragment RangeDisplay(JNode node) => __builder =>
     {
-
         if (node.MinCumulative.HasValue)
         {
             var lo = node.MinCumulative.Value * 100m;
             var hi = (node.MaxCumulative ?? node.MinCumulative.Value) * 100m;
 
-            <span class="rate-range">
-                @if (Math.Abs(hi - lo) < 0.0005m)
-                {
-                    <span class="rate-range-single">@lo.ToString("F3")%</span>
-                }
-                else
-                {
-                    <span class="rate-range-low">@lo.ToString("F3")%</span>
-                    <span class="rate-range-sep"> – </span>
-                    <span class="rate-range-high">@hi.ToString("F3")%</span>
-                }
-            </span>
+            if (lo == 0m && hi == 0m)
+            {
+                <span class="rate-range rate-range-unloaded" title="Rate data not yet loaded">–</span>
+            }
+            else
+            {
+                <span class="rate-range">
+                    @if (Math.Abs(hi - lo) < 0.0005m)
+                    {
+                        <span class="rate-range-single">@lo.ToString("F3")%</span>
+                    }
+                    else
+                    {
+                        <span class="rate-range-low">@lo.ToString("F3")%</span>
+                        <span class="rate-range-sep"> – </span>
+                        <span class="rate-range-high">@hi.ToString("F3")%</span>
+                    }
+                </span>
+            }
         }
         else
         {
@@ -1225,6 +1231,24 @@ else if (!isAdmin && HasUnsubscribedContent)
     private static bool IsUrl(string s) =>
         s.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
         s.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+    private static readonly System.Text.RegularExpressions.Regex UrlPattern =
+        new(@"https?://[^\s<>""]+", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static MarkupString RenderWithLinks(string text)
+    {
+        var sb      = new System.Text.StringBuilder();
+        var lastEnd = 0;
+        foreach (System.Text.RegularExpressions.Match m in UrlPattern.Matches(text))
+        {
+            var url = m.Value.TrimEnd('.', ',', ')', ']', ';');
+            sb.Append(System.Net.WebUtility.HtmlEncode(text[lastEnd..m.Index]));
+            sb.Append($"<a href=\"{System.Net.WebUtility.HtmlEncode(url)}\" target=\"_blank\" rel=\"noopener noreferrer\">{System.Net.WebUtility.HtmlEncode(url)}</a>");
+            lastEnd = m.Index + url.Length;
+        }
+        sb.Append(System.Net.WebUtility.HtmlEncode(text[lastEnd..]));
+        return new MarkupString(sb.ToString());
+    }
 
     private static string FileIcon(string evidenceType) => evidenceType.ToLowerInvariant() switch
     {
