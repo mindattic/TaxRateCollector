@@ -534,7 +534,7 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
 .tab:hover { color: var(--accent); background: var(--accent-subtle); }
 .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 .tab-icon { font-size: 1rem; }
-.tab-content { flex: 1; overflow-y: auto; padding: 1.5rem 2rem; background: var(--bg); }
+.tab-content { flex: 1; overflow-y: auto; padding: 5vh 25vw; background: var(--bg); }
 
 /* ── Page header ──────────────────────────────────────────────────────────── */
 .page-header { margin-bottom: 1.5rem; }
