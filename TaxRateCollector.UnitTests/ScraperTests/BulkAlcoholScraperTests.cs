@@ -589,4 +589,532 @@ public class BulkAlcoholScraperTests
         var scraper = new MinnesotaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
         Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
     }
+
+    // ── Iowa ──────────────────────────────────────────────────────────────────
+    // Beer: $5.89 per 31-gallon barrel (Iowa Code § 123.136)
+    // Wine: $1.75 per gallon flat (Iowa Code § 123.183)
+    // Spirits: control state (Iowa ABD) — $0.00 entry with ThirdParty confidence
+
+    private const string IaSourceUrl  = "https://revenue.iowa.gov/taxes/tax-guidance/general/iowa-taxfee-descriptions-and-rates";
+    private const string IaSpiritsUrl = "https://www.salestaxhandbook.com/iowa/alcohol";
+
+    private static readonly string IaHtml = """
+        <html><body>
+        <h2>Beer Excise Tax</h2>
+        <p>The tax is imposed on the wholesale sale of beer in Iowa at a rate of
+           $5.89 per 31-gallon barrel or fractional part thereof.</p>
+        <h2>Wine Gallonage Tax</h2>
+        <p>The tax is imposed on all wine sold at wholesale in Iowa at a rate of
+           $1.75 per gallon or fractional part thereof.</p>
+        </body></html>
+        """;
+
+    private static readonly string IaSpiritsHtml = """
+        <html><body>
+        <h4>Iowa Liquor Tax - STATE-CONTROLLED</h4>
+        <p>Iowa is an "Alcoholic beverage control state", in which the sale of liquor and
+        spirits are state-controlled. There is no need to apply an additional excise tax on liquor.</p>
+        </body></html>
+        """;
+
+    private static IStateBulkScraper MakeIaScraper(string? htmlOverride = null, bool wayback = false)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Register(IaSourceUrl,  htmlOverride ?? IaHtml);
+        handler.Register(IaSpiritsUrl, IaSpiritsHtml);
+        return new IowaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings(wayback));
+    }
+
+    [Test]
+    public void StateCode_IsIA()
+        => Assert.That(MakeIaScraper().StateCode, Is.EqualTo("IA"));
+
+    [Test]
+    public void IA_SstCategoryName_IsAlcoholicBeverages()
+        => Assert.That(MakeIaScraper().SstCategoryName, Is.EqualTo("Alcoholic Beverages"));
+
+    [Test]
+    public async Task IA_Returns_BeerRow_WithCorrectPerGallonRate()
+    {
+        var results = await MakeIaScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "19" && r.ProductCategory == ProductCategory.Beer);
+        Assert.That(row.Rate, Is.EqualTo(5.89m / 31m));
+        Assert.That(row.RateBasis, Is.EqualTo(RateBasis.FlatPerVolume));
+        Assert.That(row.TaxType, Is.EqualTo(TaxType.ExciseTax));
+        Assert.That(row.RemittancePoint, Is.EqualTo(RemittancePoint.Distributor));
+        Assert.That(row.IsIncludedInPrice, Is.True);
+        Assert.That(row.SourceConfidence, Is.EqualTo(SourceConfidence.Official));
+    }
+
+    [Test]
+    public async Task IA_Returns_WineRow_AtFlatRate()
+    {
+        var results = await MakeIaScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "19" && r.ProductCategory == ProductCategory.Wine);
+        Assert.That(row.Rate, Is.EqualTo(1.75m));
+        Assert.That(row.RateBasis, Is.EqualTo(RateBasis.FlatPerVolume));
+        Assert.That(row.IsIncludedInPrice, Is.True);
+    }
+
+    [Test]
+    public async Task IA_Returns_ExactlyThreeRows()
+    {
+        var results = await MakeIaScraper().ScrapeAsync();
+        Assert.That(results.Count, Is.EqualTo(3), "Beer + wine + spirits (control-state $0.00) = 3 rows");
+    }
+
+    [Test]
+    public async Task IA_Returns_SpiritsRow_WithZeroRate()
+    {
+        var results = await MakeIaScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "19" && r.ProductCategory == ProductCategory.Spirits);
+        Assert.That(row.Rate, Is.EqualTo(0m));
+        Assert.That(row.RateBasis, Is.EqualTo(RateBasis.FlatPerVolume));
+        Assert.That(row.TaxType, Is.EqualTo(TaxType.ExciseTax));
+        Assert.That(row.SourceConfidence, Is.EqualTo(SourceConfidence.ThirdParty));
+        Assert.That(row.Conditions, Does.Contain("control state"), "Conditions should explain control-state status");
+    }
+
+    [Test]
+    public void IA_Throws_WhenPageLacksBeerBarrelText()
+    {
+        var scraper = MakeIaScraper("<html><body>$1.75 per gallon wine only</body></html>");
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
+    }
+
+    [Test]
+    public void IA_Throws_WhenPageUnreachable_WaybackDisabled()
+    {
+        var handler = new FakeHttpMessageHandler(); // IaSourceUrl not registered → 404
+        var scraper = new IowaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
+        Assert.ThrowsAsync<HttpRequestException>(() => scraper.ScrapeAsync());
+    }
+
+    // ── Indiana ───────────────────────────────────────────────────────────────
+    // Beer / Hard Cider: $0.115/gal (IC § 7.1-4-2-1)
+    // Wine (<21% ABV):   $0.47/gal  (IC § 7.1-4-4-1)
+    // Liquor (≥21% ABV): $2.68/gal  (IC § 7.1-4-3-1)
+
+    private const string InSourceUrl = "https://www.in.gov/dor/resources/tax-rates-and-reports/rates-fees-and-penalties/miscellaneous-tax-rates/";
+
+    private static readonly string InHtml = """
+        <html><body>
+        <h1>Miscellaneous Tax Rates</h1>
+        <table>
+        <thead><tr><th>Tax</th><th>Rate (per gallon)</th></tr></thead>
+        <tbody>
+        <tr><td>Beer</td><td>$0.115</td></tr>
+        <tr><td>Wine (less than 21% alcohol)</td><td>$0.47</td></tr>
+        <tr><td>Liquor (21% or more)</td><td>$2.68</td></tr>
+        </tbody>
+        </table>
+        </body></html>
+        """;
+
+    private static IStateBulkScraper MakeInScraper(string? htmlOverride = null, bool wayback = false)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Register(InSourceUrl, htmlOverride ?? InHtml);
+        return new IndianaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings(wayback));
+    }
+
+    [Test]
+    public void StateCode_IsIN()
+        => Assert.That(MakeInScraper().StateCode, Is.EqualTo("IN"));
+
+    [Test]
+    public void IN_SstCategoryName_IsAlcoholicBeverages()
+        => Assert.That(MakeInScraper().SstCategoryName, Is.EqualTo("Alcoholic Beverages"));
+
+    [Test]
+    public async Task IN_Returns_BeerRow()
+    {
+        var results = await MakeInScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "18" && r.ProductCategory == ProductCategory.Beer);
+        Assert.That(row.Rate, Is.EqualTo(0.115m));
+        Assert.That(row.RateBasis, Is.EqualTo(RateBasis.FlatPerVolume));
+        Assert.That(row.TaxType, Is.EqualTo(TaxType.ExciseTax));
+        Assert.That(row.RemittancePoint, Is.EqualTo(RemittancePoint.Distributor));
+        Assert.That(row.MaxAbv, Is.EqualTo(0.20m));
+    }
+
+    [Test]
+    public async Task IN_Returns_WineRow()
+    {
+        var results = await MakeInScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "18" && r.ProductCategory == ProductCategory.Wine);
+        Assert.That(row.Rate, Is.EqualTo(0.47m));
+        Assert.That(row.MaxAbv, Is.EqualTo(0.21m));
+    }
+
+    [Test]
+    public async Task IN_Returns_LiquorRow()
+    {
+        var results = await MakeInScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "18" && r.ProductCategory == ProductCategory.Spirits);
+        Assert.That(row.Rate, Is.EqualTo(2.68m));
+        Assert.That(row.MinAbv, Is.EqualTo(0.21m));
+        Assert.That(row.IsIncludedInPrice, Is.True);
+    }
+
+    [Test]
+    public async Task IN_Returns_ExactlyThreeRows()
+    {
+        var results = await MakeInScraper().ScrapeAsync();
+        Assert.That(results.Count, Is.EqualTo(3), "Beer + wine + liquor = 3 rows");
+    }
+
+    [Test]
+    public void IN_Throws_WhenRatesInverted()
+    {
+        // All rates descending (liquor < wine < beer) should fail the ordering check
+        Assert.Throws<InvalidOperationException>(() =>
+            _ = IndianaAlcoholScraper.Parse(
+                "<html><body>Beer $0.50 Wine (less than 21% alcohol) $0.40 Liquor (21% or more) $0.30</body></html>",
+                InSourceUrl));
+    }
+
+    [Test]
+    public void IN_Throws_WhenPageUnreachable_WaybackDisabled()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var scraper = new IndianaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
+        Assert.ThrowsAsync<HttpRequestException>(() => scraper.ScrapeAsync());
+    }
+
+    // ── Michigan ──────────────────────────────────────────────────────────────
+    // Beer:      $6.30/barrel ÷ 31 gal  (MCL § 436.1409)
+    // Wine ≤16%: 13.5 cents/liter × 3.78541 gal  (MCL § 436.1301)
+    // Wine >16%: 20 cents/liter × 3.78541 gal    (MCL § 436.1301)
+    // Spirits:   control state (MLCC) — not modeled
+
+    private const string MiBeerUrl = "https://legislature.mi.gov/Laws/MCL?objectName=MCL-436-1409";
+    private const string MiWineUrl = "https://legislature.mi.gov/Laws/MCL?objectName=MCL-436-1301";
+
+    private static readonly string MiBeerHtml = """
+        <html><body>
+        <h1>MCL 436.1409 — Beer Specific Tax</h1>
+        <p>A brewer shall pay a tax of $6.30 per barrel on beer manufactured in or
+           imported into this state.</p>
+        </body></html>
+        """;
+
+    private static readonly string MiWineHtml = """
+        <html><body>
+        <h1>MCL 436.1301 — Wine Specific Tax</h1>
+        <p>A winery shall pay a specific tax at the rate of 13.5 cents per liter on
+           wine containing not more than 16 percent alcohol by volume, and at the rate
+           of 20 cents per liter on wine containing more than 16 percent alcohol by volume.</p>
+        </body></html>
+        """;
+
+    private static IStateBulkScraper MakeMiScraper(
+        string? beerOverride = null, string? wineOverride = null, bool wayback = false)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Register(MiBeerUrl, beerOverride ?? MiBeerHtml);
+        handler.Register(MiWineUrl, wineOverride ?? MiWineHtml);
+        return new MichiganAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings(wayback));
+    }
+
+    [Test]
+    public void StateCode_IsMI()
+        => Assert.That(MakeMiScraper().StateCode, Is.EqualTo("MI"));
+
+    [Test]
+    public void MI_SstCategoryName_IsAlcoholicBeverages()
+        => Assert.That(MakeMiScraper().SstCategoryName, Is.EqualTo("Alcoholic Beverages"));
+
+    [Test]
+    public async Task MI_Returns_BeerRow_AtPerGallonRate()
+    {
+        var results = await MakeMiScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "26" && r.ProductCategory == ProductCategory.Beer);
+        Assert.That(row.Rate, Is.EqualTo(6.30m / 31m));
+        Assert.That(row.RateBasis, Is.EqualTo(RateBasis.FlatPerVolume));
+        Assert.That(row.TaxType, Is.EqualTo(TaxType.ExciseTax));
+        Assert.That(row.RemittancePoint, Is.EqualTo(RemittancePoint.Distributor));
+        Assert.That(row.IsIncludedInPrice, Is.True);
+        Assert.That(row.SourceConfidence, Is.EqualTo(SourceConfidence.Official));
+    }
+
+    [Test]
+    public async Task MI_Returns_Wine16_Row()
+    {
+        var results = await MakeMiScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "26" && r.ProductCategory == ProductCategory.Wine
+                                      && r.MaxAbv == 0.16m);
+        // 13.5 cents/liter × 3.78541 L/gal ÷ 100 cents
+        Assert.That(row.Rate, Is.EqualTo(0.135m * 3.78541m).Within(0.0001m));
+        Assert.That(row.MaxAbv, Is.EqualTo(0.16m));
+    }
+
+    [Test]
+    public async Task MI_Returns_Wine16Plus_Row()
+    {
+        var results = await MakeMiScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "26" && r.ProductCategory == ProductCategory.Wine
+                                      && r.MinAbv == 0.16m);
+        // 20 cents/liter × 3.78541 L/gal ÷ 100 cents
+        Assert.That(row.Rate, Is.EqualTo(0.20m * 3.78541m).Within(0.0001m));
+        Assert.That(row.MinAbv, Is.EqualTo(0.16m));
+    }
+
+    [Test]
+    public async Task MI_Returns_ExactlyThreeRows()
+    {
+        var results = await MakeMiScraper().ScrapeAsync();
+        Assert.That(results.Count, Is.EqualTo(3), "Beer + wine≤16% + wine>16% = 3 rows (no spirits; MLCC control state)");
+    }
+
+    [Test]
+    public void MI_Throws_WhenBeerPageLacksBarrelText()
+    {
+        var scraper = MakeMiScraper(beerOverride: "<html><body>No barrel rate here</body></html>");
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
+    }
+
+    [Test]
+    public void MI_Throws_WhenWinePageLacksCentsPerLiter()
+    {
+        var scraper = MakeMiScraper(wineOverride: "<html><body>No wine rate here</body></html>");
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
+    }
+
+    [Test]
+    public void MI_Throws_WhenWineRatesInverted()
+    {
+        // Statute lists higher rate first → document-order picks 20 as ≤16% and 13.5 as >16%
+        // → ordering check (high <= low) fires
+        var badWineHtml = """
+            <html><body>
+            A winery shall pay 20 cents per liter on wine containing not more than 16 percent
+            alcohol by volume, and 13.5 cents per liter on wine containing more than 16 percent.
+            </body></html>
+            """;
+        var scraper = MakeMiScraper(wineOverride: badWineHtml);
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
+    }
+
+    [Test]
+    public void MI_Throws_WhenBeerPageUnreachable_WaybackDisabled()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Register(MiWineUrl, MiWineHtml); // wine registered but beer not
+        var scraper = new MichiganAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
+        Assert.ThrowsAsync<HttpRequestException>(() => scraper.ScrapeAsync());
+    }
+
+    // ── North Dakota ──────────────────────────────────────────────────────────
+    // Beer:       $0.16/gal (N.D.C.C. § 5-03-07)
+    // Wine ≤17%:  $0.50/gal
+    // Wine >17%:  $0.60/gal
+    // Spirits:    $2.50/gal
+    // Source: salestaxhandbook.com (ThirdParty)
+
+    private const string NdSourceUrl = "https://www.salestaxhandbook.com/north-dakota/alcohol";
+
+    private static readonly string NdHtml = """
+        <html><body>
+        <h2>North Dakota Wine Tax - $0.50 / gallon</h2>
+        <p>North Dakota wine vendors are responsible for paying a state excise tax of $0.50 per gallon.
+        Additional Taxes: Over 17% – $0.60/gallon; 7% state sales tax</p>
+        <h2>North Dakota Beer Tax - $0.16 / gallon</h2>
+        <p>North Dakota beer vendors are responsible for paying a state excise tax of $0.16 per gallon.
+        Additional Taxes: 7% state sales tax; bulk beer $0.08/gallon</p>
+        <h2>North Dakota Liquor Tax - $2.50 / gallon</h2>
+        <p>North Dakota liquor vendors are responsible for paying a state excise tax of $2.50 per gallon.</p>
+        </body></html>
+        """;
+
+    private static IStateBulkScraper MakeNdScraper(string? htmlOverride = null, bool wayback = false)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Register(NdSourceUrl, htmlOverride ?? NdHtml);
+        return new NorthDakotaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings(wayback));
+    }
+
+    [Test]
+    public void StateCode_IsND()
+        => Assert.That(MakeNdScraper().StateCode, Is.EqualTo("ND"));
+
+    [Test]
+    public void ND_SstCategoryName_IsAlcoholicBeverages()
+        => Assert.That(MakeNdScraper().SstCategoryName, Is.EqualTo("Alcoholic Beverages"));
+
+    [Test]
+    public async Task ND_Returns_BeerRow()
+    {
+        var results = await MakeNdScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "38" && r.ProductCategory == ProductCategory.Beer);
+        Assert.That(row.Rate, Is.EqualTo(0.16m));
+        Assert.That(row.RateBasis, Is.EqualTo(RateBasis.FlatPerVolume));
+        Assert.That(row.TaxType, Is.EqualTo(TaxType.ExciseTax));
+        Assert.That(row.SourceConfidence, Is.EqualTo(SourceConfidence.ThirdParty));
+    }
+
+    [Test]
+    public async Task ND_Returns_Wine17Row()
+    {
+        var results = await MakeNdScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "38" && r.ProductCategory == ProductCategory.Wine
+                                      && r.MaxAbv == 0.17m);
+        Assert.That(row.Rate, Is.EqualTo(0.50m));
+        Assert.That(row.MaxAbv, Is.EqualTo(0.17m));
+    }
+
+    [Test]
+    public async Task ND_Returns_Wine17PlusRow()
+    {
+        var results = await MakeNdScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "38" && r.ProductCategory == ProductCategory.Wine
+                                      && r.MinAbv == 0.17m);
+        Assert.That(row.Rate, Is.EqualTo(0.60m));
+        Assert.That(row.MinAbv, Is.EqualTo(0.17m));
+    }
+
+    [Test]
+    public async Task ND_Returns_SpiritsRow()
+    {
+        var results = await MakeNdScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "38" && r.ProductCategory == ProductCategory.Spirits);
+        Assert.That(row.Rate, Is.EqualTo(2.50m));
+    }
+
+    [Test]
+    public async Task ND_Returns_ExactlyFourRows()
+    {
+        var results = await MakeNdScraper().ScrapeAsync();
+        Assert.That(results.Count, Is.EqualTo(4), "Beer + wine≤17% + wine>17% + spirits = 4 rows");
+    }
+
+    [Test]
+    public void ND_Throws_WhenWineRatesInverted()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            _ = NorthDakotaAlcoholScraper.Parse(
+                "<html><body>North Dakota Wine Tax - $0.60 / gallon Over 17% – $0.50/gallon " +
+                "North Dakota Beer Tax - $0.16 / gallon North Dakota Liquor Tax - $2.50 / gallon</body></html>",
+                NdSourceUrl));
+    }
+
+    [Test]
+    public void ND_Throws_WhenPageUnreachable_WaybackDisabled()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var scraper = new NorthDakotaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
+        Assert.ThrowsAsync<HttpRequestException>(() => scraper.ScrapeAsync());
+    }
+
+    // ── South Dakota ──────────────────────────────────────────────────────────
+    // Beer:              $0.27/gal (SDCL § 35-5-3)
+    // Wine ≤14%:         $0.93/gal
+    // Wine 14–20%:       $1.45/gal
+    // Wine ≥21%/spark:   $2.07/gal
+    // Spirits:           $3.93/gal
+    // Source: salestaxhandbook.com (ThirdParty)
+
+    private const string SdSourceUrl = "https://www.salestaxhandbook.com/south-dakota/alcohol";
+
+    private static readonly string SdHtml = """
+        <html><body>
+        <h2>South Dakota Wine Tax - $0.93 / gallon</h2>
+        <p>South Dakota wine vendors are responsible for paying a state excise tax of $0.93 per gallon.
+        Additional Taxes: 14% to 20% – $1.45/gallon, over 21% and sparkling wine – $2.07/gallon; 2% wholesale tax</p>
+        <h2>South Dakota Beer Tax - $0.27 / gallon</h2>
+        <p>South Dakota beer vendors are responsible for paying a state excise tax of $0.27 per gallon.</p>
+        <h2>South Dakota Liquor Tax - $3.93 / gallon</h2>
+        <p>South Dakota liquor vendors are responsible for paying a state excise tax of $3.93 per gallon.
+        Additional Taxes: Under 14% – $0.93/gallon; 2% wholesale tax</p>
+        </body></html>
+        """;
+
+    private static IStateBulkScraper MakeSdScraper(string? htmlOverride = null, bool wayback = false)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Register(SdSourceUrl, htmlOverride ?? SdHtml);
+        return new SouthDakotaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings(wayback));
+    }
+
+    [Test]
+    public void StateCode_IsSD()
+        => Assert.That(MakeSdScraper().StateCode, Is.EqualTo("SD"));
+
+    [Test]
+    public void SD_SstCategoryName_IsAlcoholicBeverages()
+        => Assert.That(MakeSdScraper().SstCategoryName, Is.EqualTo("Alcoholic Beverages"));
+
+    [Test]
+    public async Task SD_Returns_BeerRow()
+    {
+        var results = await MakeSdScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "46" && r.ProductCategory == ProductCategory.Beer);
+        Assert.That(row.Rate, Is.EqualTo(0.27m));
+        Assert.That(row.RateBasis, Is.EqualTo(RateBasis.FlatPerVolume));
+        Assert.That(row.TaxType, Is.EqualTo(TaxType.ExciseTax));
+        Assert.That(row.SourceConfidence, Is.EqualTo(SourceConfidence.ThirdParty));
+    }
+
+    [Test]
+    public async Task SD_Returns_Wine14Row()
+    {
+        var results = await MakeSdScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "46" && r.ProductCategory == ProductCategory.Wine
+                                      && r.MaxAbv == 0.14m);
+        Assert.That(row.Rate, Is.EqualTo(0.93m));
+        Assert.That(row.MaxAbv, Is.EqualTo(0.14m));
+    }
+
+    [Test]
+    public async Task SD_Returns_Wine14To20Row()
+    {
+        var results = await MakeSdScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "46" && r.ProductCategory == ProductCategory.Wine
+                                      && r.MinAbv == 0.14m);
+        Assert.That(row.Rate, Is.EqualTo(1.45m));
+        Assert.That(row.MaxAbv, Is.EqualTo(0.20m));
+    }
+
+    [Test]
+    public async Task SD_Returns_Wine21PlusRow()
+    {
+        var results = await MakeSdScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "46" && r.ProductCategory == ProductCategory.Wine
+                                      && r.MinAbv == 0.21m);
+        Assert.That(row.Rate, Is.EqualTo(2.07m));
+    }
+
+    [Test]
+    public async Task SD_Returns_SpiritsRow()
+    {
+        var results = await MakeSdScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "46" && r.ProductCategory == ProductCategory.Spirits);
+        Assert.That(row.Rate, Is.EqualTo(3.93m));
+    }
+
+    [Test]
+    public async Task SD_Returns_ExactlyFiveRows()
+    {
+        var results = await MakeSdScraper().ScrapeAsync();
+        Assert.That(results.Count, Is.EqualTo(5), "Beer + wine≤14% + wine14-20% + wine21%+sparkling + spirits = 5 rows");
+    }
+
+    [Test]
+    public void SD_Throws_WhenWineRatesNotAscending()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            _ = SouthDakotaAlcoholScraper.Parse(
+                "<html><body>South Dakota Wine Tax - $1.45 / gallon " +
+                "14% to 20% – $0.93/gallon over 21% and sparkling wine – $2.07/gallon " +
+                "South Dakota Beer Tax - $0.27 / gallon South Dakota Liquor Tax - $3.93 / gallon</body></html>",
+                SdSourceUrl));
+    }
+
+    [Test]
+    public void SD_Throws_WhenPageUnreachable_WaybackDisabled()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var scraper = new SouthDakotaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
+        Assert.ThrowsAsync<HttpRequestException>(() => scraper.ScrapeAsync());
+    }
 }

@@ -82,6 +82,11 @@ builder.Services.AddScoped<IScrapeStrategy, TexasExcelScraper>();
 builder.Services.AddScoped<IStateBulkScraper, WisconsinAlcoholScraper>();
 builder.Services.AddScoped<IStateBulkScraper, IllinoisAlcoholScraper>();
 builder.Services.AddScoped<IStateBulkScraper, MinnesotaAlcoholScraper>();
+builder.Services.AddScoped<IStateBulkScraper, IowaAlcoholScraper>();
+builder.Services.AddScoped<IStateBulkScraper, IndianaAlcoholScraper>();
+builder.Services.AddScoped<IStateBulkScraper, MichiganAlcoholScraper>();
+builder.Services.AddScoped<IStateBulkScraper, NorthDakotaAlcoholScraper>();
+builder.Services.AddScoped<IStateBulkScraper, SouthDakotaAlcoholScraper>();
 
 // ── Core services ─────────────────────────────────────────────────────────────
 builder.Services.AddScoped<IDiffEngine, DiffEngine>();

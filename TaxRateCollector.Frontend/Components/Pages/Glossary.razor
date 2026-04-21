@@ -331,6 +331,14 @@
                 "States layer additional rates on top. Rate basis varies: beer uses <code>FlatPerVolume</code> (per barrel or per gallon), " +
                 "spirits use <code>FlatPerProofGallon</code>, wine uses <code>FlatPerVolume</code>."),
 
+            new("Alcohol By Volume",
+                "The percentage of a beverage that is pure ethanol by volume. The standard measurement for classifying alcohol " +
+                "into excise tax tiers — most state and federal schedules define rate breaks at 7%, 14%, 20%, and 24% ABV. " +
+                "Stored on TaxRate as <code>MinAbv</code> and <code>MaxAbv</code> (decimal fractions, e.g., 0.20 = 20%). " +
+                "A rate with <code>MinAbv = 0.20</code> and no <code>MaxAbv</code> applies to spirits at 20% ABV or higher. " +
+                "Beer is typically under 7% ABV; table wine 7–14%; fortified wine 14–24%; spirits 20%+.",
+                "ABV"),
+
             new("Proof Gallon",
                 "The unit of measurement for distilled spirits taxation. One proof gallon = one liquid gallon of spirits at exactly " +
                 "50% alcohol by volume (100 proof). A gallon of 80-proof whiskey = 0.8 proof gallons. Federal and most state spirits " +
@@ -367,6 +375,24 @@
 
         new("Rate Mechanics",
         [
+            new("Sale Context",
+                "The transaction setting in which a rate applies. Stored as the <code>SaleContext</code> enum on each TaxRate row. " +
+                "<code>Any</code> — applies to all sales (the default for sales tax rates). " +
+                "<code>OnPremise</code> — consumed at the venue (bars, restaurants). " +
+                "<code>OffPremise</code> — retail take-home sale (liquor stores). " +
+                "<code>Wholesale</code> — distributor-to-retailer transfer. " +
+                "<code>DirectToConsumer</code> — winery/brewery ship-to-home (DTC permit). " +
+                "Most relevant for alcohol excise taxes, which distinguish bar vs. retail rates.",
+                "SaleContext"),
+
+            new("Is Included in Price",
+                "A boolean flag on TaxRate. When <code>true</code>, the tax has already been remitted upstream " +
+                "(e.g., an alcohol excise paid by the distributor) and is embedded in the wholesale cost the retailer pays. " +
+                "The retailer does <em>not</em> see a line-item excise; the cost is buried in the product price. " +
+                "When <code>false</code> (the default), the tax is collected and remitted separately at the remittance point. " +
+                "Affects downstream effective-rate calculations — embedded taxes should not be double-counted.",
+                "IsIncludedInPrice"),
+
             new("Rate Basis",
                 "Describes <em>how</em> a tax rate is applied to determine the tax amount due. " +
                 "Stored as the <code>RateBasis</code> enum on each TaxRate row. " +
@@ -581,7 +607,69 @@
             new("TaxRate",
                 "A scraped rate record for one jurisdiction at one point in time, optionally scoped to a TaxCategory. " +
                 "Stores the rate for that jurisdiction tier only (not cumulative). The effective rate = sum of all active " +
-                "ancestor TaxRate rows in the Country → State → County → City chain for the matching category."),
+                "ancestor TaxRate rows in the Country → State → County → City chain for the matching category. " +
+                "Key fields: <code>Rate</code>, <code>RateBasis</code>, <code>TaxCategoryId</code>, <code>ProductCategory</code>, " +
+                "<code>SaleContext</code>, <code>RemittancePoint</code>, <code>MinAbv</code>/<code>MaxAbv</code>, " +
+                "<code>IsCurrent</code>, <code>AutoApprove</code>, <code>SourceConfidence</code>."),
+
+            new("IsCurrent",
+                "A boolean flag on <strong>TaxRate</strong>. Only the row with <code>IsCurrent = true</code> represents " +
+                "the live rate for a given jurisdiction/category combination. When a scraper detects a rate change, " +
+                "it sets the old row to <code>IsCurrent = false</code> and inserts a new row — keeping full history without " +
+                "physical deletes. The Jurisdictions UI and all rate calculations filter to <code>IsCurrent = true</code> only."),
+
+            new("AutoApprove",
+                "A boolean flag on <strong>TaxRate</strong> that controls whether a newly scraped rate is immediately " +
+                "visible in the Jurisdictions UI and used in calculations. When <code>true</code> (the default when " +
+                "\"Auto Approve\" is enabled in Setup settings), the rate appears without any manual review step. " +
+                "When <code>false</code> (\"Needs Review\" mode), rates are stored but hidden from the UI until an " +
+                "administrator approves them. Useful when scraping sources with lower confidence."),
+
+            new("ProductCategory",
+                "An enum on <strong>TaxRate</strong> that identifies the excise product type: " +
+                "<code>Beer</code>, <code>Wine</code>, <code>Spirits</code>, <code>Alcohol</code> (general), " +
+                "<code>Tobacco</code>, <code>Cigarettes</code>, <code>Cannabis</code>, <code>Fuel</code>, " +
+                "<code>Hotel</code>, <code>RentalCar</code>, <code>Gaming</code>, and others. " +
+                "When <code>ProductCategory</code> is <em>non-null</em>, the rate is an excise / special tax and appears " +
+                "in the <strong>Excise &amp; Special Rates</strong> panel (collapsed by default) rather than the main " +
+                "sales-tax rates panel. When <em>null</em>, the rate is a general sales tax and follows normal " +
+                "<code>TaxCategoryId</code> scoping.",
+                "ProductCategory"),
+
+            new("Excise &amp; Special Rates Panel",
+                "A collapsible section within each jurisdiction row in the Jurisdictions UI. Shows all <strong>TaxRate</strong> " +
+                "rows where <code>ProductCategory</code> is non-null — i.e., excise taxes, sin taxes, and special levies " +
+                "that sit alongside (not inside) the general sales tax system. Examples: Illinois liquor gallonage tax, " +
+                "Minnesota beer excise, Chicago on-premises liquor surcharge. The panel is hidden by default; " +
+                "a badge (⚡) on the toggle shows the count of excise rates on record for that jurisdiction."),
+
+            new("SourceConfidence",
+                "An enum on <strong>TaxRate</strong> indicating how trustworthy the source document is. " +
+                "<code>Official</code> (default) — fetched live from an official government URL. " +
+                "<code>Archive</code> — live URL was unreachable; rate came from a Wayback Machine snapshot. " +
+                "<code>ThirdParty</code> — sourced from an aggregator or secondary site, not a government page. " +
+                "<code>Unverified</code> — origin unknown or not yet validated. " +
+                "Displayed as a badge in the UI (yellow for Archive, orange for ThirdParty, red for Unverified). " +
+                "Stored on both the TaxRate and its linked SourceDocument.",
+                "SourceConfidence"),
+
+            new("Wayback Machine Fallback",
+                "A resilience mechanism in the bulk state scrapers. When a government URL returns a non-success status " +
+                "or a 200 response that lacks expected content, the scraper queries the <em>Wayback Machine availability API</em> " +
+                "(archive.org) to retrieve the most recent archived snapshot. If a snapshot is found, " +
+                "the rate is parsed from the archived copy and stored with <code>SourceConfidence.Archive</code>. " +
+                "Enabled or disabled per-scraper via the <em>Wayback Machine Fallback</em> setting in Setup. " +
+                "Prevents scraper failures when government pages are temporarily down or have restructured."),
+
+            new("Bulk State Scraper",
+                "A scraper that fetches tax rates for an entire state — all tiers (state, county, city) — in a single pass " +
+                "by downloading one or a few government source files. Implements <code>IStateBulkScraper</code>. " +
+                "Contrasts with the per-jurisdiction <code>IScrapeStrategy</code> pattern (CSV / HTML / Excel / PDF) " +
+                "which requires a separate source URL per jurisdiction. Current bulk scrapers: " +
+                "<strong>WI</strong> (sales tax schedule), <strong>IL</strong> (IDOR excise + Cook County + Chicago), " +
+                "<strong>MN</strong> (beer, wine, spirits excise + Minneapolis downtown liquor). " +
+                "Each scraper declares its SST category name so rates are automatically scoped to the correct " +
+                "<code>TaxCategoryId</code> when saved."),
 
             new("ScrapeRun",
                 "A single end-to-end execution of the scraper pipeline. Records start time, completion time, total jurisdictions " +
@@ -601,12 +689,6 @@
                 "Phase 1 of the data pipeline. For each jurisdiction with a configured SourceUrl, routes the request to the " +
                 "appropriate IScrapeStrategy (CSV, HTML table, Excel, PDF, API) and writes the parsed rates as new TaxRate rows. " +
                 "Detects changes against the previous run via the diff engine."),
-
-            new("StateTaxProfile",
-                "A record describing the <em>structural</em> characteristics of a state's sales tax system. Fields: " +
-                "<code>GeneralRate</code>, <code>IsSstMember</code>, <code>LocalAuthorityType</code> (SstUniform / Piggyback / HomeRule / Independent), " +
-                "<code>LocalRateCap</code>, <code>SourcingRule</code>, and <code>RevenueAgencyUrl</code>. " +
-                "One row per state; StateCode is the unique key. Created during the SST import step."),
 
             new("LocalAuthorityType",
                 "An enum on <strong>StateTaxProfile</strong> describing how local jurisdictions relate to state taxability rules: " +

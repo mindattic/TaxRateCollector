@@ -207,6 +207,16 @@ public class ScrapeOrchestrator(
         var results = await bulk.ScrapeAsync(ct);
         if (results.Count == 0) return;
 
+        // Resolve the SST category ID declared by the scraper (overrides caller-supplied taxCategoryId
+        // for general/sales-tax results; excise results with ProductCategory set always get null).
+        if (bulk.SstCategoryName is { } catName)
+        {
+            var cat = await db.TaxCategories
+                .FirstOrDefaultAsync(c => c.Name == catName, ct);
+            if (cat is not null)
+                taxCategoryId = cat.Id;
+        }
+
         // Build FIPS → Jurisdiction lookup for the state
         var stateJurisdictions = await db.Jurisdictions
             .Where(j => j.StateCode == stateCode && j.IsActive)
@@ -274,7 +284,7 @@ public class ScrapeOrchestrator(
             {
                 JurisdictionId    = jurisdiction.Id,
                 ScrapeRunId       = run.Id,
-                TaxCategoryId     = taxCategoryId,
+                TaxCategoryId     = result.ProductCategory == null ? taxCategoryId : null,
                 Name              = result.RateName,
                 Rate              = result.Rate,
                 RateBasis         = result.RateBasis,
@@ -290,6 +300,7 @@ public class ScrapeOrchestrator(
                 AutoApprove       = !needsReview,
                 SourceConfidence  = result.SourceConfidence,
                 ProductCategory  = result.ProductCategory,
+                Conditions       = result.Conditions,
             };
             db.TaxRates.Add(rate);
 

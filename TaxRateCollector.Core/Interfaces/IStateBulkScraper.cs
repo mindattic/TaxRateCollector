@@ -11,6 +11,14 @@ public interface IStateBulkScraper
     /// <summary>Two-letter USPS state code this scraper handles (e.g. "TX").</summary>
     string StateCode { get; }
 
+    /// <summary>
+    /// SST taxonomy category name (e.g. "Alcoholic Beverages") that general (non-excise)
+    /// results from this scraper belong to. Null means the rates are fully general and apply
+    /// to all categories. When set, the orchestrator resolves this to a TaxCategoryId and
+    /// tags all ProductCategory-null results with it so they only appear under the correct category.
+    /// </summary>
+    string? SstCategoryName => null;
+
     Task<IReadOnlyList<BulkRateResult>> ScrapeAsync(CancellationToken ct = default);
 }
 
@@ -73,4 +81,7 @@ public record BulkRateResult(
     /// Excise product category (Beer, Wine, Spirits, etc.). Null for general sales-tax rates.
     /// When set, the rate appears in the excise-rates panel rather than the main rates panel.
     /// </summary>
-    ProductCategory? ProductCategory = null);
+    ProductCategory? ProductCategory = null,
+
+    /// <summary>Free-text conditions note (e.g. control-state explanation, exemption reason).</summary>
+    string Conditions = "");

@@ -16,6 +16,7 @@ public sealed class WisconsinAlcoholScraper : IStateBulkScraper
     private readonly IHttpClientFactory httpClientFactory;
 
     public string StateCode => "WI";
+    public string? SstCategoryName => "Alcoholic Beverages";
 
     private const string SourceUrl     = "https://www.revenue.wi.gov/Pages/FAQS/pcs-county.aspx";
     private const string EffectiveDate = "2024-01-01";

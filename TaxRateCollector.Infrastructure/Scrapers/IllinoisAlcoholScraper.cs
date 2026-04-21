@@ -20,6 +20,7 @@ public sealed class IllinoisAlcoholScraper : IStateBulkScraper
     private readonly SettingsService settings;
 
     public string StateCode => "IL";
+    public string? SstCategoryName => "Alcoholic Beverages";
 
     private const string ExciseUrl      = "https://tax.illinois.gov/research/taxrates/excise.html";
     private const string CookUrl        = "https://www.cookcountyil.gov/service/liquor-tax";

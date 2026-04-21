@@ -21,6 +21,7 @@ public sealed class MinnesotaAlcoholScraper : IStateBulkScraper
     private readonly SettingsService settings;
 
     public string StateCode => "MN";
+    public string? SstCategoryName => "Alcoholic Beverages";
 
     private const string BeerUrl    = "https://www.revenue.state.mn.us/fermented-malt-beverage-excise-tax";
     private const string WineUrl    = "https://www.revenue.state.mn.us/wine-excise-tax";
