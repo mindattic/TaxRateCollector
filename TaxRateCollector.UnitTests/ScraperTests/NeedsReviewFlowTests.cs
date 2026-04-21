@@ -6,7 +6,7 @@ using TaxRateCollector.Infrastructure.Data;
 namespace TaxRateCollector.UnitTests.ScraperTests;
 
 /// <summary>
-/// Validates the NeedsReview approval/rejection flow used by the /review admin page.
+/// Validates the AutoApprove approval/rejection flow used by the /review admin page.
 /// Tests the raw DB logic rather than the Blazor component so behaviour is verifiable
 /// without a browser context.
 /// </summary>
@@ -55,7 +55,7 @@ public class NeedsReviewFlowTests
             Rate           = 0.0625m,
             RateBasis      = RateBasis.Percentage,
             IsCurrent      = false,
-            NeedsReview    = true,
+            AutoApprove    = false,
             ScrapedAt      = DateTime.UtcNow.ToString("o"),
         };
 
@@ -68,18 +68,18 @@ public class NeedsReviewFlowTests
             Rate           = 0.0500m,
             RateBasis      = RateBasis.Percentage,
             IsCurrent      = true,
-            NeedsReview    = false,
+            AutoApprove    = true,
             ScrapedAt      = DateTime.UtcNow.ToString("o"),
         };
 
     // ── Default state ─────────────────────────────────────────────────────────
 
     [Test]
-    public void NewTaxRate_DefaultNeedsReview_IsFalse()
+    public void NewTaxRate_DefaultAutoApprove_IsTrue()
     {
         var rate = new TaxRate();
-        Assert.That(rate.NeedsReview, Is.False,
-            "Rates created manually via admin UI must not require review by default");
+        Assert.That(rate.AutoApprove, Is.True,
+            "Rates created manually via admin UI are auto-approved by default");
     }
 
     [Test]
@@ -99,7 +99,7 @@ public class NeedsReviewFlowTests
     // ── Approve ───────────────────────────────────────────────────────────────
 
     [Test]
-    public async Task Approve_SetsNeedsReview_False_AndIsCurrent_True()
+    public async Task Approve_SetsAutoApprove_True_AndIsCurrent_True()
     {
         var factory = CreateFactory();
         await using var setup = factory.CreateDbContext();
@@ -110,14 +110,14 @@ public class NeedsReviewFlowTests
 
         // Simulate Review page approve action
         await using var act = factory.CreateDbContext();
-        var pending = await act.TaxRates.SingleAsync(t => t.NeedsReview);
-        pending.NeedsReview = false;
+        var pending = await act.TaxRates.SingleAsync(t => !t.AutoApprove);
+        pending.AutoApprove = true;
         pending.IsCurrent   = true;
         await act.SaveChangesAsync();
 
         await using var verify = factory.CreateDbContext();
         var approved = await verify.TaxRates.FindAsync(rate.Id);
-        Assert.That(approved!.NeedsReview, Is.False);
+        Assert.That(approved!.AutoApprove, Is.True);
         Assert.That(approved.IsCurrent,    Is.True);
     }
 
@@ -139,8 +139,8 @@ public class NeedsReviewFlowTests
             .ToListAsync();
         foreach (var r in existing) r.IsCurrent = false;
 
-        var toApprove = await act.TaxRates.SingleAsync(t => t.NeedsReview);
-        toApprove.NeedsReview = false;
+        var toApprove = await act.TaxRates.SingleAsync(t => !t.AutoApprove);
+        toApprove.AutoApprove = true;
         toApprove.IsCurrent   = true;
         await act.SaveChangesAsync();
 
@@ -169,9 +169,9 @@ public class NeedsReviewFlowTests
         await setup.SaveChangesAsync();
 
         await using var act = factory.CreateDbContext();
-        foreach (var r in await act.TaxRates.Where(t => t.NeedsReview).ToListAsync())
+        foreach (var r in await act.TaxRates.Where(t => !t.AutoApprove).ToListAsync())
         {
-            r.NeedsReview = false;
+            r.AutoApprove = true;
             r.IsCurrent   = true;
         }
         await act.SaveChangesAsync();
@@ -215,7 +215,7 @@ public class NeedsReviewFlowTests
         await setup.SaveChangesAsync();
 
         await using var act = factory.CreateDbContext();
-        var toDelete = await act.TaxRates.SingleAsync(t => t.NeedsReview);
+        var toDelete = await act.TaxRates.SingleAsync(t => !t.AutoApprove);
         act.TaxRates.Remove(toDelete);
         await act.SaveChangesAsync();
 
@@ -241,6 +241,6 @@ public class NeedsReviewFlowTests
             .ToListAsync();
 
         Assert.That(currentRates, Is.Empty,
-            "A pending (NeedsReview=true) rate must not appear in IsCurrent queries");
+            "A pending (AutoApprove=false) rate must not appear in IsCurrent queries");
     }
 }

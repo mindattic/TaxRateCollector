@@ -89,6 +89,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
              .IsRequired(false)
              .OnDelete(DeleteBehavior.Restrict);
 
+            // AutoApprove is stored as the inverted NeedsReview column (0 = pending, 1 = approved)
+            e.Property(t => t.AutoApprove)
+             .HasColumnName("NeedsReview")
+             .HasConversion(v => !v, v => !v);
+
             e.HasIndex(t => new { t.JurisdictionId, t.TaxCategoryId, t.IsCurrent })
              .HasDatabaseName("IX_TaxRates_JurisdictionId_CategoryId_Current");
 

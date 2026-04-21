@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using HtmlAgilityPack;
@@ -35,12 +36,19 @@ public sealed class EvidenceFileStore(
             toWrite = content;
         }
 
-        var fileName = GenerateFileName(extension, slug);
+        var hash     = Convert.ToHexString(SHA256.HashData(toWrite))[..12].ToLowerInvariant();
+        var fileName = GenerateFileName(extension, slug, hash);
         var fullPath = Path.Combine(SettingsService.EvidenceDirectory, fileName);
 
-        await File.WriteAllBytesAsync(fullPath, toWrite, ct);
-
-        logger.LogDebug("Evidence saved: {File} ({Bytes} bytes)", fileName, toWrite.Length);
+        if (File.Exists(fullPath))
+        {
+            logger.LogDebug("Evidence deduped: {File}", fileName);
+        }
+        else
+        {
+            await File.WriteAllBytesAsync(fullPath, toWrite, ct);
+            logger.LogDebug("Evidence saved: {File} ({Bytes} bytes)", fileName, toWrite.Length);
+        }
 
         var size = new FileInfo(fullPath).Length;
         return new StoredEvidenceFile(fileName, evidenceType, size);
@@ -100,14 +108,10 @@ public sealed class EvidenceFileStore(
         return Encoding.UTF8.GetBytes($"URL: {sourceUrl}\n\nBODY:\n{body}");
     }
 
-    private static string GenerateFileName(string extension, string? slug = null)
-    {
-        var ts   = DateTime.UtcNow.ToString("yyyyMMdd");
-        var rand = Guid.NewGuid().ToString("N")[..6];
-        return string.IsNullOrEmpty(slug)
-            ? $"scraped_{ts}_{rand}{extension}"
-            : $"{slug}_{ts}_{rand}{extension}";
-    }
+    private static string GenerateFileName(string extension, string? slug, string hash) =>
+        string.IsNullOrEmpty(slug)
+            ? $"scraped_{hash}{extension}"
+            : $"{slug}_{hash}{extension}";
 
     private static readonly Regex BareUrlPattern =
         new(@"(?<!href=[""']|src=[""']|action=[""'])https?://[^\s<>""']+",

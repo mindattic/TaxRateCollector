@@ -122,10 +122,10 @@ public class RecursiveRateScraperTests
             Confidence: confidence,
             RawEvidence: "Rate: 6.25%");
 
-    // ── Tests: NeedsReview flag ───────────────────────────────────────────────
+    // ── Tests: AutoApprove flag ───────────────────────────────────────────────
 
     [Test]
-    public async Task NewRate_HasNeedsReview_True()
+    public async Task NewRate_HasAutoApprove_False()
     {
         var factory = CreateFactory();
         await using var setup = factory.CreateDbContext();
@@ -136,7 +136,7 @@ public class RecursiveRateScraperTests
 
         await using var verify = factory.CreateDbContext();
         var rate = await verify.TaxRates.SingleAsync(t => t.Name == "General Sales Tax");
-        Assert.That(rate.NeedsReview, Is.True);
+        Assert.That(rate.AutoApprove, Is.False);
     }
 
     [Test]
@@ -204,7 +204,7 @@ public class RecursiveRateScraperTests
             Rate = 0.0625m,
             RateBasis = RateBasis.Percentage,
             IsCurrent = true,
-            NeedsReview = false,
+            AutoApprove = true,
             ScrapedAt = DateTime.UtcNow.ToString("o"),
         });
         await setup.SaveChangesAsync();
@@ -231,7 +231,7 @@ public class RecursiveRateScraperTests
             Rate = 0.0625m,
             RateBasis = RateBasis.Percentage,
             IsCurrent = true,
-            NeedsReview = false,
+            AutoApprove = true,
             ScrapedAt = DateTime.UtcNow.ToString("o"),
         });
         await setup.SaveChangesAsync();
@@ -244,7 +244,7 @@ public class RecursiveRateScraperTests
 
         await using var verify = factory.CreateDbContext();
         // New pending rate created; original live rate untouched until approval
-        var pending = await verify.TaxRates.SingleAsync(t => t.NeedsReview);
+        var pending = await verify.TaxRates.SingleAsync(t => !t.AutoApprove);
         Assert.That(pending.IsCurrent, Is.False);
     }
 

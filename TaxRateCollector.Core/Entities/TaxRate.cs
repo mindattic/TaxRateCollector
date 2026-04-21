@@ -206,10 +206,17 @@ public class TaxRate
     public bool IsCurrent { get; set; }
 
     /// <summary>
-    /// True for AI-extracted rates that have not yet been approved by an admin.
-    /// The rate is stored but excluded from live lookups until approved.
+    /// True when this rate is approved and live. False when it is pending review by an Approver
+    /// or Administrator before it goes live. Stored as the inverted NeedsReview column in the DB.
     /// </summary>
-    public bool NeedsReview { get; set; }
+    public bool AutoApprove { get; set; } = true;
+
+    /// <summary>
+    /// How trustworthy the data source is for this rate.
+    /// Official = fetched from a live government URL.
+    /// Archive  = fetched from a Wayback Machine snapshot (live URL was unreachable).
+    /// </summary>
+    public SourceConfidence SourceConfidence { get; set; } = SourceConfidence.Official;
 
     // ── Navigation ────────────────────────────────────────────────────────────
     public Jurisdiction Jurisdiction { get; set; } = null!;

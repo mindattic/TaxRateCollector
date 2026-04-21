@@ -76,7 +76,7 @@ public class TaxCalculatorTests
         FlatCapPerUnit = flatCapPerUnit,
         Unit = unit,
         ScrapedAt = DateTime.UtcNow.ToString("o"),
-        NeedsReview = false,
+        AutoApprove = true,
     };
 
     // ── Tests: null / empty results ───────────────────────────────────────────

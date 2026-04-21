@@ -22,11 +22,8 @@ public class EvidenceFileStoreTests
         createdFiles.Clear();
     }
 
-    private EvidenceFileStore MakeStore(FakeHttpMessageHandler? handler = null)
-    {
-        var http = new HttpClient(handler ?? new FakeHttpMessageHandler());
-        return new EvidenceFileStore(new SettingsService(), http, NullLogger<EvidenceFileStore>.Instance);
-    }
+    private static EvidenceFileStore MakeStore() =>
+        new(NullLogger<EvidenceFileStore>.Instance);
 
     private async Task<string> SaveAndTrack(EvidenceFileStore store, byte[] content, string mime, string url = "http://ex.gov/page")
     {
@@ -148,12 +145,7 @@ public class EvidenceFileStoreTests
         var handler = new FakeHttpMessageHandler();
         handler.Register("http://ex.gov/style.css", Encoding.UTF8.GetBytes("body{}"), "text/css");
 
-        var settings = new SettingsService();
-        settings.Current.FullPageCapture = true;
-
-        var store = new EvidenceFileStore(settings,
-            new HttpClient(handler),
-            NullLogger<EvidenceFileStore>.Instance);
+        var store = new EvidenceFileStore(NullLogger<EvidenceFileStore>.Instance);
 
         var html = Encoding.UTF8.GetBytes(
             "<html><head><link href=\"http://ex.gov/style.css\" rel=\"stylesheet\"></head><body>Tax</body></html>");

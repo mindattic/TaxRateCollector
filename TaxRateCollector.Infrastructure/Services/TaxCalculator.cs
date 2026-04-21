@@ -48,7 +48,7 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
         var ratesQuery = db.TaxRates
             .Where(t => t.JurisdictionId == effectiveJurisdictionId
                      && t.IsCurrent
-                     && !t.NeedsReview
+                     && t.AutoApprove
                      && (t.EffectiveDate == null || t.EffectiveDate <= today)
                      && (t.ExpirationDate == null || t.ExpirationDate > today));
 

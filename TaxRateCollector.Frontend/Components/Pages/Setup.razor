@@ -11,6 +11,8 @@
 @inject IHttpClientFactory HttpClientFactory
 @inject IJSRuntime JS
 @inject IConfiguration Configuration
+@inject IScrapeOrchestrator Orchestrator
+@inject IEnumerable<IStateBulkScraper> AllScrapers
 @rendermode InteractiveServer
 <PageTitle>Setup — TaxRateCollector</PageTitle>
 
@@ -182,6 +184,13 @@ else
         </label>
         <input type="checkbox" @bind="settings.Current.FullPageCapture" />
     </div>
+    <div class="setting-row" style="margin-top:.6rem">
+        <label class="setting-label">
+            Auto-Approve scraped rates
+            <span class="setting-hint">On: rates go live immediately. Off: rates queue for an Administrator or Approver to review before going live.</span>
+        </label>
+        <input type="checkbox" @bind="settings.Current.AutoApprove" />
+    </div>
     <div class="settings-actions" style="margin-top:.75rem;gap:.6rem">
         <button class="btn-primary" @onclick="SaveConfig" disabled="@configBusy">Save Preferences</button>
         @if (!string.IsNullOrEmpty(configMsg)) { <span class="save-confirm">@configMsg</span> }
@@ -225,46 +234,47 @@ else
 <!-- ── Phase 3: Scraping ─────────────────────────────────────────────────────── -->
 <div class="setup-phase-label">Phase 3 — Scraping</div>
 
-<div class="setup-card" style="opacity:.7;border-style:dashed">
+<div class="setup-card">
     <div class="setup-card-header">
         <div>
-            <h2 class="setup-card-title" style="display:flex;align-items:center;gap:.6rem">
-                Run Scrape Pipeline
-                <span class="phase-badge phase-badge-stub">Coming Soon</span>
-            </h2>
+            <h2 class="setup-card-title">Scrapers</h2>
             <p class="setup-card-desc">
-                Once Phase 2 is complete, the scrape pipeline will automatically discover and collect
-                current tax rates for every jurisdiction — government APIs, agency web pages, and official PDFs.
-                Rates are validated, change-logged, and linked to source evidence.
+                Click an active state to run its scraper. Rates appear immediately in the Jurisdictions tab.
+                Auto-Approve behavior follows the setting above.
             </p>
         </div>
-        <div class="setup-card-actions">
-            <button class="btn-primary btn-lg" disabled>▶ Run Scrape</button>
-        </div>
     </div>
-    <ol class="setup-steps setup-steps-inline">
-        <li class="setup-step step-todo">
-            <span class="step-icon">1</span>
-            <div class="step-body">
-                <strong>Source discovery</strong>
-                <span class="step-desc"><span class="step-count-warn">Probe every jurisdiction for a tax rate source URL — government API, web page, or PDF</span></span>
-            </div>
-        </li>
-        <li class="setup-step step-todo">
-            <span class="step-icon">2</span>
-            <div class="step-body">
-                <strong>Initial scrape</strong>
-                <span class="step-desc"><span class="step-count-warn">Fetch current rates from all discovered sources and populate baseline tax rate records</span></span>
-            </div>
-        </li>
-        <li class="setup-step step-todo">
-            <span class="step-icon">3</span>
-            <div class="step-body">
-                <strong>Scheduled re-scrape</strong>
-                <span class="step-desc"><span class="step-count-warn">Automatically re-check sources on a configurable interval and log any rate changes</span></span>
-            </div>
-        </li>
-    </ol>
+    <div class="scraper-grid">
+        @foreach (var st in AllStates)
+        {
+            var enabled = enabledStates.Contains(st);
+            scraperStates.TryGetValue(st, out var rs);
+            var tileClass = "scraper-tile" +
+                (enabled  ? " scraper-tile-on"      : " scraper-tile-off") +
+                (rs?.Running == true                 ? " scraper-tile-running" : "") +
+                (rs is { Running: false, Error: false } ? " scraper-tile-done"    : "") +
+                (rs?.Error == true                   ? " scraper-tile-err"     : "");
+            var tip = enabled ? ScraperLabel(st) : st + " — coming soon";
+            <button class="@tileClass"
+                    disabled="@(!enabled || rs?.Running == true)"
+                    title="@tip"
+                    @onclick="() => RunScraper(st)">
+                @if (rs?.Running == true)
+                {
+                    <span class="scraper-spin"></span>
+                }
+                else if (rs is { Running: false, Error: false })
+                {
+                    <span class="scraper-check">&#x2713;</span>
+                }
+                else if (rs?.Error == true)
+                {
+                    <span class="scraper-check scraper-check-err">&#x2717;</span>
+                }
+                <span>@st</span>
+            </button>
+        }
+    </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════════ -->
@@ -452,6 +462,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        enabledStates = AllScrapers.Select(s => s.StateCode).ToHashSet();
         await Refresh();
         await using var db = await DbFactory.CreateDbContextAsync();
         pricing = await db.PricingConfigs.OrderBy(x => x.Id).FirstOrDefaultAsync();
@@ -597,6 +608,50 @@ else
         }
         catch (Exception ex) { backupMsg = $"✗ {ex.Message}"; }
         finally { backupBusy = false; StateHasChanged(); }
+    }
+
+    // ── Scrapers ──────────────────────────────────────────────────────────────
+
+    private sealed class ScraperRunState
+    {
+        public bool Running { get; set; }
+        public bool Error   { get; set; }
+    }
+
+    private readonly Dictionary<string, ScraperRunState> scraperStates = [];
+    private HashSet<string> enabledStates = [];
+
+    private static readonly string[] AllStates =
+    [
+        "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA",
+        "HI","ID","IL","IN","IA","KS","KY","LA","ME","MD",
+        "MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+        "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC",
+        "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY",
+    ];
+
+    private static string ScraperLabel(string st) => st switch
+    {
+        "WI" => "Wisconsin — Alcohol excise",
+        "IL" => "Illinois — Alcohol excise",
+        "MN" => "Minnesota — Alcohol excise",
+        _    => st,
+    };
+
+    private async Task RunScraper(string st)
+    {
+        scraperStates[st] = new ScraperRunState { Running = true };
+        StateHasChanged();
+        try
+        {
+            await Orchestrator.RunBulkForStateAsync(st, null, !settings.Current.AutoApprove);
+            scraperStates[st] = new ScraperRunState { Running = false, Error = false };
+        }
+        catch
+        {
+            scraperStates[st] = new ScraperRunState { Running = false, Error = true };
+        }
+        StateHasChanged();
     }
 
     // ── Truncate ──────────────────────────────────────────────────────────────

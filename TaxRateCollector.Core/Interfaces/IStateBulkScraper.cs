@@ -1,3 +1,5 @@
+using TaxRateCollector.Core.Enums;
+
 namespace TaxRateCollector.Core.Interfaces;
 
 /// <summary>
@@ -41,4 +43,34 @@ public record BulkRateResult(
     /// <summary>Original filename for display (e.g. "tx_sales_tax_rates_q2_2026.xlsx").</summary>
     string EvidenceOriginalFileName,
 
-    string EffectiveDate = "");
+    string EffectiveDate = "",
+
+    /// <summary>How the Rate value is interpreted (percentage of sale price, per-gallon, etc.).</summary>
+    RateBasis RateBasis = RateBasis.Percentage,
+
+    /// <summary>Kind of tax (sales, excise, etc.).</summary>
+    TaxType TaxType = TaxType.SalesTax,
+
+    /// <summary>Where in the supply chain this tax is collected and remitted.</summary>
+    RemittancePoint RemittancePoint = RemittancePoint.Retailer,
+
+    /// <summary>True when the tax is remitted upstream and already embedded in the wholesale cost.</summary>
+    bool IsIncludedInPrice = false,
+
+    /// <summary>On-premise, off-premise, or any context for this rate.</summary>
+    SaleContext SaleContext = SaleContext.Any,
+
+    /// <summary>Minimum ABV (decimal fraction, e.g. 0.20 = 20%) required for this rate. Null = no lower bound.</summary>
+    decimal? MinAbv = null,
+
+    /// <summary>Maximum ABV (decimal fraction) above which this rate does not apply. Null = no upper bound.</summary>
+    decimal? MaxAbv = null,
+
+    /// <summary>How confident we are in the data source. Official = live government URL; Archive = Wayback Machine snapshot.</summary>
+    SourceConfidence SourceConfidence = SourceConfidence.Official,
+
+    /// <summary>
+    /// Excise product category (Beer, Wine, Spirits, etc.). Null for general sales-tax rates.
+    /// When set, the rate appears in the excise-rates panel rather than the main rates panel.
+    /// </summary>
+    ProductCategory? ProductCategory = null);

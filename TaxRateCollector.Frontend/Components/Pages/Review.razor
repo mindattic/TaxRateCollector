@@ -3,7 +3,7 @@
 @using TaxRateCollector.Core.Entities
 @using TaxRateCollector.Core.Enums
 @using TaxRateCollector.Infrastructure.Data
-@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator,Approver")]
 @inject IDbContextFactory<AppDbContext> DbFactory
 @rendermode InteractiveServer
 
@@ -187,7 +187,7 @@ else
         await using var db = await DbFactory.CreateDbContextAsync();
 
         var rates = await db.TaxRates
-            .Where(t => t.NeedsReview)
+            .Where(t => !t.AutoApprove)
             .Include(t => t.Jurisdiction)
             .OrderBy(t => t.Jurisdiction.StateCode)
             .ThenBy(t => t.Jurisdiction.JurisdictionName)
@@ -267,7 +267,7 @@ else
             var rate = await db.TaxRates.FindAsync(row.Id);
             if (rate is not null)
             {
-                rate.NeedsReview = false;
+                rate.AutoApprove = true;
                 rate.IsCurrent   = true;
             }
             await db.SaveChangesAsync();

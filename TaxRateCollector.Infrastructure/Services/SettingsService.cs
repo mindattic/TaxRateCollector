@@ -16,6 +16,12 @@ public class AppSettings
     [JsonPropertyName("anthropic_api_key")] public string AnthropicApiKey { get; set; } = "";
     [JsonPropertyName("default_update_frequency_days")] public int DefaultUpdateFrequencyDays { get; set; } = 90;
     [JsonPropertyName("evidence_auto_fetch")] public bool EvidenceAutoFetch { get; set; } = false;
+
+    /// <summary>
+    /// When true (default), scraped rates go live immediately.
+    /// When false, rates are queued for an Administrator or Approver to review before going live.
+    /// </summary>
+    [JsonPropertyName("auto_approve")] public bool AutoApprove { get; set; } = true;
     [JsonPropertyName("wayback_machine_fallback")] public bool WaybackMachineFallback { get; set; } = true;
     /// <summary>
     /// When true, HTML evidence is saved as a zip bundling the page and all linked

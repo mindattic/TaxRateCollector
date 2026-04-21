@@ -80,6 +80,8 @@ builder.Services.AddScoped<IScrapeStrategy, TexasExcelScraper>();
 
 // ── Bulk state scrapers ───────────────────────────────────────────────────────
 builder.Services.AddScoped<IStateBulkScraper, WisconsinAlcoholScraper>();
+builder.Services.AddScoped<IStateBulkScraper, IllinoisAlcoholScraper>();
+builder.Services.AddScoped<IStateBulkScraper, MinnesotaAlcoholScraper>();
 
 // ── Core services ─────────────────────────────────────────────────────────────
 builder.Services.AddScoped<IDiffEngine, DiffEngine>();
@@ -305,42 +307,74 @@ if (populateMode)
 
 if (scrapeMode)
 {
-    var stateArg    = GetArg(args, "--state");
-    var categoryArg = GetArg(args, "--category");
+    var stateArgList = GetArgList(args, "--state");
+    var categoryArg  = GetArg(args, "--category");
 
-    if (string.IsNullOrEmpty(stateArg))
+    if (stateArgList.Length == 0)
     {
-        Console.Error.WriteLine("[scrape] --state <code> is required (e.g. --state WI)");
+        Console.Error.WriteLine("[scrape] Usage: --scrape --state <WI|IL|MN|…> [<state2> …]");
+        Console.Error.WriteLine("         Use --state all to run every registered scraper.");
         return;
     }
 
     using var scrapeScope = app.Services.CreateScope();
-    var scrapeDb = await scrapeScope.ServiceProvider
+
+    // Resolve 'all' to every registered bulk scraper
+    var registeredScrapers = scrapeScope.ServiceProvider.GetServices<IStateBulkScraper>().ToArray();
+    var statesToRun = stateArgList.Length == 1
+                      && stateArgList[0].Equals("all", StringComparison.OrdinalIgnoreCase)
+        ? registeredScrapers.Select(s => s.StateCode.ToUpperInvariant()).ToArray()
+        : stateArgList.Select(s => s.ToUpperInvariant()).ToArray();
+
+    await using var scrapeDb = await scrapeScope.ServiceProvider
         .GetRequiredService<IDbContextFactory<AppDbContext>>()
         .CreateDbContextAsync();
-    await using (scrapeDb)
-    {
-        int? taxCategoryId = null;
-        if (!string.IsNullOrEmpty(categoryArg))
-        {
-            var categoryLower = categoryArg.ToLowerInvariant();
-            var category = await scrapeDb.TaxCategories
-                .Where(c => EF.Functions.Like(c.Name.ToLower(), $"%{categoryLower}%"))
-                .FirstOrDefaultAsync();
-            if (category is null)
-                Console.WriteLine($"[scrape] Warning: no TaxCategory matching '{categoryArg}' — rates will be saved without category.");
-            else
-            {
-                taxCategoryId = category.Id;
-                Console.WriteLine($"[scrape] Matched category: '{category.Name}' (id={category.Id})");
-            }
-        }
 
-        var orchestrator = scrapeScope.ServiceProvider.GetRequiredService<IScrapeOrchestrator>();
-        Console.WriteLine($"[scrape] Running bulk scraper for state '{stateArg}'…");
-        var saved = await orchestrator.RunBulkForStateAsync(stateArg.ToUpperInvariant(), taxCategoryId);
-        Console.WriteLine($"[scrape] Done. {saved} rates saved.");
+    int? taxCategoryId = null;
+    if (!string.IsNullOrEmpty(categoryArg))
+    {
+        var categoryLower = categoryArg.ToLowerInvariant();
+        var category = await scrapeDb.TaxCategories
+            .Where(c => EF.Functions.Like(c.Name.ToLower(), $"%{categoryLower}%"))
+            .FirstOrDefaultAsync();
+        if (category is null)
+            Console.WriteLine($"[scrape] Warning: no TaxCategory matching '{categoryArg}' — rates saved without category.");
+        else
+        {
+            taxCategoryId = category.Id;
+            Console.WriteLine($"[scrape] Matched category: '{category.Name}' (id={category.Id})");
+        }
     }
+
+    var orchestrator   = scrapeScope.ServiceProvider.GetRequiredService<IScrapeOrchestrator>();
+    var scrapeSettings = scrapeScope.ServiceProvider.GetRequiredService<SettingsService>();
+
+    Console.WriteLine($"[scrape] Running {statesToRun.Length} scraper(s): {string.Join(", ", statesToRun)}");
+
+    int totalSaved = 0, totalErrors = 0;
+    foreach (var state in statesToRun)
+    {
+        Console.Write($"[scrape] [{state}] Starting… ");
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var saved = await orchestrator.RunBulkForStateAsync(state, taxCategoryId,
+                needsReview: !scrapeSettings.Current.AutoApprove);
+            sw.Stop();
+            totalSaved += saved;
+            Console.WriteLine($"{saved} rates saved ({sw.Elapsed.TotalSeconds:F1}s)");
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            totalErrors++;
+            Console.Error.WriteLine($"ERROR: {ex.Message}");
+        }
+    }
+
+    if (statesToRun.Length > 1)
+        Console.WriteLine($"[scrape] All done — {totalSaved} rates saved, {totalErrors} error(s).");
+
     return;
 }
 
@@ -350,6 +384,20 @@ static string? GetArg(string[] a, string flag)
     return idx >= 0 && idx + 1 < a.Length ? a[idx + 1] : null;
 }
 
+// Returns all values after the flag until the next flag (starts with --).
+static string[] GetArgList(string[] a, string flag)
+{
+    var idx = Array.IndexOf(a, flag);
+    if (idx < 0) return [];
+    var values = new List<string>();
+    for (int i = idx + 1; i < a.Length; i++)
+    {
+        if (a[i].StartsWith("--")) break;
+        values.Add(a[i]);
+    }
+    return values.ToArray();
+}
+
 // ── Roles + admin + demo subscribers ─────────────────────────────────────────
 {
     using var scope = app.Services.CreateScope();
@@ -357,9 +405,11 @@ static string? GetArg(string[] a, string flag)
     var roleManager  = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     var dbFactory2   = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
 
-    // Ensure Administrator role exists
+    // Ensure built-in roles exist
     if (!await roleManager.RoleExistsAsync("Administrator"))
         await roleManager.CreateAsync(new IdentityRole("Administrator"));
+    if (!await roleManager.RoleExistsAsync("Approver"))
+        await roleManager.CreateAsync(new IdentityRole("Approver"));
 
     // Seed admin user from config
     var devAdminEmail    = builder.Configuration["DEV_ADMIN_EMAIL"];

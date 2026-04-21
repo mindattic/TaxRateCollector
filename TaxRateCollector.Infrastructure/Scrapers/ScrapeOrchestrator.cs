@@ -214,8 +214,9 @@ public class ScrapeOrchestrator(
         var byFips = stateJurisdictions
             .Where(j => !string.IsNullOrEmpty(j.FipsCode))
             .ToDictionary(j => j.FipsCode, StringComparer.OrdinalIgnoreCase);
-        var byName = stateJurisdictions
-            .ToDictionary(j => j.JurisdictionName.ToUpperInvariant());
+        var byName = new Dictionary<string, Jurisdiction>(StringComparer.OrdinalIgnoreCase);
+        foreach (var j in stateJurisdictions)
+            byName.TryAdd(j.JurisdictionName.ToUpperInvariant(), j);
 
         var now = DateTime.UtcNow.ToString("o");
 
@@ -271,18 +272,24 @@ public class ScrapeOrchestrator(
 
             var rate = new TaxRate
             {
-                JurisdictionId      = jurisdiction.Id,
-                ScrapeRunId         = run.Id,
-                TaxCategoryId       = taxCategoryId,
-                Name                = result.RateName,
-                Rate                = result.Rate,
-                RateBasis           = RateBasis.Percentage,
-                SaleContext         = SaleContext.Any,
-                RemittancePoint     = RemittancePoint.Retailer,
-                EffectiveDate       = ParseDate(result.EffectiveDate),
-                ScrapedAt           = now,
-                IsCurrent           = true,
-                NeedsReview         = needsReview,
+                JurisdictionId    = jurisdiction.Id,
+                ScrapeRunId       = run.Id,
+                TaxCategoryId     = taxCategoryId,
+                Name              = result.RateName,
+                Rate              = result.Rate,
+                RateBasis         = result.RateBasis,
+                TaxType           = result.TaxType,
+                SaleContext       = result.SaleContext,
+                RemittancePoint   = result.RemittancePoint,
+                IsIncludedInPrice = result.IsIncludedInPrice,
+                MinAbv            = result.MinAbv,
+                MaxAbv            = result.MaxAbv,
+                EffectiveDate     = ParseDate(result.EffectiveDate),
+                ScrapedAt         = now,
+                IsCurrent         = true,
+                AutoApprove       = !needsReview,
+                SourceConfidence  = result.SourceConfidence,
+                ProductCategory  = result.ProductCategory,
             };
             db.TaxRates.Add(rate);
 
@@ -340,7 +347,7 @@ public class ScrapeOrchestrator(
                 ScrapeRunId     = run.Id,
                 RawEvidence     = raw.RawValue,
                 IsCurrent       = true,
-                NeedsReview     = false,
+                AutoApprove     = true,
             });
         }
 

@@ -238,7 +238,7 @@ public sealed class RecursiveRateScraper(
         CancellationToken ct)
     {
         var alreadyPending = await db.TaxRates
-            .AnyAsync(t => t.JurisdictionId == jurisdictionId && t.Name == law.Name && t.NeedsReview, ct);
+            .AnyAsync(t => t.JurisdictionId == jurisdictionId && t.Name == law.Name && !t.AutoApprove, ct);
         if (alreadyPending) return (false, false);
 
         if (!overwrite)
@@ -284,7 +284,7 @@ public sealed class RecursiveRateScraper(
             RawEvidence         = law.RawEvidence,
             ScrapedAt           = now,
             IsCurrent           = false,
-            NeedsReview         = true,
+            AutoApprove         = false,
         };
 
         db.TaxRates.Add(rate);
