@@ -172,24 +172,33 @@ public class ScrapeOrchestrator(
         bool needsReview = true,
         CancellationToken ct = default)
     {
-        var bulk = bulkScrapers.FirstOrDefault(s =>
-            s.StateCode.Equals(stateCode, StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException($"No bulk scraper registered for state '{stateCode}'.");
+        // A state may have multiple registered scrapers (e.g. WI has both an alcohol-excise
+        // scraper and a general sales-tax scraper). Run each one against the same ScrapeRun
+        // so all rates land in a single audit-trail entry.
+        var matching = bulkScrapers
+            .Where(s => s.StateCode.Equals(stateCode, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (matching.Count == 0)
+            throw new InvalidOperationException($"No bulk scraper registered for state '{stateCode}'.");
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var run = new ScrapeRun { StartedAt = DateTime.UtcNow.ToString("o"), Status = ScrapeStatus.Running };
         db.ScrapeRuns.Add(run);
         await db.SaveChangesAsync(ct);
 
-        await RunBulkScraperAsync(db, run, bulk, stateCode, ct,
-            taxCategoryId: taxCategoryId, needsReview: needsReview, overwriteExisting: true);
+        foreach (var bulk in matching)
+        {
+            await RunBulkScraperAsync(db, run, bulk, stateCode, ct,
+                taxCategoryId: taxCategoryId, needsReview: needsReview, overwriteExisting: true);
+        }
 
         run.Status       = ScrapeStatus.Completed;
         run.CompletedAt  = DateTime.UtcNow.ToString("o");
         run.TotalScraped = run.ProcessedCount;
         await db.SaveChangesAsync(ct);
 
-        logger.LogInformation("RunBulkForStateAsync {State}: {Count} rates saved", stateCode, run.TotalScraped);
+        logger.LogInformation("RunBulkForStateAsync {State}: {Count} rates saved across {Scrapers} scraper(s)",
+            stateCode, run.TotalScraped, matching.Count);
         return run.TotalScraped;
     }
 

@@ -11,9 +11,9 @@ using TaxRateCollector.Infrastructure.Scrapers;
 using TaxRateCollector.Infrastructure.Scrapers.Strategies;
 using TaxRateCollector.Infrastructure.Services;
 using TaxRateCollector.Infrastructure.Seeding;
-using TaxRateCollector.Frontend.Components;
-using TaxRateCollector.Frontend.Logging;
-using TaxRateCollector.Frontend.Services;
+using TaxRateCollector.Blazor.Components;
+using TaxRateCollector.Blazor.Logging;
+using TaxRateCollector.Blazor.Services;
 
 // Lazy reference to the DI container — filled after app.Build()
 IServiceProvider? serviceProvider = null;
@@ -80,6 +80,7 @@ builder.Services.AddScoped<IScrapeStrategy, TexasExcelScraper>();
 
 // ── Bulk state scrapers ───────────────────────────────────────────────────────
 builder.Services.AddScoped<IStateBulkScraper, WisconsinAlcoholScraper>();
+builder.Services.AddScoped<IStateBulkScraper, WisconsinSalesTaxScraper>();
 builder.Services.AddScoped<IStateBulkScraper, IllinoisAlcoholScraper>();
 builder.Services.AddScoped<IStateBulkScraper, MinnesotaAlcoholScraper>();
 builder.Services.AddScoped<IStateBulkScraper, IowaAlcoholScraper>();

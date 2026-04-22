@@ -4,8 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TaxRateCollector — Implementation Plan</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&family=Libre+Franklin:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -311,17 +309,6 @@ body::after{
   </div>
 </div>
 
-<!-- ═══════ TABS ═══════ -->
-<div class="tabs" id="tabs">
-  <button class="tab active" data-tab="arch"><span class="tab-icon">◈</span> Architecture</button>
-  <button class="tab" data-tab="db"><span class="tab-icon">⊞</span> Database Schema</button>
-  <button class="tab" data-tab="scraper"><span class="tab-icon">⟁</span> Scraper Design</button>
-  <button class="tab" data-tab="project"><span class="tab-icon">⧉</span> Project Structure</button>
-  <button class="tab" data-tab="interfaces"><span class="tab-icon">⟐</span> Key Interfaces</button>
-  <button class="tab" data-tab="ui"><span class="tab-icon">◻</span> Blazor UI Pages</button>
-  <button class="tab" data-tab="milestones"><span class="tab-icon">▸</span> Sprint Plan</button>
-</div>
-
 <!-- ═══════ CONTENT ═══════ -->
 <div class="content">
 
@@ -483,7 +470,7 @@ body::after{
   <div class="tree-block"><span class="folder">TaxRateCollector/</span>
 ├── TaxRateCollector.sln
 ├── <span class="folder">src/</span>
-│   ├── <span class="folder">TaxRateCollector.Web/</span>                     <span class="comment">← Blazor Server host</span>
+│   ├── <span class="folder">TaxRateCollector.Blazor/</span>                  <span class="comment">← Blazor Server host</span>
 │   │   ├── <span class="file">Program.cs</span>                    <span class="comment">← DI, EF, hosted service registration</span>
 │   │   ├── <span class="folder">Components/</span>
 │   │   │   ├── <span class="folder">Layout/</span>
@@ -739,25 +726,5 @@ body::after{
 
 </div><!-- /content -->
 
-<script>
-(function(){
-  const tabs = document.querySelectorAll('.tab');
-  const sections = document.querySelectorAll('.section');
-
-  tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      const target = tab.getAttribute('data-tab');
-
-      tabs.forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-
-      sections.forEach(s => {
-        s.classList.remove('active');
-        if (s.id === target) s.classList.add('active');
-      });
-    });
-  });
-})();
-</script>
 </body>
 </html>

@@ -54,6 +54,15 @@ Mark items `[x]` when complete. Tackle in priority order within each section.
 - [x] UI: show excise tax rates in the Jurisdictions tree (collapsible sub-section under each node)
 - [ ] Include excise rates in Master Table export
 
+### General Sales Tax Scrapers
+- [x] WisconsinSalesTaxScraper — pilot non-SST state (county FAQ + PRAT FAQ, statute-cited)
+- [ ] Build shared `SstSalesTaxScraper` for the 24 Streamlined Sales Tax member states
+      Fans out by state code over the SST taxability matrix / rate boundary feed; one class
+      instead of 24 near-identical per-state classes since SST publishes a uniform schema.
+      Per-state classes only for non-SST states (CA, FL, IL, NY, TX, WI, etc.) where each
+      DOR's page format and statute set differ.
+- [ ] Per-state general sales tax scrapers for remaining non-SST states (after WI pilot review)
+
 ---
 
 ## 🟡 Medium Priority

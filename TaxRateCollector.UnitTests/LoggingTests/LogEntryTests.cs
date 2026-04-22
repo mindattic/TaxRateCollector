@@ -42,7 +42,7 @@ public class LogEntryTests
             Timestamp = ts,
             Level = "Information",
             Message = "Application started",
-            SourceContext = "TaxRateCollector.Frontend.Program",
+            SourceContext = "TaxRateCollector.Blazor.Program",
             Exception = null,
             Properties = """{"RequestPath":"/"}"""
         });
@@ -52,7 +52,7 @@ public class LogEntryTests
         Assert.That(loaded.Timestamp, Is.EqualTo(ts));
         Assert.That(loaded.Level, Is.EqualTo("Information"));
         Assert.That(loaded.Message, Is.EqualTo("Application started"));
-        Assert.That(loaded.SourceContext, Is.EqualTo("TaxRateCollector.Frontend.Program"));
+        Assert.That(loaded.SourceContext, Is.EqualTo("TaxRateCollector.Blazor.Program"));
         Assert.That(loaded.Properties, Does.Contain("RequestPath"));
     }
 
@@ -154,7 +154,7 @@ public class LogEntryTests
 
         db.LogEntries.AddRange(
             MakeEntry("Information", "msg1", sourceContext: "TaxRateCollector.Infrastructure.Services.PayPalService"),
-            MakeEntry("Information", "msg2", sourceContext: "TaxRateCollector.Frontend.Pages.Subscribe"),
+            MakeEntry("Information", "msg2", sourceContext: "TaxRateCollector.Blazor.Pages.Subscribe"),
             MakeEntry("Warning",     "msg3", sourceContext: "TaxRateCollector.Infrastructure.Services.PayPalService")
         );
         await db.SaveChangesAsync();

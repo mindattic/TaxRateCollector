@@ -19,16 +19,16 @@ jobs:
           dotnet-version: '10.x'
 
       - name: Restore dependencies
-        run: dotnet restore TaxRateCollector.Frontend/TaxRateCollector.Frontend.csproj
+        run: dotnet restore TaxRateCollector.Blazor/TaxRateCollector.Blazor.csproj
 
       - name: Build
-        run: dotnet build TaxRateCollector.Frontend/TaxRateCollector.Frontend.csproj -c Release --no-restore
+        run: dotnet build TaxRateCollector.Blazor/TaxRateCollector.Blazor.csproj -c Release --no-restore
 
       - name: Run unit tests
         run: dotnet test TaxRateCollector.UnitTests/TaxRateCollector.UnitTests.csproj --no-build --filter "Category!=Integration" -v m
 
       - name: Publish
-        run: dotnet publish TaxRateCollector.Frontend/TaxRateCollector.Frontend.csproj -c Release -o publish --no-restore
+        run: dotnet publish TaxRateCollector.Blazor/TaxRateCollector.Blazor.csproj -c Release -o publish --no-restore
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

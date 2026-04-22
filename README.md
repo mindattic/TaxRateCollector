@@ -38,7 +38,7 @@ A Blazor Server application that builds and maintains an exhaustively researched
 ```
 TaxRateCollector.Core           Domain entities, enums, interfaces
 TaxRateCollector.Infrastructure EF Core, migrations, seeders, importers, scrapers, services
-TaxRateCollector.Frontend       Blazor Server UI, pages, exports
+TaxRateCollector.Blazor         Blazor Server UI, pages, exports
 TaxRateCollector.UnitTests      NUnit 4 — hierarchy, seeder correctness, DB population
 ```
 
@@ -113,7 +113,7 @@ TaxRateCollector/
 │       ├── SettingsService.cs                  Reads/writes %APPDATA%\MindAttic\TaxRateCollector\settings.json
 │       └── ...DiffEngine, AlertService, TaxCalculator
 │
-├── TaxRateCollector.Frontend/
+├── TaxRateCollector.Blazor/
 │   ├── Components/Pages/
 │   │   ├── Jurisdictions.razor         Lazy-loading hierarchy tree, inline rate edit, evidence drop zones
 │   │   ├── Setup.razor                 6-step admin pipeline to populate the database
@@ -146,7 +146,7 @@ cd TaxRateCollector
 dotnet restore
 
 # 3. Run (migrations + seeders run automatically)
-dotnet run --project TaxRateCollector.Frontend
+dotnet run --project TaxRateCollector.Blazor
 
 # 4. Open https://localhost:5001
 #    Log in as dev admin (set DEV_ADMIN_EMAIL / DEV_ADMIN_PASSWORD env vars)
@@ -531,17 +531,17 @@ The EF Core tools target is `TaxRateCollector.Infrastructure`. Run from the repo
 # Apply migrations (not normally needed — Program.cs does this at startup)
 dotnet ef database update \
   --project TaxRateCollector.Infrastructure \
-  --startup-project TaxRateCollector.Frontend
+  --startup-project TaxRateCollector.Blazor
 
 # Create a new migration after changing entities
 dotnet ef migrations add <MigrationName> \
   --project TaxRateCollector.Infrastructure \
-  --startup-project TaxRateCollector.Frontend
+  --startup-project TaxRateCollector.Blazor
 
 # Drop and recreate (dev only)
 dotnet ef database drop \
   --project TaxRateCollector.Infrastructure \
-  --startup-project TaxRateCollector.Frontend
+  --startup-project TaxRateCollector.Blazor
 ```
 
 **Migration history:**
@@ -691,11 +691,11 @@ EXPOSE 8080
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY . .
-RUN dotnet publish TaxRateCollector.Frontend -c Release -o /app/publish
+RUN dotnet publish TaxRateCollector.Blazor -c Release -o /app/publish
 
 FROM base AS final
 COPY --from=build /app/publish .
-ENTRYPOINT ["dotnet", "TaxRateCollector.Frontend.dll"]
+ENTRYPOINT ["dotnet", "TaxRateCollector.Blazor.dll"]
 ```
 
 ### Azure App Service

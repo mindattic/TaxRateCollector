@@ -4,7 +4,7 @@ using Serilog.Events;
 using TaxRateCollector.Core.Entities;
 using TaxRateCollector.Infrastructure.Data;
 
-namespace TaxRateCollector.Frontend.Logging;
+namespace TaxRateCollector.Blazor.Logging;
 
 /// <summary>
 /// Serilog sink that writes log events to the LogEntries table via EF Core.

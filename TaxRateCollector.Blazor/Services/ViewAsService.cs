@@ -1,4 +1,4 @@
-namespace TaxRateCollector.Frontend.Services;
+namespace TaxRateCollector.Blazor.Services;
 
 public enum ViewAsRole { Actual, Subscriber, Guest }
 

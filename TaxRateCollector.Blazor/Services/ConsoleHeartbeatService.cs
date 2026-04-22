@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Hosting;
 
-namespace TaxRateCollector.Frontend.Services;
+namespace TaxRateCollector.Blazor.Services;
 
 public sealed class ConsoleHeartbeatService : BackgroundService
 {
