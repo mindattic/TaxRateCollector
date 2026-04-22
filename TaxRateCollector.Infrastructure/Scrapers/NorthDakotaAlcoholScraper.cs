@@ -54,7 +54,8 @@ public sealed class NorthDakotaAlcoholScraper : IStateBulkScraper
                 beer, urlUsed, bytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, null, 1.00m, SourceConfidence.ThirdParty,
-                ProductCategory.Beer),
+                ProductCategory.Beer,
+                Conditions: "Statutory authority: North Dakota Century Code § 5-03-07 (alcoholic beverage wholesale tax — beer). Rate: $0.16 per gallon for packaged beer. Bulk/draft beer is taxed at $0.08 per gallon (not modeled here)."),
 
             // Wine ≤ 17% ABV — N.D.C.C. § 5-03-07
             new("38", "North Dakota",
@@ -62,7 +63,8 @@ public sealed class NorthDakotaAlcoholScraper : IStateBulkScraper
                 wine17, urlUsed, bytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, null, 0.17m, SourceConfidence.ThirdParty,
-                ProductCategory.Wine),
+                ProductCategory.Wine,
+                Conditions: "Statutory authority: North Dakota Century Code § 5-03-07 (alcoholic beverage wholesale tax — wine, ≤17% ABV). Rate: $0.50 per gallon."),
 
             // Wine > 17% ABV — N.D.C.C. § 5-03-07
             new("38", "North Dakota",
@@ -70,7 +72,8 @@ public sealed class NorthDakotaAlcoholScraper : IStateBulkScraper
                 wine17Plus, urlUsed, bytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, 0.17m, null, SourceConfidence.ThirdParty,
-                ProductCategory.Wine),
+                ProductCategory.Wine,
+                Conditions: "Statutory authority: North Dakota Century Code § 5-03-07 (alcoholic beverage wholesale tax — wine, >17% ABV). Rate: $0.60 per gallon."),
 
             // Spirits — N.D.C.C. § 5-03-07
             new("38", "North Dakota",
@@ -78,7 +81,8 @@ public sealed class NorthDakotaAlcoholScraper : IStateBulkScraper
                 spirits, urlUsed, bytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, null, null, SourceConfidence.ThirdParty,
-                ProductCategory.Spirits),
+                ProductCategory.Spirits,
+                Conditions: "Statutory authority: North Dakota Century Code § 5-03-07 (alcoholic beverage wholesale tax — distilled spirits). Rate: $2.50 per gallon."),
         ];
     }
 

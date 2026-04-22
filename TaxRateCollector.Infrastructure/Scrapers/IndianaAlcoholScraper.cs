@@ -54,7 +54,8 @@ public sealed class IndianaAlcoholScraper : IStateBulkScraper
                 beer, urlUsed, bytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, null, 0.20m, conf,
-                ProductCategory.Beer),
+                ProductCategory.Beer,
+                Conditions: "Statutory authority: Indiana Code § 7.1-4-2-1 (beer/hard cider excise tax). Rate: $0.115 per gallon, applied to beer and hard cider with ABV less than 21%."),
 
             // Wine excise — IC § 7.1-4-4-1 — less than 21% ABV
             new("18", "Indiana",
@@ -62,7 +63,8 @@ public sealed class IndianaAlcoholScraper : IStateBulkScraper
                 wine, urlUsed, bytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, null, 0.21m, conf,
-                ProductCategory.Wine),
+                ProductCategory.Wine,
+                Conditions: "Statutory authority: Indiana Code § 7.1-4-4-1 (wine excise tax). Rate: $0.47 per gallon for wine with ABV less than 21%."),
 
             // Liquor excise — IC § 7.1-4-3-1 — 21% ABV or more
             new("18", "Indiana",
@@ -70,7 +72,8 @@ public sealed class IndianaAlcoholScraper : IStateBulkScraper
                 liquor, urlUsed, bytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, 0.21m, null, conf,
-                ProductCategory.Spirits),
+                ProductCategory.Spirits,
+                Conditions: "Statutory authority: Indiana Code § 7.1-4-3-1 (liquor excise tax). Rate: $2.68 per gallon for distilled spirits with ABV of 21% or more."),
         ];
     }
 

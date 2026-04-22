@@ -74,7 +74,8 @@ public sealed class MichiganAlcoholScraper : IStateBulkScraper
                 beerGallon, beerUrlUsed, beerBytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, null, 1.00m, beerConf,
-                ProductCategory.Beer),
+                ProductCategory.Beer,
+                Conditions: "Statutory authority: Michigan Compiled Laws § 436.1409 (beer specific tax). Rate: $6.30 per 31-gallon barrel (~$0.2032 per gallon)."),
 
             // Wine specific tax — MCL § 436.1301 — not more than 16% ABV
             // 13.5 cents/liter × 3.78541 L/gal → per-gallon rate
@@ -83,7 +84,8 @@ public sealed class MichiganAlcoholScraper : IStateBulkScraper
                 wine16, wineUrlUsed, wineBytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, null, 0.16m, wineConf,
-                ProductCategory.Wine),
+                ProductCategory.Wine,
+                Conditions: "Statutory authority: Michigan Compiled Laws § 436.1301 (wine specific tax — ≤16% ABV tier). Rate: 13.5 cents per liter (~$0.5110 per gallon)."),
 
             // Wine specific tax — MCL § 436.1301 — more than 16% ABV
             // 20 cents/liter × 3.78541 L/gal → per-gallon rate
@@ -92,7 +94,8 @@ public sealed class MichiganAlcoholScraper : IStateBulkScraper
                 wine16Plus, wineUrlUsed, wineBytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, 0.16m, null, wineConf,
-                ProductCategory.Wine),
+                ProductCategory.Wine,
+                Conditions: "Statutory authority: Michigan Compiled Laws § 436.1301 (wine specific tax — >16% ABV tier). Rate: 20 cents per liter (~$0.7571 per gallon)."),
         ];
     }
 

@@ -243,6 +243,21 @@ else
                 Auto-Approve behavior follows the setting above.
             </p>
         </div>
+        <div>
+            <button class="btn-primary"
+                    disabled="@runAllBusy"
+                    @onclick="RunAllScrapers"
+                    title="Run every registered bulk scraper sequentially">
+                @if (runAllBusy)
+                {
+                    <text>Running @runAllCurrent (@runAllProgress/@enabledStates.Count)…</text>
+                }
+                else
+                {
+                    <text>Run All</text>
+                }
+            </button>
+        </div>
     </div>
     <div class="scraper-grid">
         @foreach (var st in AllStates)
@@ -620,6 +635,9 @@ else
 
     private readonly Dictionary<string, ScraperRunState> scraperStates = [];
     private HashSet<string> enabledStates = [];
+    private bool   runAllBusy;
+    private int    runAllProgress;
+    private string runAllCurrent = "";
 
     private static readonly string[] AllStates =
     [
@@ -652,6 +670,32 @@ else
             scraperStates[st] = new ScraperRunState { Running = false, Error = true };
         }
         StateHasChanged();
+    }
+
+    private async Task RunAllScrapers()
+    {
+        var states = enabledStates.OrderBy(s => s).ToList();
+        runAllBusy     = true;
+        runAllProgress = 0;
+        runAllCurrent  = "";
+        StateHasChanged();
+        try
+        {
+            foreach (var st in states)
+            {
+                runAllCurrent = st;
+                StateHasChanged();
+                await RunScraper(st);
+                runAllProgress++;
+                StateHasChanged();
+            }
+        }
+        finally
+        {
+            runAllBusy    = false;
+            runAllCurrent = "";
+            StateHasChanged();
+        }
     }
 
     // ── Truncate ──────────────────────────────────────────────────────────────

@@ -64,36 +64,54 @@ public sealed class MinnesotaAlcoholScraper : IStateBulkScraper
         // Minneapolis downtown on-sale liquor tax — optional, Wayback-aware
         var mplsFetch = await ScraperHttpHelper.GetOptionalStringAsync(http, MplsUrl, wayback, ct);
 
-        BulkRateResult BeerRow(string label, decimal rate, decimal? mn = null, decimal? mx = null) =>
+        BulkRateResult BeerRow(string label, decimal rate, string cond,
+            decimal? mn = null, decimal? mx = null) =>
             new("27", "Minnesota", label, rate, beerUrlUsed, beerBytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
-                IsIncludedInPrice: true, SaleContext.Any, mn, mx, beerConf, ProductCategory.Beer);
+                IsIncludedInPrice: true, SaleContext.Any, mn, mx, beerConf, ProductCategory.Beer,
+                Conditions: cond);
 
-        BulkRateResult WineRow(string label, decimal rate, decimal? mn = null, decimal? mx = null,
+        BulkRateResult WineRow(string label, decimal rate, string cond,
+            decimal? mn = null, decimal? mx = null,
             ProductCategory cat = ProductCategory.Wine) =>
             new("27", "Minnesota", label, rate, wineUrlUsed, wineBytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
-                IsIncludedInPrice: true, SaleContext.Any, mn, mx, wineConf, cat);
+                IsIncludedInPrice: true, SaleContext.Any, mn, mx, wineConf, cat,
+                Conditions: cond);
 
         var results = new List<BulkRateResult>
         {
             // ── Fermented malt beverages (per gallon, converted from $X.XX/31-gal barrel) ──
             BeerRow("Minnesota Excise Tax — Beer ≤3.2% ABW (per gal, $2.40/31-gal bbl)",
-                beer.Beer32, mx: 0.032m),
+                beer.Beer32,
+                "Statutory authority: Minnesota Statutes § 297G.03 subd. 1 (fermented malt beverage excise tax — ≤3.2% ABW). Rate: $2.40 per 31-gallon barrel (~$0.077 per gallon).",
+                mx: 0.032m),
             BeerRow("Minnesota Excise Tax — Beer >3.2% ABW (per gal, $4.60/31-gal bbl)",
-                beer.Beer, mn: 0.032m),
+                beer.Beer,
+                "Statutory authority: Minnesota Statutes § 297G.03 subd. 1 (fermented malt beverage excise tax — >3.2% ABW). Rate: $4.60 per 31-gallon barrel (~$0.148 per gallon).",
+                mn: 0.032m),
 
             // ── Wine and cider (per gallon, Minn. Stat. § 297G.03 subd. 2) ─────────────────
             WineRow("Minnesota Excise Tax — Cider (0.5–7% ABV)",
-                wine.Cider, mn: 0.005m, mx: 0.07m, cat: ProductCategory.Beer),
+                wine.Cider,
+                "Statutory authority: Minnesota Statutes § 297G.03 subd. 2 (wine excise tax — cider, 0.5–7% ABV). Rate: $0.15 per gallon.",
+                mn: 0.005m, mx: 0.07m, cat: ProductCategory.Beer),
             WineRow("Minnesota Excise Tax — Wine ≤14% ABV",
-                wine.Wine14, mx: 0.14m),
+                wine.Wine14,
+                "Statutory authority: Minnesota Statutes § 297G.03 subd. 2 (wine excise tax — ≤14% ABV). Rate: $0.30 per gallon.",
+                mx: 0.14m),
             WineRow("Minnesota Excise Tax — Wine >14%–≤21% ABV",
-                wine.Wine21, mn: 0.14m, mx: 0.21m),
+                wine.Wine21,
+                "Statutory authority: Minnesota Statutes § 297G.03 subd. 2 (wine excise tax — >14% to ≤21% ABV). Rate: $0.95 per gallon.",
+                mn: 0.14m, mx: 0.21m),
             WineRow("Minnesota Excise Tax — Wine >21%–≤24% ABV",
-                wine.Wine24, mn: 0.21m, mx: 0.24m),
+                wine.Wine24,
+                "Statutory authority: Minnesota Statutes § 297G.03 subd. 2 (wine excise tax — >21% to ≤24% ABV). Rate: $1.82 per gallon.",
+                mn: 0.21m, mx: 0.24m),
             WineRow("Minnesota Excise Tax — Wine >24% ABV",
-                wine.Wine24Plus, mn: 0.24m),
+                wine.Wine24Plus,
+                "Statutory authority: Minnesota Statutes § 297G.03 subd. 2 (wine excise tax — >24% ABV). Rate: $3.52 per gallon.",
+                mn: 0.24m),
 
             // ── Distilled spirits (per gallon, Minn. Stat. § 297G.03 subd. 3) ─────────────
             new("27", "Minnesota",
@@ -101,7 +119,8 @@ public sealed class MinnesotaAlcoholScraper : IStateBulkScraper
                 spirits, spiritsUrlUsed, spiritsBytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, null, null, spiritsConf,
-                ProductCategory.Spirits),
+                ProductCategory.Spirits,
+                Conditions: "Statutory authority: Minnesota Statutes § 297G.03 subd. 3 (distilled spirits excise tax). Rate: $5.03 per gallon (or $1.33 per liter)."),
         };
 
         // ── Minneapolis downtown on-sale liquor tax (3% of sale price) ───────────────────
@@ -115,7 +134,8 @@ public sealed class MinnesotaAlcoholScraper : IStateBulkScraper
                 mplsRate, mplsUrlUsed, mplsBytes, "text/html", "", "",
                 RateBasis.Percentage, TaxType.ExciseTax, RemittancePoint.Retailer,
                 IsIncludedInPrice: false, SaleContext.OnPremise, null, null, mplsConf,
-                ProductCategory.Alcohol));
+                ProductCategory.Alcohol,
+                Conditions: "Statutory authority: Minneapolis Code of Ordinances § 22.1401 (downtown liquor tax — on-sale). Rate: 3% of sale price for on-premises alcohol sales in the Minneapolis downtown taxing district."));
         }
 
         return results;

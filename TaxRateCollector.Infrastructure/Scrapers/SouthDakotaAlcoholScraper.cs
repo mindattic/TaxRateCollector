@@ -55,7 +55,8 @@ public sealed class SouthDakotaAlcoholScraper : IStateBulkScraper
                 beer, urlUsed, bytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, null, 1.00m, SourceConfidence.ThirdParty,
-                ProductCategory.Beer),
+                ProductCategory.Beer,
+                Conditions: "Statutory authority: South Dakota Codified Laws § 35-5-3 (occupational tax on alcoholic beverages — malt beverages). Rate: $0.27 per gallon."),
 
             // Wine ≤ 14% ABV — SDCL § 35-5-3
             new("46", "South Dakota",
@@ -63,7 +64,8 @@ public sealed class SouthDakotaAlcoholScraper : IStateBulkScraper
                 wine14, urlUsed, bytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, null, 0.14m, SourceConfidence.ThirdParty,
-                ProductCategory.Wine),
+                ProductCategory.Wine,
+                Conditions: "Statutory authority: South Dakota Codified Laws § 35-5-3 (occupational tax on alcoholic beverages — wine, ≤14% ABV). Rate: $0.93 per gallon."),
 
             // Wine 14–20% ABV — SDCL § 35-5-3
             new("46", "South Dakota",
@@ -71,7 +73,8 @@ public sealed class SouthDakotaAlcoholScraper : IStateBulkScraper
                 wine14To20, urlUsed, bytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, 0.14m, 0.20m, SourceConfidence.ThirdParty,
-                ProductCategory.Wine),
+                ProductCategory.Wine,
+                Conditions: "Statutory authority: South Dakota Codified Laws § 35-5-3 (occupational tax on alcoholic beverages — wine, 14–20% ABV). Rate: $1.45 per gallon."),
 
             // Wine ≥ 21% ABV and sparkling — SDCL § 35-5-3
             new("46", "South Dakota",
@@ -79,7 +82,8 @@ public sealed class SouthDakotaAlcoholScraper : IStateBulkScraper
                 wine21Plus, urlUsed, bytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, 0.21m, null, SourceConfidence.ThirdParty,
-                ProductCategory.Wine),
+                ProductCategory.Wine,
+                Conditions: "Statutory authority: South Dakota Codified Laws § 35-5-3 (occupational tax on alcoholic beverages — wine over 21% ABV and sparkling wine). Rate: $2.07 per gallon."),
 
             // Spirits — SDCL § 35-5-3
             new("46", "South Dakota",
@@ -87,7 +91,8 @@ public sealed class SouthDakotaAlcoholScraper : IStateBulkScraper
                 spirits, urlUsed, bytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, null, null, SourceConfidence.ThirdParty,
-                ProductCategory.Spirits),
+                ProductCategory.Spirits,
+                Conditions: "Statutory authority: South Dakota Codified Laws § 35-5-3 (occupational tax on alcoholic beverages — distilled spirits). Rate: $3.93 per gallon."),
         ];
     }
 

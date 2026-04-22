@@ -26,10 +26,6 @@ public sealed class IowaAlcoholScraper : IStateBulkScraper
     public string StateCode => "IA";
     public string? SstCategoryName => "Alcoholic Beverages";
 
-    // TODO: revenue.iowa.gov is intermittently unreachable with no Wayback Machine snapshot available.
-    //       The URL and required content are correct. When this fails, the scrape must be retried.
-    //       Long-term fix: identify a stable secondary government URL (Iowa legislature statute pages
-    //       for § 123.136 and § 123.183) but those are PDFs that are not reliably machine-readable.
     private const string SourceUrl   = "https://revenue.iowa.gov/taxes/tax-guidance/general/iowa-taxfee-descriptions-and-rates";
     private const string SpiritsUrl  = "https://www.salestaxhandbook.com/iowa/alcohol";
 
@@ -45,8 +41,10 @@ public sealed class IowaAlcoholScraper : IStateBulkScraper
         var wayback = settings.Current.WaybackMachineFallback;
         http.DefaultRequestHeaders.UserAgent.ParseAdd("TaxRateCollector/1.0 (tax compliance research)");
 
+        // Page text reads "$5.89 per 31 gallon barrel" — match on "5.89" so the check survives
+        // both punctuation drift ("31-gallon" vs "31 gallon") and minor wording changes.
         var beerWineTask = ScraperHttpHelper.GetRequiredStringAsync(
-            http, SourceUrl, wayback, ct, requiredContent: "31-gallon barrel");
+            http, SourceUrl, wayback, ct, requiredContent: "5.89");
         var spiritsTask = ScraperHttpHelper.GetRequiredStringAsync(
             http, SpiritsUrl, wayback, ct, requiredContent: "STATE-CONTROLLED");
         await Task.WhenAll(beerWineTask, spiritsTask);
@@ -71,7 +69,8 @@ public sealed class IowaAlcoholScraper : IStateBulkScraper
                 beer, urlUsed, bytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, null, 1.00m, conf,
-                ProductCategory.Beer),
+                ProductCategory.Beer,
+                Conditions: "Statutory authority: Iowa Code § 123.136 (beer barrel tax). Rate: $5.89 per 31-gallon barrel (~$0.19 per gallon)."),
 
             // Wine gallonage tax — Iowa Code § 123.183 — flat $1.75/gal, all ABV tiers
             new("19", "Iowa",
@@ -79,7 +78,8 @@ public sealed class IowaAlcoholScraper : IStateBulkScraper
                 wine, urlUsed, bytes, "text/html", "", "",
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: true, SaleContext.Any, null, null, conf,
-                ProductCategory.Wine),
+                ProductCategory.Wine,
+                Conditions: "Statutory authority: Iowa Code § 123.183 (wine gallonage tax). Rate: $1.75 per gallon, applied flat across all ABV tiers."),
 
             // Spirits — Iowa ABD is the exclusive wholesaler (control state).
             // No statutory per-gallon excise; state revenue is embedded in ABD wholesale markup.
@@ -90,7 +90,7 @@ public sealed class IowaAlcoholScraper : IStateBulkScraper
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
                 IsIncludedInPrice: false, SaleContext.Any, null, null, SourceConfidence.ThirdParty,
                 ProductCategory.Spirits,
-                Conditions: "Iowa ABD is the exclusive spirits wholesaler (control state). No per-gallon excise applies; state revenue is embedded in the ABD wholesale markup."),
+                Conditions: "Statutory authority: Iowa Code § 123.20 establishes the Iowa Alcoholic Beverages Division (ABD) as the exclusive spirits wholesaler. Iowa is a control state: no per-gallon excise applies; state revenue is embedded in the ABD wholesale markup."),
         ];
     }
 

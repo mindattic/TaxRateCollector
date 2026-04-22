@@ -1,7 +1,10 @@
 @page "/rates"
+@using System.Text
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
 @using TaxRateCollector.Infrastructure.Data
 @inject IDbContextFactory<AppDbContext> DbFactory
+@inject IJSRuntime JS
 @rendermode InteractiveServer
 
 <PageTitle>Rates — TaxRateCollector</PageTitle>
@@ -39,6 +42,7 @@ else
                 <th>Rate Type</th>
                 <th>Effective</th>
                 <th>Scraped</th>
+                <th>Statute / Conditions</th>
             </tr>
         </thead>
         <tbody>
@@ -52,6 +56,7 @@ else
                     <td>@r.Name</td>
                     <td>@r.EffectiveDate</td>
                     <td>@r.ScrapedAt[..10]</td>
+                    <td class="conditions-cell" title="@r.Conditions">@r.Conditions</td>
                 </tr>
             }
         </tbody>
@@ -67,7 +72,7 @@ else
     private bool sortAsc = true;
 
     private record RateRow(string JurisdictionName, string StateCode, string JurisdictionType,
-        decimal Rate, string Name, string EffectiveDate, string ScrapedAt);
+        decimal Rate, string Name, string EffectiveDate, string ScrapedAt, string Conditions);
 
     protected override async Task OnInitializedAsync()
     {
@@ -82,7 +87,8 @@ else
                 t.Rate,
                 t.Name,
                 t.EffectiveDate != null ? t.EffectiveDate.Value.ToString() : "",
-                t.ScrapedAt))
+                t.ScrapedAt,
+                t.Conditions ?? ""))
             .ToListAsync();
     }
 
@@ -117,8 +123,34 @@ else
     private string SortIcon(string col) =>
         sortCol != col ? "" : sortAsc ? " ▲" : " ▼";
 
-    private void ExportCsv()
+    private async Task ExportCsv()
     {
-        // CSV export via JS interop would go here — placeholder for PoC
+        var rows = Filtered.ToList();
+        var sb = new StringBuilder();
+        sb.AppendLine("Jurisdiction,State,Type,Rate,RateName,EffectiveDate,Scraped,Conditions");
+        foreach (var r in rows)
+        {
+            sb.Append(Csv(r.JurisdictionName)).Append(',')
+              .Append(Csv(r.StateCode)).Append(',')
+              .Append(Csv(r.JurisdictionType)).Append(',')
+              .Append(r.Rate.ToString("0.######")).Append(',')
+              .Append(Csv(r.Name)).Append(',')
+              .Append(Csv(r.EffectiveDate)).Append(',')
+              .Append(Csv(r.ScrapedAt.Length >= 10 ? r.ScrapedAt[..10] : r.ScrapedAt)).Append(',')
+              .AppendLine(Csv(r.Conditions));
+        }
+
+        var fileName = $"TaxRates_{DateTime.UtcNow:yyyyMMdd_HHmmss}.csv";
+        var bytes    = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
+        var base64   = Convert.ToBase64String(bytes);
+        await JS.InvokeVoidAsync("downloadBase64File", fileName, "text/csv", base64);
+    }
+
+    private static string Csv(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        var needsQuote = value.IndexOfAny(['"', ',', '\n', '\r']) >= 0;
+        var escaped    = value.Replace("\"", "\"\"");
+        return needsQuote ? $"\"{escaped}\"" : escaped;
     }
 }

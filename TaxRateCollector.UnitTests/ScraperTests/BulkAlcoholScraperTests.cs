@@ -270,7 +270,7 @@ public class BulkAlcoholScraperTests
         var s = new TaxRateCollector.Infrastructure.Services.SettingsService();
         s.Current.WaybackMachineFallback = false;
         var scraper = new IllinoisAlcoholScraper(new FakeHttpClientFactory(handler), s);
-        Assert.ThrowsAsync<HttpRequestException>(() => scraper.ScrapeAsync());
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
     }
 
     [Test]
@@ -557,7 +557,7 @@ public class BulkAlcoholScraperTests
         handler.Register(MnWineUrl,    MnWineHtml);
         handler.Register(MnSpiritsUrl, MnSpiritsHtml);
         var scraper = new MinnesotaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
-        Assert.ThrowsAsync<HttpRequestException>(() => scraper.ScrapeAsync());
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
     }
 
     [Test]
@@ -687,7 +687,7 @@ public class BulkAlcoholScraperTests
     {
         var handler = new FakeHttpMessageHandler(); // IaSourceUrl not registered → 404
         var scraper = new IowaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
-        Assert.ThrowsAsync<HttpRequestException>(() => scraper.ScrapeAsync());
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
     }
 
     // ── Indiana ───────────────────────────────────────────────────────────────
@@ -779,7 +779,7 @@ public class BulkAlcoholScraperTests
     {
         var handler = new FakeHttpMessageHandler();
         var scraper = new IndianaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
-        Assert.ThrowsAsync<HttpRequestException>(() => scraper.ScrapeAsync());
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
     }
 
     // ── Michigan ──────────────────────────────────────────────────────────────
@@ -902,7 +902,7 @@ public class BulkAlcoholScraperTests
         var handler = new FakeHttpMessageHandler();
         handler.Register(MiWineUrl, MiWineHtml); // wine registered but beer not
         var scraper = new MichiganAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
-        Assert.ThrowsAsync<HttpRequestException>(() => scraper.ScrapeAsync());
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
     }
 
     // ── North Dakota ──────────────────────────────────────────────────────────
@@ -1003,7 +1003,7 @@ public class BulkAlcoholScraperTests
     {
         var handler = new FakeHttpMessageHandler();
         var scraper = new NorthDakotaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
-        Assert.ThrowsAsync<HttpRequestException>(() => scraper.ScrapeAsync());
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
     }
 
     // ── South Dakota ──────────────────────────────────────────────────────────
@@ -1115,6 +1115,836 @@ public class BulkAlcoholScraperTests
     {
         var handler = new FakeHttpMessageHandler();
         var scraper = new SouthDakotaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
-        Assert.ThrowsAsync<HttpRequestException>(() => scraper.ScrapeAsync());
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
+    }
+
+    // ── Ohio ──────────────────────────────────────────────────────────────────
+    // Beer:              $0.18/gal (ORC § 4301.42)
+    // Wine ≤14%:         $0.32/gal (ORC § 4301.43 base)
+    // Wine 14–21%:       $1.00/gal (fortified)
+    // Vermouth:          $1.10/gal
+    // Sparkling wine:    $1.50/gal
+    // Spirits:           control state — Ohio Division of Liquor Control ($0.00 row)
+    // Source: salestaxhandbook.com (ThirdParty)
+
+    private const string OhSourceUrl = "https://www.salestaxhandbook.com/ohio/alcohol";
+
+    private static readonly string OhHtml = """
+        <html><body>
+        <h2>Ohio Wine Tax - $0.32 / gallon</h2>
+        <p>Ohio wine vendors are responsible for paying a state excise tax of $0.32 per gallon.
+        Additional Taxes: 14% to 21% - $1.00/gallon; vermouth - $1.10/gallon; sparkling - $1.50/gallon</p>
+        <h2>Ohio Beer Tax - $0.18 / gallon</h2>
+        <p>Ohio beer vendors are responsible for paying a state excise tax of $0.18 per gallon.</p>
+        <h2>Ohio Liquor Tax - STATE-CONTROLLED</h2>
+        <p>Ohio is an "Alcoholic beverage control state", in which the sale of liquor and
+        spirits are state-controlled. There is no need to apply an additional excise tax on liquor.</p>
+        </body></html>
+        """;
+
+    private static IStateBulkScraper MakeOhScraper(string? htmlOverride = null, bool wayback = false)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Register(OhSourceUrl, htmlOverride ?? OhHtml);
+        return new OhioAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings(wayback));
+    }
+
+    [Test]
+    public void StateCode_IsOH()
+        => Assert.That(MakeOhScraper().StateCode, Is.EqualTo("OH"));
+
+    [Test]
+    public void OH_SstCategoryName_IsAlcoholicBeverages()
+        => Assert.That(MakeOhScraper().SstCategoryName, Is.EqualTo("Alcoholic Beverages"));
+
+    [Test]
+    public async Task OH_Returns_BeerRow()
+    {
+        var results = await MakeOhScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "39" && r.ProductCategory == ProductCategory.Beer);
+        Assert.That(row.Rate, Is.EqualTo(0.18m));
+        Assert.That(row.RateBasis, Is.EqualTo(RateBasis.FlatPerVolume));
+        Assert.That(row.TaxType, Is.EqualTo(TaxType.ExciseTax));
+        Assert.That(row.RemittancePoint, Is.EqualTo(RemittancePoint.Distributor));
+        Assert.That(row.SourceConfidence, Is.EqualTo(SourceConfidence.ThirdParty));
+    }
+
+    [Test]
+    public async Task OH_Returns_WineBaseRow()
+    {
+        var results = await MakeOhScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "39" && r.ProductCategory == ProductCategory.Wine
+                                      && r.MaxAbv == 0.14m);
+        Assert.That(row.Rate, Is.EqualTo(0.32m));
+        Assert.That(row.MaxAbv, Is.EqualTo(0.14m));
+    }
+
+    [Test]
+    public async Task OH_Returns_FortifiedWineRow()
+    {
+        var results = await MakeOhScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "39" && r.ProductCategory == ProductCategory.Wine
+                                      && r.MinAbv == 0.14m);
+        Assert.That(row.Rate, Is.EqualTo(1.00m));
+        Assert.That(row.MaxAbv, Is.EqualTo(0.21m));
+    }
+
+    [Test]
+    public async Task OH_Returns_VermouthRow()
+    {
+        var results = await MakeOhScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "39" && r.ProductCategory == ProductCategory.Wine
+                                      && r.RateName.Contains("Vermouth"));
+        Assert.That(row.Rate, Is.EqualTo(1.10m));
+        Assert.That(row.Conditions, Does.Contain("vermouth").IgnoreCase);
+    }
+
+    [Test]
+    public async Task OH_Returns_SparklingWineRow()
+    {
+        var results = await MakeOhScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "39" && r.ProductCategory == ProductCategory.Wine
+                                      && r.RateName.Contains("Sparkling"));
+        Assert.That(row.Rate, Is.EqualTo(1.50m));
+        Assert.That(row.Conditions, Does.Contain("sparkling").IgnoreCase);
+    }
+
+    [Test]
+    public async Task OH_EveryRow_CitesItsStatutoryAuthority()
+    {
+        var results = await MakeOhScraper().ScrapeAsync();
+        foreach (var row in results)
+            Assert.That(row.Conditions, Does.Contain("Statutory authority:"),
+                $"Row '{row.RateName}' must declare its statutory authority in Conditions.");
+    }
+
+    [Test]
+    public async Task OH_BeerRow_CitesORC_4301_42()
+    {
+        var results = await MakeOhScraper().ScrapeAsync();
+        var row = results.First(r => r.ProductCategory == ProductCategory.Beer);
+        Assert.That(row.Conditions, Does.Contain("§ 4301.42"));
+    }
+
+    [Test]
+    public async Task OH_SpiritsRow_CitesORC_4301_10()
+    {
+        var results = await MakeOhScraper().ScrapeAsync();
+        var row = results.First(r => r.ProductCategory == ProductCategory.Spirits);
+        Assert.That(row.Conditions, Does.Contain("§ 4301.10"));
+    }
+
+    [Test]
+    public async Task OH_Returns_SpiritsRow_WithZeroRate_ControlState()
+    {
+        var results = await MakeOhScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "39" && r.ProductCategory == ProductCategory.Spirits);
+        Assert.That(row.Rate, Is.EqualTo(0m));
+        Assert.That(row.SourceConfidence, Is.EqualTo(SourceConfidence.ThirdParty));
+        Assert.That(row.Conditions, Does.Contain("control state"),
+            "Conditions should explain control-state arrangement");
+    }
+
+    [Test]
+    public async Task OH_Returns_ExactlySixRows()
+    {
+        var results = await MakeOhScraper().ScrapeAsync();
+        Assert.That(results.Count, Is.EqualTo(6),
+            "Beer + wine≤14% + fortified 14-21% + vermouth + sparkling + spirits (control) = 6 rows");
+    }
+
+    [Test]
+    public async Task OH_AllRows_ShareSameSourceUrl()
+    {
+        var results = await MakeOhScraper().ScrapeAsync();
+        var urls = results.Select(r => r.SourceUrl).Distinct().ToList();
+        Assert.That(urls, Has.Count.EqualTo(1));
+        Assert.That(urls[0], Is.EqualTo(OhSourceUrl));
+    }
+
+    [Test]
+    public void OH_Throws_WhenFortifiedTier_NotAscendingAboveBase()
+    {
+        // Fortified rate ≤ base rate → ordering check fires
+        Assert.Throws<InvalidOperationException>(() =>
+            _ = OhioAlcoholScraper.Parse(
+                "<html><body>Ohio Beer Tax - $0.18 / gallon " +
+                "Ohio Wine Tax - $1.00 / gallon " +
+                "14% to 21% - $0.32/gallon vermouth - $1.10/gallon sparkling - $1.50/gallon" +
+                "</body></html>",
+                OhSourceUrl));
+    }
+
+    [Test]
+    public void OH_Throws_WhenSparklingTier_NotAscendingAboveFortified()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            _ = OhioAlcoholScraper.Parse(
+                "<html><body>Ohio Beer Tax - $0.18 / gallon " +
+                "Ohio Wine Tax - $0.32 / gallon " +
+                "14% to 21% - $1.50/gallon vermouth - $1.10/gallon sparkling - $1.00/gallon" +
+                "</body></html>",
+                OhSourceUrl));
+    }
+
+    [Test]
+    public void OH_Throws_WhenBeerTagMissing()
+    {
+        var scraper = MakeOhScraper("<html><body>Ohio Wine Tax - $0.32 / gallon " +
+            "14% to 21% - $1.00/gallon vermouth - $1.10/gallon sparkling - $1.50/gallon</body></html>");
+        // Missing "Ohio Beer Tax" header → required-content check fails before parsing
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
+    }
+
+    [Test]
+    public void OH_Throws_WhenVermouthMissing()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            _ = OhioAlcoholScraper.Parse(
+                "<html><body>Ohio Beer Tax - $0.18 / gallon " +
+                "Ohio Wine Tax - $0.32 / gallon " +
+                "14% to 21% - $1.00/gallon sparkling - $1.50/gallon</body></html>",
+                OhSourceUrl));
+    }
+
+    [Test]
+    public void OH_Throws_WhenPageUnreachable_WaybackDisabled()
+    {
+        var handler = new FakeHttpMessageHandler(); // OhSourceUrl not registered → 404
+        var scraper = new OhioAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
+    }
+
+    // ── Montana ───────────────────────────────────────────────────────────────
+    // Beer:    $0.14/gal (MCA § 16-1-406)
+    // Wine:    $1.06/gal (MCA § 16-1-411)
+    // Spirits: control state — Montana DOR Liquor Control Division ($0.00 row)
+    // Source: salestaxhandbook.com (ThirdParty)
+
+    private const string MtSourceUrl = "https://www.salestaxhandbook.com/montana/alcohol";
+
+    private static readonly string MtHtml = """
+        <html><body>
+        <h2>Montana Wine Tax - $1.06 / gallon</h2>
+        <p>Montana wine vendors are responsible for paying a state excise tax of $1.06 per gallon.</p>
+        <h2>Montana Beer Tax - $0.14 / gallon</h2>
+        <p>Montana beer vendors are responsible for paying a state excise tax of $0.14 per gallon.</p>
+        <h2>Montana Liquor Tax - STATE-CONTROLLED</h2>
+        <p>Montana is an "Alcoholic beverage control state", in which the sale of liquor and
+        spirits are state-controlled. There is no need to apply an additional excise tax on liquor.</p>
+        </body></html>
+        """;
+
+    private static IStateBulkScraper MakeMtScraper(string? htmlOverride = null, bool wayback = false)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Register(MtSourceUrl, htmlOverride ?? MtHtml);
+        return new MontanaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings(wayback));
+    }
+
+    [Test]
+    public void StateCode_IsMT()
+        => Assert.That(MakeMtScraper().StateCode, Is.EqualTo("MT"));
+
+    [Test]
+    public void MT_SstCategoryName_IsAlcoholicBeverages()
+        => Assert.That(MakeMtScraper().SstCategoryName, Is.EqualTo("Alcoholic Beverages"));
+
+    [Test]
+    public async Task MT_Returns_BeerRow()
+    {
+        var results = await MakeMtScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "30" && r.ProductCategory == ProductCategory.Beer);
+        Assert.That(row.Rate, Is.EqualTo(0.14m));
+        Assert.That(row.RateBasis, Is.EqualTo(RateBasis.FlatPerVolume));
+        Assert.That(row.TaxType, Is.EqualTo(TaxType.ExciseTax));
+        Assert.That(row.RemittancePoint, Is.EqualTo(RemittancePoint.Distributor));
+        Assert.That(row.SourceConfidence, Is.EqualTo(SourceConfidence.ThirdParty));
+    }
+
+    [Test]
+    public async Task MT_Returns_WineRow()
+    {
+        var results = await MakeMtScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "30" && r.ProductCategory == ProductCategory.Wine);
+        Assert.That(row.Rate, Is.EqualTo(1.06m));
+    }
+
+    [Test]
+    public async Task MT_Returns_SpiritsRow_WithZeroRate_ControlState()
+    {
+        var results = await MakeMtScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "30" && r.ProductCategory == ProductCategory.Spirits);
+        Assert.That(row.Rate, Is.EqualTo(0m));
+        Assert.That(row.SourceConfidence, Is.EqualTo(SourceConfidence.ThirdParty));
+        Assert.That(row.Conditions, Does.Contain("control state"));
+    }
+
+    [Test]
+    public async Task MT_EveryRow_CitesItsStatutoryAuthority()
+    {
+        var results = await MakeMtScraper().ScrapeAsync();
+        foreach (var row in results)
+            Assert.That(row.Conditions, Does.Contain("Statutory authority:"),
+                $"Row '{row.RateName}' must declare its statutory authority in Conditions.");
+    }
+
+    [Test]
+    public async Task MT_BeerRow_CitesMCA_16_1_406()
+    {
+        var results = await MakeMtScraper().ScrapeAsync();
+        var row = results.First(r => r.ProductCategory == ProductCategory.Beer);
+        Assert.That(row.Conditions, Does.Contain("§ 16-1-406"));
+    }
+
+    [Test]
+    public async Task MT_WineRow_CitesMCA_16_1_411()
+    {
+        var results = await MakeMtScraper().ScrapeAsync();
+        var row = results.First(r => r.ProductCategory == ProductCategory.Wine);
+        Assert.That(row.Conditions, Does.Contain("§ 16-1-411"));
+    }
+
+    [Test]
+    public async Task MT_SpiritsRow_CitesMCA_Title16_Ch2()
+    {
+        var results = await MakeMtScraper().ScrapeAsync();
+        var row = results.First(r => r.ProductCategory == ProductCategory.Spirits);
+        Assert.That(row.Conditions, Does.Contain("Title 16, Chapter 2"));
+    }
+
+    [Test]
+    public async Task MT_Returns_ExactlyThreeRows()
+    {
+        var results = await MakeMtScraper().ScrapeAsync();
+        Assert.That(results.Count, Is.EqualTo(3), "Beer + wine + spirits (control) = 3 rows");
+    }
+
+    [Test]
+    public void MT_Throws_WhenBeerMissing()
+    {
+        var scraper = MakeMtScraper("<html><body>Montana Wine Tax - $1.06 / gallon</body></html>");
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
+    }
+
+    [Test]
+    public void MT_Throws_WhenPageUnreachable_WaybackDisabled()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var scraper = new MontanaAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
+    }
+
+    // ── Idaho ─────────────────────────────────────────────────────────────────
+    // Beer (≤4% ABW):       $0.15/gal (Idaho Code § 23-1008)
+    // Strong beer (>4% ABW): $0.45/gal (taxed as wine, § 23-1319)
+    // Wine:                 $0.45/gal (Idaho Code § 23-1319)
+    // Spirits: control state — Idaho State Liquor Division ($0.00 row)
+    // Source: salestaxhandbook.com (ThirdParty)
+
+    private const string IdSourceUrl = "https://www.salestaxhandbook.com/idaho/alcohol";
+
+    private static readonly string IdHtml = """
+        <html><body>
+        <h2>Idaho Wine Tax - $0.45 / gallon</h2>
+        <p>Idaho wine vendors are responsible for paying a state excise tax of $0.45 per gallon.</p>
+        <h2>Idaho Beer Tax - $0.15 / gallon</h2>
+        <p>Idaho beer vendors are responsible for paying a state excise tax of $0.15 per gallon.
+        Additional Taxes: Over 4% – $0.45/gallon</p>
+        <h2>Idaho Liquor Tax - STATE-CONTROLLED</h2>
+        <p>Idaho is an "Alcoholic beverage control state", in which the sale of liquor and
+        spirits are state-controlled. There is no need to apply an additional excise tax on liquor.</p>
+        </body></html>
+        """;
+
+    private static IStateBulkScraper MakeIdScraper(string? htmlOverride = null, bool wayback = false)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Register(IdSourceUrl, htmlOverride ?? IdHtml);
+        return new IdahoAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings(wayback));
+    }
+
+    [Test]
+    public void StateCode_IsID()
+        => Assert.That(MakeIdScraper().StateCode, Is.EqualTo("ID"));
+
+    [Test]
+    public void ID_SstCategoryName_IsAlcoholicBeverages()
+        => Assert.That(MakeIdScraper().SstCategoryName, Is.EqualTo("Alcoholic Beverages"));
+
+    [Test]
+    public async Task ID_Returns_StandardBeerRow()
+    {
+        var results = await MakeIdScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "16" && r.ProductCategory == ProductCategory.Beer
+                                      && r.MaxAbv == 0.05m);
+        Assert.That(row.Rate, Is.EqualTo(0.15m));
+        Assert.That(row.MaxAbv, Is.EqualTo(0.05m));
+    }
+
+    [Test]
+    public async Task ID_Returns_StrongBeerRow()
+    {
+        var results = await MakeIdScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "16" && r.ProductCategory == ProductCategory.Beer
+                                      && r.MinAbv == 0.05m);
+        Assert.That(row.Rate, Is.EqualTo(0.45m));
+        Assert.That(row.MinAbv, Is.EqualTo(0.05m));
+        Assert.That(row.Conditions, Does.Contain("4% alcohol by weight"));
+    }
+
+    [Test]
+    public async Task ID_EveryRow_CitesItsStatutoryAuthority()
+    {
+        var results = await MakeIdScraper().ScrapeAsync();
+        foreach (var row in results)
+            Assert.That(row.Conditions, Does.Contain("Statutory authority:"),
+                $"Row '{row.RateName}' must declare its statutory authority in Conditions.");
+    }
+
+    [Test]
+    public async Task ID_StandardBeerRow_CitesIdahoCode_23_1008()
+    {
+        var results = await MakeIdScraper().ScrapeAsync();
+        var row = results.First(r => r.ProductCategory == ProductCategory.Beer && r.MaxAbv == 0.05m);
+        Assert.That(row.Conditions, Does.Contain("§ 23-1008"));
+    }
+
+    [Test]
+    public async Task ID_WineRow_CitesIdahoCode_23_1319()
+    {
+        var results = await MakeIdScraper().ScrapeAsync();
+        var row = results.First(r => r.ProductCategory == ProductCategory.Wine);
+        Assert.That(row.Conditions, Does.Contain("§ 23-1319"));
+    }
+
+    [Test]
+    public async Task ID_SpiritsRow_CitesIdahoCode_23_202()
+    {
+        var results = await MakeIdScraper().ScrapeAsync();
+        var row = results.First(r => r.ProductCategory == ProductCategory.Spirits);
+        Assert.That(row.Conditions, Does.Contain("§ 23-202"));
+    }
+
+    [Test]
+    public async Task ID_Returns_WineRow()
+    {
+        var results = await MakeIdScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "16" && r.ProductCategory == ProductCategory.Wine);
+        Assert.That(row.Rate, Is.EqualTo(0.45m));
+    }
+
+    [Test]
+    public async Task ID_Returns_SpiritsRow_WithZeroRate_ControlState()
+    {
+        var results = await MakeIdScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "16" && r.ProductCategory == ProductCategory.Spirits);
+        Assert.That(row.Rate, Is.EqualTo(0m));
+        Assert.That(row.Conditions, Does.Contain("control state"));
+    }
+
+    [Test]
+    public async Task ID_Returns_ExactlyFourRows()
+    {
+        var results = await MakeIdScraper().ScrapeAsync();
+        Assert.That(results.Count, Is.EqualTo(4),
+            "Standard beer + strong beer + wine + spirits (control) = 4 rows");
+    }
+
+    [Test]
+    public void ID_Throws_WhenStrongBeerNotHigherThanStandard()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            _ = IdahoAlcoholScraper.Parse(
+                "<html><body>Idaho Beer Tax - $0.45 / gallon Over 4% – $0.15/gallon " +
+                "Idaho Wine Tax - $0.45 / gallon</body></html>",
+                IdSourceUrl));
+    }
+
+    [Test]
+    public void ID_Throws_WhenStrongBeerTierMissing()
+    {
+        var scraper = MakeIdScraper("""
+            <html><body>
+            <h2>Idaho Wine Tax - $0.45 / gallon</h2>
+            <h2>Idaho Beer Tax - $0.15 / gallon</h2>
+            </body></html>
+            """);
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
+    }
+
+    [Test]
+    public void ID_Throws_WhenPageUnreachable_WaybackDisabled()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var scraper = new IdahoAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
+    }
+
+    // ── Oregon ────────────────────────────────────────────────────────────────
+    // Beer:           $0.08/gal (ORS § 473.030)
+    // Wine ≤14% ABV:  $0.67/gal
+    // Wine >14% ABV:  $0.77/gal
+    // Spirits: control state — OLCC ($0.00 row)
+    // Source: salestaxhandbook.com (ThirdParty)
+
+    private const string OrSourceUrl = "https://www.salestaxhandbook.com/oregon/alcohol";
+
+    private static readonly string OrHtml = """
+        <html><body>
+        <h2>Oregon Wine Tax - $0.67 / gallon</h2>
+        <p>Oregon wine vendors are responsible for paying a state excise tax of $0.67 per gallon.
+        Additional Taxes: Over 14% – $0.77/gallon</p>
+        <h2>Oregon Beer Tax - $0.08 / gallon</h2>
+        <p>Oregon beer vendors are responsible for paying a state excise tax of $0.08 per gallon.</p>
+        <h2>Oregon Liquor Tax - STATE-CONTROLLED</h2>
+        <p>Oregon is an "Alcoholic beverage control state", in which the sale of liquor and
+        spirits are state-controlled. There is no need to apply an additional excise tax on liquor.</p>
+        </body></html>
+        """;
+
+    private static IStateBulkScraper MakeOrScraper(string? htmlOverride = null, bool wayback = false)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Register(OrSourceUrl, htmlOverride ?? OrHtml);
+        return new OregonAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings(wayback));
+    }
+
+    [Test]
+    public void StateCode_IsOR()
+        => Assert.That(MakeOrScraper().StateCode, Is.EqualTo("OR"));
+
+    [Test]
+    public void OR_SstCategoryName_IsAlcoholicBeverages()
+        => Assert.That(MakeOrScraper().SstCategoryName, Is.EqualTo("Alcoholic Beverages"));
+
+    [Test]
+    public async Task OR_Returns_BeerRow()
+    {
+        var results = await MakeOrScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "41" && r.ProductCategory == ProductCategory.Beer);
+        Assert.That(row.Rate, Is.EqualTo(0.08m));
+        Assert.That(row.SourceConfidence, Is.EqualTo(SourceConfidence.ThirdParty));
+    }
+
+    [Test]
+    public async Task OR_Returns_Wine14Row()
+    {
+        var results = await MakeOrScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "41" && r.ProductCategory == ProductCategory.Wine
+                                      && r.MaxAbv == 0.14m);
+        Assert.That(row.Rate, Is.EqualTo(0.67m));
+        Assert.That(row.MaxAbv, Is.EqualTo(0.14m));
+    }
+
+    [Test]
+    public async Task OR_Returns_Wine14PlusRow()
+    {
+        var results = await MakeOrScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "41" && r.ProductCategory == ProductCategory.Wine
+                                      && r.MinAbv == 0.14m);
+        Assert.That(row.Rate, Is.EqualTo(0.77m));
+        Assert.That(row.MinAbv, Is.EqualTo(0.14m));
+    }
+
+    [Test]
+    public async Task OR_Returns_SpiritsRow_WithZeroRate_ControlState()
+    {
+        var results = await MakeOrScraper().ScrapeAsync();
+        var row = results.First(r => r.FipsCode == "41" && r.ProductCategory == ProductCategory.Spirits);
+        Assert.That(row.Rate, Is.EqualTo(0m));
+        Assert.That(row.Conditions, Does.Contain("control state"));
+        Assert.That(row.Conditions, Does.Contain("OLCC"));
+    }
+
+    [Test]
+    public async Task OR_EveryRow_CitesItsStatutoryAuthority()
+    {
+        var results = await MakeOrScraper().ScrapeAsync();
+        foreach (var row in results)
+            Assert.That(row.Conditions, Does.Contain("Statutory authority:"),
+                $"Row '{row.RateName}' must declare its statutory authority in Conditions.");
+    }
+
+    [Test]
+    public async Task OR_BeerAndWineRows_CiteORS_473_030()
+    {
+        var results = await MakeOrScraper().ScrapeAsync();
+        var nonSpirits = results.Where(r => r.ProductCategory != ProductCategory.Spirits);
+        foreach (var row in nonSpirits)
+            Assert.That(row.Conditions, Does.Contain("§ 473.030"),
+                $"Row '{row.RateName}' should cite ORS § 473.030.");
+    }
+
+    [Test]
+    public async Task OR_SpiritsRow_CitesORS_471_730()
+    {
+        var results = await MakeOrScraper().ScrapeAsync();
+        var row = results.First(r => r.ProductCategory == ProductCategory.Spirits);
+        Assert.That(row.Conditions, Does.Contain("§ 471.730"));
+    }
+
+    [Test]
+    public async Task OR_Returns_ExactlyFourRows()
+    {
+        var results = await MakeOrScraper().ScrapeAsync();
+        Assert.That(results.Count, Is.EqualTo(4),
+            "Beer + wine≤14% + wine>14% + spirits (control) = 4 rows");
+    }
+
+    [Test]
+    public void OR_Throws_WhenWineRatesInverted()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            _ = OregonAlcoholScraper.Parse(
+                "<html><body>Oregon Beer Tax - $0.08 / gallon " +
+                "Oregon Wine Tax - $0.77 / gallon Over 14% – $0.67/gallon</body></html>",
+                OrSourceUrl));
+    }
+
+    [Test]
+    public void OR_Throws_WhenWine14PlusTierMissing()
+    {
+        var scraper = MakeOrScraper("""
+            <html><body>
+            <h2>Oregon Beer Tax - $0.08 / gallon</h2>
+            <h2>Oregon Wine Tax - $0.67 / gallon</h2>
+            </body></html>
+            """);
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
+    }
+
+    [Test]
+    public void OR_Throws_WhenPageUnreachable_WaybackDisabled()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var scraper = new OregonAlcoholScraper(new FakeHttpClientFactory(handler), MakeSettings());
+        Assert.ThrowsAsync<InvalidOperationException>(() => scraper.ScrapeAsync());
+    }
+
+    // ── Statute-citation retrofit (WI/IL/MN/IA/IN/MI/ND/SD) ───────────────────
+    // Every rate row in the eight older scrapers must declare its statutory authority
+    // in Conditions, matching the convention applied to OH/MT/ID/OR.
+
+    [Test]
+    public async Task WI_EveryRow_CitesItsStatutoryAuthority()
+    {
+        var results = await MakeWiScraper(WiHtml).ScrapeAsync();
+        foreach (var row in results)
+            Assert.That(row.Conditions, Does.Contain("Statutory authority:"),
+                $"WI row '{row.RateName}' must declare its statutory authority in Conditions.");
+    }
+
+    [Test]
+    public async Task WI_StateRow_CitesWiStat_77_52()
+    {
+        var results = await MakeWiScraper(WiHtml).ScrapeAsync();
+        var stateRow = results.First(r => r.FipsCode == "55");
+        Assert.That(stateRow.Conditions, Does.Contain("§ 77.52"));
+    }
+
+    [Test]
+    public async Task WI_CountyRows_CiteWiStat_77_71()
+    {
+        var results = await MakeWiScraper(WiHtml).ScrapeAsync();
+        var countyRows = results.Where(r => r.FipsCode != "55").ToList();
+        foreach (var row in countyRows)
+            Assert.That(row.Conditions, Does.Contain("§ 77.71"),
+                $"WI county row '{row.JurisdictionName}' should cite Wis. Stat. § 77.71.");
+    }
+
+    [Test]
+    public async Task IL_EveryRow_CitesItsStatutoryAuthority()
+    {
+        var results = await MakeIlScraper().ScrapeAsync();
+        foreach (var row in results)
+            Assert.That(row.Conditions, Does.Contain("Statutory authority:"),
+                $"IL row '{row.RateName}' must declare its statutory authority in Conditions.");
+    }
+
+    [Test]
+    public async Task IL_StateRows_Cite235ILCS_5_8_1()
+    {
+        var results = await MakeIlScraper().ScrapeAsync();
+        var stateRows = results.Where(r => r.FipsCode == "17");
+        foreach (var row in stateRows)
+            Assert.That(row.Conditions, Does.Contain("235 ILCS 5/8-1"),
+                $"IL state row '{row.RateName}' should cite 235 ILCS 5/8-1.");
+    }
+
+    [Test]
+    public async Task IL_CookRows_CiteCookCh74()
+    {
+        var results = await MakeIlScraper().ScrapeAsync();
+        var cookRows = results.Where(r => r.FipsCode == "17031").ToList();
+        foreach (var row in cookRows)
+            Assert.That(row.Conditions, Does.Contain("Cook County"),
+                $"IL Cook row '{row.RateName}' should cite the Cook County ordinance.");
+    }
+
+    [Test]
+    public async Task IL_ChicagoRows_CiteChi3_44()
+    {
+        var results = await MakeIlScraper().ScrapeAsync();
+        var chiRows = results.Where(r => r.FipsCode == "1714000").ToList();
+        foreach (var row in chiRows)
+            Assert.That(row.Conditions, Does.Contain("Ch. 3-44"),
+                $"IL Chicago row '{row.RateName}' should cite Chicago Municipal Code Ch. 3-44.");
+    }
+
+    [Test]
+    public async Task MN_EveryRow_CitesItsStatutoryAuthority()
+    {
+        var results = await MakeMnScraper().ScrapeAsync();
+        foreach (var row in results)
+            Assert.That(row.Conditions, Does.Contain("Statutory authority:"),
+                $"MN row '{row.RateName}' must declare its statutory authority in Conditions.");
+    }
+
+    [Test]
+    public async Task MN_StateRows_CiteMinnStat_297G_03()
+    {
+        var results = await MakeMnScraper().ScrapeAsync();
+        var stateRows = results.Where(r => r.FipsCode == "27");
+        foreach (var row in stateRows)
+            Assert.That(row.Conditions, Does.Contain("§ 297G.03"),
+                $"MN state row '{row.RateName}' should cite Minn. Stat. § 297G.03.");
+    }
+
+    [Test]
+    public async Task MN_MinneapolisRow_CitesCityOrdinance()
+    {
+        var results = await MakeMnScraper(mplsHtml: MnMplsHtml).ScrapeAsync();
+        var mpls = results.First(r => r.FipsCode == "2743000");
+        Assert.That(mpls.Conditions, Does.Contain("§ 22.1401"));
+    }
+
+    [Test]
+    public async Task IA_EveryRow_CitesItsStatutoryAuthority()
+    {
+        var results = await MakeIaScraper().ScrapeAsync();
+        foreach (var row in results)
+            Assert.That(row.Conditions, Does.Contain("Statutory authority:"),
+                $"IA row '{row.RateName}' must declare its statutory authority in Conditions.");
+    }
+
+    [Test]
+    public async Task IA_BeerRow_CitesIowaCode_123_136()
+    {
+        var results = await MakeIaScraper().ScrapeAsync();
+        var beer = results.First(r => r.ProductCategory == ProductCategory.Beer);
+        Assert.That(beer.Conditions, Does.Contain("§ 123.136"));
+    }
+
+    [Test]
+    public async Task IA_WineRow_CitesIowaCode_123_183()
+    {
+        var results = await MakeIaScraper().ScrapeAsync();
+        var wine = results.First(r => r.ProductCategory == ProductCategory.Wine);
+        Assert.That(wine.Conditions, Does.Contain("§ 123.183"));
+    }
+
+    [Test]
+    public async Task IA_SpiritsRow_CitesIowaCode_123_20()
+    {
+        var results = await MakeIaScraper().ScrapeAsync();
+        var spirits = results.First(r => r.ProductCategory == ProductCategory.Spirits);
+        Assert.That(spirits.Conditions, Does.Contain("§ 123.20"));
+    }
+
+    [Test]
+    public async Task IN_EveryRow_CitesItsStatutoryAuthority()
+    {
+        var results = await MakeInScraper().ScrapeAsync();
+        foreach (var row in results)
+            Assert.That(row.Conditions, Does.Contain("Statutory authority:"),
+                $"IN row '{row.RateName}' must declare its statutory authority in Conditions.");
+    }
+
+    [Test]
+    public async Task IN_BeerRow_CitesIC_7_1_4_2_1()
+    {
+        var results = await MakeInScraper().ScrapeAsync();
+        var beer = results.First(r => r.ProductCategory == ProductCategory.Beer);
+        Assert.That(beer.Conditions, Does.Contain("§ 7.1-4-2-1"));
+    }
+
+    [Test]
+    public async Task IN_WineRow_CitesIC_7_1_4_4_1()
+    {
+        var results = await MakeInScraper().ScrapeAsync();
+        var wine = results.First(r => r.ProductCategory == ProductCategory.Wine);
+        Assert.That(wine.Conditions, Does.Contain("§ 7.1-4-4-1"));
+    }
+
+    [Test]
+    public async Task IN_LiquorRow_CitesIC_7_1_4_3_1()
+    {
+        var results = await MakeInScraper().ScrapeAsync();
+        var spirits = results.First(r => r.ProductCategory == ProductCategory.Spirits);
+        Assert.That(spirits.Conditions, Does.Contain("§ 7.1-4-3-1"));
+    }
+
+    [Test]
+    public async Task MI_EveryRow_CitesItsStatutoryAuthority()
+    {
+        var results = await MakeMiScraper().ScrapeAsync();
+        foreach (var row in results)
+            Assert.That(row.Conditions, Does.Contain("Statutory authority:"),
+                $"MI row '{row.RateName}' must declare its statutory authority in Conditions.");
+    }
+
+    [Test]
+    public async Task MI_BeerRow_CitesMCL_436_1409()
+    {
+        var results = await MakeMiScraper().ScrapeAsync();
+        var beer = results.First(r => r.ProductCategory == ProductCategory.Beer);
+        Assert.That(beer.Conditions, Does.Contain("§ 436.1409"));
+    }
+
+    [Test]
+    public async Task MI_WineRows_CiteMCL_436_1301()
+    {
+        var results = await MakeMiScraper().ScrapeAsync();
+        var wineRows = results.Where(r => r.ProductCategory == ProductCategory.Wine).ToList();
+        foreach (var row in wineRows)
+            Assert.That(row.Conditions, Does.Contain("§ 436.1301"),
+                $"MI wine row '{row.RateName}' should cite MCL § 436.1301.");
+    }
+
+    [Test]
+    public async Task ND_EveryRow_CitesItsStatutoryAuthority()
+    {
+        var results = await MakeNdScraper().ScrapeAsync();
+        foreach (var row in results)
+            Assert.That(row.Conditions, Does.Contain("Statutory authority:"),
+                $"ND row '{row.RateName}' must declare its statutory authority in Conditions.");
+    }
+
+    [Test]
+    public async Task ND_AllRows_CiteNDCC_5_03_07()
+    {
+        var results = await MakeNdScraper().ScrapeAsync();
+        foreach (var row in results)
+            Assert.That(row.Conditions, Does.Contain("§ 5-03-07"),
+                $"ND row '{row.RateName}' should cite N.D.C.C. § 5-03-07.");
+    }
+
+    [Test]
+    public async Task SD_EveryRow_CitesItsStatutoryAuthority()
+    {
+        var results = await MakeSdScraper().ScrapeAsync();
+        foreach (var row in results)
+            Assert.That(row.Conditions, Does.Contain("Statutory authority:"),
+                $"SD row '{row.RateName}' must declare its statutory authority in Conditions.");
+    }
+
+    [Test]
+    public async Task SD_AllRows_CiteSDCL_35_5_3()
+    {
+        var results = await MakeSdScraper().ScrapeAsync();
+        foreach (var row in results)
+            Assert.That(row.Conditions, Does.Contain("§ 35-5-3"),
+                $"SD row '{row.RateName}' should cite SDCL § 35-5-3.");
     }
 }

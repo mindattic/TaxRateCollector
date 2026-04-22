@@ -39,14 +39,17 @@ public sealed class WisconsinAlcoholScraper : IStateBulkScraper
         var results = new List<BulkRateResult>
         {
             new("55", "Wisconsin", "Wisconsin State Sales Tax — Alcoholic Beverages",
-                stateRate, SourceUrl, bytes, "text/html", "", EffectiveDate),
+                stateRate, SourceUrl, bytes, "text/html", "", EffectiveDate,
+                Conditions: "Statutory authority: Wisconsin Statutes § 77.52 (state sales and use tax). Rate: 5% applied to retail sales of alcoholic beverages."),
         };
 
         foreach (var (fips, name) in Counties)
         {
-            var rate = name.Equals("Milwaukee", StringComparison.OrdinalIgnoreCase)
-                ? milwaukeeRate
-                : defaultCountyRate;
+            var isMilwaukee = name.Equals("Milwaukee", StringComparison.OrdinalIgnoreCase);
+            var rate        = isMilwaukee ? milwaukeeRate : defaultCountyRate;
+            var conditions  = isMilwaukee
+                ? "Statutory authority: Wisconsin Statutes § 77.71 (county sales and use tax). Rate: 0.9% applied to retail sales of alcoholic beverages in Milwaukee County (effective 2024-01-01)."
+                : $"Statutory authority: Wisconsin Statutes § 77.71 (county sales and use tax). Rate: 0.5% applied to retail sales of alcoholic beverages in {name} County.";
 
             results.Add(new BulkRateResult(
                 FipsCode: fips,
@@ -57,7 +60,8 @@ public sealed class WisconsinAlcoholScraper : IStateBulkScraper
                 EvidenceBytes: bytes,
                 EvidenceMimeType: "text/html",
                 EvidenceOriginalFileName: "",
-                EffectiveDate: EffectiveDate));
+                EffectiveDate: EffectiveDate,
+                Conditions: conditions));
         }
 
         return results;

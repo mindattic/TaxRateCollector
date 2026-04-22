@@ -75,51 +75,72 @@ public sealed class IllinoisAlcoholScraper : IStateBulkScraper
         var results = new List<BulkRateResult>();
 
         // ── Local helpers that close over fetched byte arrays ─────────────────
-        BulkRateResult ExcRow(string fips, string name, string label, decimal rate,
+        BulkRateResult ExcRow(string fips, string name, string label, decimal rate, string cond,
             decimal? mn = null, decimal? mx = null, ProductCategory? cat = null) =>
             new(fips, name, label, rate, exciseUrlUsed, exciseBytes, "text/html", "", ExciseEffective,
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
-                IsIncludedInPrice: true, SaleContext.Any, mn, mx, exciseConf, cat);
+                IsIncludedInPrice: true, SaleContext.Any, mn, mx, exciseConf, cat,
+                Conditions: cond);
 
-        BulkRateResult CookRow(string label, decimal rate, decimal? mn = null, decimal? mx = null,
-            ProductCategory? cat = null) =>
+        BulkRateResult CookRow(string label, decimal rate, string cond,
+            decimal? mn = null, decimal? mx = null, ProductCategory? cat = null) =>
             new("17031", "Cook", label, rate, cookUrlUsed, cookBytes, "text/html", "", CookEffective,
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Distributor,
-                IsIncludedInPrice: true, SaleContext.Any, mn, mx, cookConf, cat);
+                IsIncludedInPrice: true, SaleContext.Any, mn, mx, cookConf, cat,
+                Conditions: cond);
 
-        BulkRateResult ChiOnPrem(string label, decimal rate, decimal? mn = null, decimal? mx = null,
-            ProductCategory? cat = null) =>
+        BulkRateResult ChiOnPrem(string label, decimal rate, string cond,
+            decimal? mn = null, decimal? mx = null, ProductCategory? cat = null) =>
             new("1714000", "Chicago", label, rate, chicagoUrlUsed, chicagoBytes, "text/html", "", ChicagoEffective,
                 RateBasis.FlatPerVolume, TaxType.ExciseTax, RemittancePoint.Retailer,
-                IsIncludedInPrice: false, SaleContext.OnPremise, mn, mx, chicagoConf, cat);
+                IsIncludedInPrice: false, SaleContext.OnPremise, mn, mx, chicagoConf, cat,
+                Conditions: cond);
 
         // ── Illinois state excise rates (per gallon, distributor-remitted) ────
         results.Add(ExcRow("17", "Illinois",
             "Illinois Excise Tax — Beer/Cider (0.5%–7% ABV)", state.Beer,
+            "Statutory authority: 235 ILCS 5/8-1 (Illinois Liquor Control Act — gallonage tax on beer/cider, 0.5%–7% ABV). Rate: $0.231 per gallon.",
             mn: 0.005m, mx: 0.07m, cat: ProductCategory.Beer));
         results.Add(ExcRow("17", "Illinois",
             "Illinois Excise Tax — Alcohol ≤14% ABV", state.Wine14,
+            "Statutory authority: 235 ILCS 5/8-1 (Illinois Liquor Control Act — gallonage tax on alcohol ≤14% ABV). Rate: $1.39 per gallon.",
             mx: 0.14m, cat: ProductCategory.Wine));
         results.Add(ExcRow("17", "Illinois",
             "Illinois Excise Tax — Alcohol >14%–<20% ABV", state.Wine20,
+            "Statutory authority: 235 ILCS 5/8-1 (Illinois Liquor Control Act — gallonage tax on alcohol >14% and <20% ABV). Rate: $1.39 per gallon (same tier as ≤14% under the current schedule).",
             mn: 0.14m, mx: 0.20m, cat: ProductCategory.Wine));
         results.Add(ExcRow("17", "Illinois",
             "Illinois Excise Tax — Spirits ≥20% ABV", state.Spirits,
+            "Statutory authority: 235 ILCS 5/8-1 (Illinois Liquor Control Act — gallonage tax on spirits ≥20% ABV). Rate: $8.55 per gallon.",
             mn: 0.20m, cat: ProductCategory.Spirits));
 
         // ── Cook County liquor tax (distributor-remitted) — only when page has rate data ──
         if (hasCookRates)
         {
-            results.Add(CookRow("Cook County Liquor Tax — Beer (<20% ABV)", cook.Beer, mx: 0.20m, cat: ProductCategory.Beer));
-            results.Add(CookRow("Cook County Liquor Tax — Wine (≤14% ABV)", cook.Wine14, mx: 0.14m, cat: ProductCategory.Wine));
-            results.Add(CookRow("Cook County Liquor Tax — Spirits (≥20% ABV)", cook.Spirits, mn: 0.20m, cat: ProductCategory.Spirits));
+            results.Add(CookRow("Cook County Liquor Tax — Beer (<20% ABV)", cook.Beer,
+                "Statutory authority: Cook County Code of Ordinances Ch. 74 Art. IX (county liquor tax — beer, <20% ABV; effective 2023-12-14). Rate: $2.50 per gallon.",
+                mx: 0.20m, cat: ProductCategory.Beer));
+            results.Add(CookRow("Cook County Liquor Tax — Wine (≤14% ABV)", cook.Wine14,
+                "Statutory authority: Cook County Code of Ordinances Ch. 74 Art. IX (county liquor tax — wine, ≤14% ABV). Rate: $0.24 per gallon.",
+                mx: 0.14m, cat: ProductCategory.Wine));
+            results.Add(CookRow("Cook County Liquor Tax — Spirits (≥20% ABV)", cook.Spirits,
+                "Statutory authority: Cook County Code of Ordinances Ch. 74 Art. IX (county liquor tax — distilled spirits, ≥20% ABV). Rate: $2.50 per gallon.",
+                mn: 0.20m, cat: ProductCategory.Spirits));
         }
 
         // ── Chicago on-premises liquor tax (retailer-remitted) ───────────────
-        results.Add(ChiOnPrem("Chicago Liquor Tax — Beer, on-premises (per gal)", chicago.Beer, mx: 0.07m, cat: ProductCategory.Beer));
-        results.Add(ChiOnPrem("Chicago Liquor Tax — Wine ≤14% ABV, on-premises (per gal)", chicago.Wine14, mx: 0.14m, cat: ProductCategory.Wine));
-        results.Add(ChiOnPrem("Chicago Liquor Tax — Wine >14%–<20% ABV, on-premises (per gal)", chicago.Wine20, mn: 0.14m, mx: 0.20m, cat: ProductCategory.Wine));
-        results.Add(ChiOnPrem("Chicago Liquor Tax — Spirits ≥20% ABV, on-premises (per gal)", chicago.Spirits, mn: 0.20m, cat: ProductCategory.Spirits));
+        results.Add(ChiOnPrem("Chicago Liquor Tax — Beer, on-premises (per gal)", chicago.Beer,
+            "Statutory authority: Chicago Municipal Code Ch. 3-44 (city liquor tax — on-premises beer). Rate: $0.29 per gallon.",
+            mx: 0.07m, cat: ProductCategory.Beer));
+        results.Add(ChiOnPrem("Chicago Liquor Tax — Wine ≤14% ABV, on-premises (per gal)", chicago.Wine14,
+            "Statutory authority: Chicago Municipal Code Ch. 3-44 (city liquor tax — on-premises wine ≤14% ABV). Rate: $0.36 per gallon.",
+            mx: 0.14m, cat: ProductCategory.Wine));
+        results.Add(ChiOnPrem("Chicago Liquor Tax — Wine >14%–<20% ABV, on-premises (per gal)", chicago.Wine20,
+            "Statutory authority: Chicago Municipal Code Ch. 3-44 (city liquor tax — on-premises wine >14% and <20% ABV). Rate: $0.89 per gallon.",
+            mn: 0.14m, mx: 0.20m, cat: ProductCategory.Wine));
+        results.Add(ChiOnPrem("Chicago Liquor Tax — Spirits ≥20% ABV, on-premises (per gal)", chicago.Spirits,
+            "Statutory authority: Chicago Municipal Code Ch. 3-44 (city liquor tax — on-premises spirits ≥20% ABV). Rate: $2.68 per gallon.",
+            mn: 0.20m, cat: ProductCategory.Spirits));
 
         // ── Chicago off-premises liquor tax (% of retail price, eff. 2026-03-01)
         if (chicago.OffPremisePct > 0)
@@ -132,7 +153,8 @@ public sealed class IllinoisAlcoholScraper : IStateBulkScraper
                 chicago.OffPremisePct, offUrl, offBytes, "text/html", "", ChicagoEffective,
                 RateBasis.Percentage, TaxType.ExciseTax, RemittancePoint.Retailer,
                 IsIncludedInPrice: false, SaleContext.OffPremise, null, null, offConf,
-                ProductCategory.Alcohol));
+                ProductCategory.Alcohol,
+                Conditions: "Statutory authority: Chicago Municipal Code Ch. 3-44 (city liquor tax — off-premises retail; effective 2026-03-01). Rate: 1.5% of retail sale price."));
         }
 
         return results;

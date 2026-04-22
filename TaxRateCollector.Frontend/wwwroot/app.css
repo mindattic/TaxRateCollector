@@ -427,6 +427,8 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
 .data-table th.sortable:hover { background: #eef0f2; }
 .data-table tr:hover td { background: #fafbfc; }
 .rate-cell { font-family: monospace; font-weight: 600; }
+.conditions-cell { max-width: 480px; font-size: 0.8rem; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+[data-theme="dark"] .conditions-cell, [data-theme="tutor"] .conditions-cell, [data-theme="llm"] .conditions-cell, [data-theme="samurai"] .conditions-cell { color: var(--text-muted); }
 
 /* Badges */
 .badge {
@@ -1038,6 +1040,12 @@ h2 { font-size: 1.1rem; margin: 1.4rem 0 0.6rem; color: #444; }
     max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ev-name-btn:hover { color: var(--brand-dark); }
+.ev-source-link {
+    margin-left: auto; font-size: 0.78rem; color: var(--accent);
+    text-decoration: none; padding: 1px 6px; border: 1px solid var(--border);
+    border-radius: 4px; background: transparent;
+}
+.ev-source-link:hover { background: var(--tree-hover); color: var(--brand-dark); }
 
 /* ── Evidence reader modal ────────────────────────────────────────────────── */
 .evidence-reader-backdrop {

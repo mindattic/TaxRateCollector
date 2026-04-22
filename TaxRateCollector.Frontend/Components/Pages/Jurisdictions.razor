@@ -430,9 +430,10 @@ else if (!isAdmin && HasUnsubscribedContent)
     private readonly Dictionary<int, List<JNode>> children = new();
     private readonly HashSet<int> expanded = new();
 
-    // Excise rates — lazy-loaded per jurisdiction; toggle visibility per node
+    // Excise rates — lazy-loaded per jurisdiction.
+    // The section starts OPEN by default; the set tracks nodes the user has *collapsed*.
     private readonly Dictionary<int, List<RateRow>> exciseRates = new();
-    private readonly HashSet<int> exciseExpanded = new();
+    private readonly HashSet<int> exciseCollapsed = new();
 
     // Rate row form
     private int? rateFormNodeId;
@@ -541,7 +542,7 @@ else if (!isAdmin && HasUnsubscribedContent)
         children.Clear();
         expanded.Clear();
         exciseRates.Clear();
-        exciseExpanded.Clear();
+        exciseCollapsed.Clear();
         rateFormNodeId = null;
         rateFormRowId = null;
         rateEvidenceExpanded.Clear();
@@ -815,6 +816,7 @@ else if (!isAdmin && HasUnsubscribedContent)
             children[stateId] = await BuildNodes(db, JurisdictionType.County, parentId: stateId,
                 parentCumulative: stateNode is null ? 0m : NodePctSum(stateNode));
         }
+        await EnsureExciseLoadedAsync(stateId);
     }
 
     private async Task ToggleCounty(int countyId)
@@ -828,11 +830,22 @@ else if (!isAdmin && HasUnsubscribedContent)
             children[countyId] = await BuildNodes(db, JurisdictionType.City, parentId: countyId,
                 parentCumulative: parentCum);
         }
+        await EnsureExciseLoadedAsync(countyId);
     }
 
-    private void ToggleCity(int cityId)
+    private async Task ToggleCity(int cityId)
     {
-        if (!expanded.Add(cityId)) expanded.Remove(cityId);
+        if (!expanded.Add(cityId)) { expanded.Remove(cityId); return; }
+        await EnsureExciseLoadedAsync(cityId);
+    }
+
+    // Default-open excise section needs data ready when the detail panel renders.
+    // Skip the DB call when no excise rates exist or when already loaded / user-collapsed.
+    private async Task EnsureExciseLoadedAsync(int jurisdictionId)
+    {
+        if (exciseCollapsed.Contains(jurisdictionId)) return;
+        if (exciseRates.ContainsKey(jurisdictionId)) return;
+        await LoadExciseRatesAsync(jurisdictionId);
     }
 
     // ── Detail panel (1:M rate rows table) ───────────────────────────────────
@@ -979,7 +992,7 @@ else if (!isAdmin && HasUnsubscribedContent)
             @* ── Excise / Special Tax Rates section ──────────────────────────── *@
             @{
                 var exciseLoaded   = exciseRates.ContainsKey(node.Id);
-                var exciseIsOpen   = exciseExpanded.Contains(node.Id);
+                var exciseIsOpen   = !exciseCollapsed.Contains(node.Id);
                 var exciseNodeRows = exciseLoaded ? exciseRates[node.Id] : [];
             }
             <div class="excise-section">
@@ -1018,9 +1031,44 @@ else if (!isAdmin && HasUnsubscribedContent)
                                             { <span class="rate-row-badge badge-remit">@row.RemittancePoint</span> }
                                             @if (row.SourceConfidence != SourceConfidence.Official)
                                             { <span class="confidence-badge confidence-@row.SourceConfidence.ToString().ToLower()" title="Source confidence: @row.SourceConfidence">@ConfidenceLabel(row.SourceConfidence)</span> }
+                                            <span class="rate-row-spacer"></span>
+                                            @{
+                                                var exEvCount    = row.Evidence.Count;
+                                                var exEvExpanded = rateEvidenceExpanded.Contains(row.Id);
+                                            }
+                                            <button class="evidence-badge @(exEvExpanded ? "evidence-hide" : exEvCount > 0 ? "evidence-ok" : "evidence-missing")"
+                                                    @onclick="() => ToggleRateEvidence(row.Id)"
+                                                    title="@(exEvExpanded ? "Hide evidence" : exEvCount > 0 ? $"{exEvCount} evidence file(s)" : "No evidence attached")">
+                                                @(exEvExpanded ? "▲ Hide" : exEvCount > 0 ? $"📎 {exEvCount}" : "—")
+                                            </button>
                                         </div>
                                         @if (!string.IsNullOrEmpty(row.Conditions))
                                         { <div class="rate-row-conditions muted small">@row.Conditions</div> }
+                                        @if (exEvExpanded)
+                                        {
+                                            <div class="rate-row-evidence-panel">
+                                                @if (row.Evidence.Count == 0)
+                                                { <p class="muted small">No evidence attached yet.</p> }
+                                                else
+                                                {
+                                                    <ul class="detail-evidence-list">
+                                                        @foreach (var f in row.Evidence)
+                                                        {
+                                                            <li class="evidence-item">
+                                                                <span class="ev-icon">@FileIcon(f.EvidenceType)</span>
+                                                                <button class="ev-name ev-name-btn" @onclick="() => OpenEvidenceReader(node, f)">@EvidenceDisplayName(f)</button>
+                                                                <span class="ev-type muted small">@f.SourceType</span>
+                                                                <span class="ev-date muted small">@(f.FetchedAt?.Length >= 10 ? f.FetchedAt[..10] : f.FetchedAt ?? "")</span>
+                                                                @if (!string.IsNullOrEmpty(f.SourceUrl))
+                                                                {
+                                                                    <a class="ev-source-link" href="@f.SourceUrl" target="_blank" rel="noopener" title="Open source URL in new tab">↗ source</a>
+                                                                }
+                                                            </li>
+                                                        }
+                                                    </ul>
+                                                }
+                                            </div>
+                                        }
                                     </div>
                                 }
                             </div>
@@ -1038,13 +1086,14 @@ else if (!isAdmin && HasUnsubscribedContent)
 
     private async Task ToggleExcise(int jurisdictionId)
     {
-        if (!exciseExpanded.Add(jurisdictionId))
+        // Section is open by default; the set tracks user-collapsed nodes.
+        // First click on an open section adds it to the set (collapse); second click removes it (re-open).
+        if (!exciseCollapsed.Add(jurisdictionId))
         {
-            exciseExpanded.Remove(jurisdictionId);
-            return;
+            exciseCollapsed.Remove(jurisdictionId);
+            if (!exciseRates.ContainsKey(jurisdictionId))
+                await LoadExciseRatesAsync(jurisdictionId);
         }
-        if (!exciseRates.ContainsKey(jurisdictionId))
-            await LoadExciseRatesAsync(jurisdictionId);
     }
 
     private async Task LoadExciseRatesAsync(int jurisdictionId)
@@ -1070,11 +1119,24 @@ else if (!isAdmin && HasUnsubscribedContent)
             })
             .ToListAsync();
 
+        var rateIds = rows.Select(r => r.Id).ToList();
+        var docs    = await db.SourceDocuments
+            .Where(d => rateIds.Contains(d.TaxRateId) && d.IsActive)
+            .Select(d => new { d.TaxRateId, d.Id, d.FileName, d.OriginalFileName,
+                               d.EvidenceType, d.SourceUrl, d.RawContent, d.SourceType, d.FetchedAt })
+            .ToListAsync();
+        var docMap = docs.GroupBy(d => d.TaxRateId)
+                         .ToDictionary(g => g.Key, g => g.ToList());
+
         exciseRates[jurisdictionId] = rows.Select(r => new RateRow(
             r.Id, r.Name, r.Rate, r.RateBasis, r.Unit,
             r.SaleContext, r.RemittancePoint, r.MinAbv, r.MaxAbv,
             r.Conditions ?? "", r.StatutoryReference ?? "",
-            r.EffectiveDate, r.ExpirationDate, [],
+            r.EffectiveDate, r.ExpirationDate,
+            docMap.GetValueOrDefault(r.Id, [])
+                .Select(d => new EvidenceFile(d.Id, d.FileName, d.OriginalFileName,
+                    d.EvidenceType, d.SourceUrl, d.RawContent, d.SourceType.ToString(), d.FetchedAt))
+                .ToList(),
             r.ProductCategory, r.TaxType, r.SourceConfidence)).ToList();
     }
 
