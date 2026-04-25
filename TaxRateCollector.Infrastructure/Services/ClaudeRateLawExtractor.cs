@@ -1,10 +1,9 @@
-using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using MindAttic.Legion;
 using TaxRateCollector.Core.Entities;
 using TaxRateCollector.Core.Enums;
 using TaxRateCollector.Core.Interfaces;
@@ -21,7 +20,7 @@ namespace TaxRateCollector.Infrastructure.Services;
 /// All AI-extracted rates are flagged NeedsReview = true until an admin approves them.
 /// </summary>
 public sealed class ClaudeRateLawExtractor(
-    HttpClient http,
+    LegionClient legion,
     IOptions<AnthropicOptions> options,
     SettingsService settings,
     ILogger<ClaudeRateLawExtractor> logger) : IRateLawExtractor
@@ -31,9 +30,6 @@ public sealed class ClaudeRateLawExtractor(
         PropertyNameCaseInsensitive = true,
         AllowTrailingCommas = true,
     };
-
-    private const string ApiEndpoint = "https://api.anthropic.com/v1/messages";
-    private const string ApiVersion  = "2023-06-01";
 
     public async Task<IReadOnlyList<ExtractedRateLaw>> ExtractAsync(
         Jurisdiction jurisdiction,
@@ -146,30 +142,17 @@ public sealed class ClaudeRateLawExtractor(
 
     // ── API call ──────────────────────────────────────────────────────────────
 
-    private async Task<string> CallClaudeAsync(
+    private Task<string> CallClaudeAsync(
         string prompt, string apiKey, AnthropicOptions opts, CancellationToken ct)
-    {
-        var body = new
-        {
-            model      = opts.Model,
-            max_tokens = opts.MaxTokens,
-            messages   = new[] { new { role = "user", content = prompt } },
-        };
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, ApiEndpoint);
-        request.Headers.Add("x-api-key", apiKey);
-        request.Headers.Add("anthropic-version", ApiVersion);
-        request.Content = JsonContent.Create(body);
-
-        using var response = await http.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
-
-        var json = await response.Content.ReadAsStringAsync(ct);
-        var node = JsonNode.Parse(json);
-
-        return node?["content"]?[0]?["text"]?.GetValue<string>()
-            ?? throw new InvalidOperationException("Unexpected Claude response shape");
-    }
+        => legion.CallAsync(
+            providerId: "claude",
+            apiKey: apiKey,
+            model: opts.Model,
+            systemPrompt: "",
+            userMessage: prompt,
+            maxTokens: opts.MaxTokens,
+            temperature: 0.0,
+            ct: ct);
 
     // ── Response parsing ──────────────────────────────────────────────────────
 

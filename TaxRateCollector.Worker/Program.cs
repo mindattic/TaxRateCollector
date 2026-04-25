@@ -1,3 +1,4 @@
+using MindAttic.Legion;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using TaxRateCollector.Core.Interfaces;
@@ -26,6 +27,7 @@ builder.Services.AddSingleton(settings);
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IDiscoveryService, DiscoveryService>();
 builder.Services.Configure<AnthropicOptions>(builder.Configuration.GetSection(AnthropicOptions.Section));
+builder.Services.AddLegionClient();
 builder.Services.AddScoped<IRateLawExtractor, ClaudeRateLawExtractor>();
 builder.Services.AddScoped<IRecursiveRateScraper, RecursiveRateScraper>();
 

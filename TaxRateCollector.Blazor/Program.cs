@@ -1,3 +1,4 @@
+using MindAttic.Legion;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -104,6 +105,7 @@ builder.Services.AddScoped<AlertService>();
 builder.Services.AddScoped<IPayPalService, PayPalService>();
 builder.Services.AddScoped<IDiscoveryService, DiscoveryService>();
 builder.Services.Configure<AnthropicOptions>(builder.Configuration.GetSection(AnthropicOptions.Section));
+builder.Services.AddLegionClient();
 builder.Services.AddScoped<IRateLawExtractor, ClaudeRateLawExtractor>();
 builder.Services.AddScoped<IRecursiveRateScraper, RecursiveRateScraper>();
 builder.Services.AddScoped<IWebDirectoryScanner, WebDirectoryScanner>();

@@ -40,7 +40,7 @@ public class ClaudeExtractionParserTests
         var settings = new SettingsService();
         settings.Current.AnthropicApiKey = apiKey;
 
-        return new ClaudeRateLawExtractor(http, opts, settings,
+        return new ClaudeRateLawExtractor(new MindAttic.Legion.LegionClient(http), opts, settings,
             NullLogger<ClaudeRateLawExtractor>.Instance);
     }
 
@@ -253,7 +253,8 @@ public class ClaudeExtractionParserTests
         var settings = new SettingsService();
         settings.Current.AnthropicApiKey = "";   // blank key
 
-        var extractor = new ClaudeRateLawExtractor(http, opts, settings,
+        var legion = new MindAttic.Legion.LegionClient(http);
+        var extractor = new ClaudeRateLawExtractor(legion, opts, settings,
             NullLogger<ClaudeRateLawExtractor>.Instance);
         var result = await extractor.ExtractAsync(
             TestJurisdiction(), "content", "text/html", "https://test.gov");
@@ -272,7 +273,8 @@ public class ClaudeExtractionParserTests
         var settings = new SettingsService();
         settings.Current.AnthropicApiKey = "sk-test";
 
-        var extractor = new ClaudeRateLawExtractor(http, opts, settings,
+        var legion = new MindAttic.Legion.LegionClient(http);
+        var extractor = new ClaudeRateLawExtractor(legion, opts, settings,
             NullLogger<ClaudeRateLawExtractor>.Instance);
         var result = await extractor.ExtractAsync(
             TestJurisdiction(), "   ", "text/html", "https://test.gov");
@@ -308,7 +310,8 @@ public class ClaudeExtractionParserTests
         var settings = new SettingsService();
         settings.Current.AnthropicApiKey = "sk-test";
 
-        var extractor = new ClaudeRateLawExtractor(http, opts, settings,
+        var legion = new MindAttic.Legion.LegionClient(http);
+        var extractor = new ClaudeRateLawExtractor(legion, opts, settings,
             NullLogger<ClaudeRateLawExtractor>.Instance);
 
         var htmlContent = "<html><body><p>Rate: 6.25%</p></body></html>";
@@ -331,7 +334,8 @@ public class ClaudeExtractionParserTests
         var settings = new SettingsService();
         settings.Current.AnthropicApiKey = "sk-test";
 
-        var extractor = new ClaudeRateLawExtractor(http, opts, settings,
+        var legion = new MindAttic.Legion.LegionClient(http);
+        var extractor = new ClaudeRateLawExtractor(legion, opts, settings,
             NullLogger<ClaudeRateLawExtractor>.Instance);
 
         var longContent = new string('x', 200);
