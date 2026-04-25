@@ -44,8 +44,9 @@ public sealed class ClaudeRateLawExtractor(
     {
         var opts = options.Value;
 
-        // Key comes from %APPDATA%\MindAttic\TaxRateCollector\settings.json so it's
-        // shared between the UI and Worker without being checked into source control.
+        // Key is loaded by SettingsService from %APPDATA%\MindAttic\LLM\providers.json
+        // (the shared MindAttic.Legion credential store) with a fallback to this app's
+        // settings.json — see MindAttic.Legion.MindAtticCredentialStore.
         var apiKey = settings.Current.AnthropicApiKey;
         if (string.IsNullOrWhiteSpace(apiKey))
         {

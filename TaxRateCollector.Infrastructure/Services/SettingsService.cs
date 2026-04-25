@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using MindAttic.Legion;
 
 namespace TaxRateCollector.Infrastructure.Services;
 
@@ -84,21 +85,40 @@ public class SettingsService
 
     public void Load()
     {
+        var settingsExisted = File.Exists(SettingsPath);
         try
         {
-            if (!File.Exists(SettingsPath))
+            if (settingsExisted)
+            {
+                var json = File.ReadAllText(SettingsPath);
+                Current = JsonSerializer.Deserialize<AppSettings>(json, JsonOpts) ?? new AppSettings();
+            }
+            else
             {
                 Current = new AppSettings();
-                Save();
-                return;
             }
-            var json = File.ReadAllText(SettingsPath);
-            Current = JsonSerializer.Deserialize<AppSettings>(json, JsonOpts) ?? new AppSettings();
         }
         catch
         {
             Current = new AppSettings();
         }
+
+        // %APPDATA%\MindAttic\LLM\providers.json is the first stop for any LLM key,
+        // shared across every MindAttic app via MindAttic.Legion. The per-app
+        // settings.json is a fallback.
+        var centralAnthropic = MindAtticCredentialStore.GetKey("claude");
+        if (!string.IsNullOrWhiteSpace(centralAnthropic))
+        {
+            Current.AnthropicApiKey = centralAnthropic;
+        }
+        else if (!string.IsNullOrWhiteSpace(Current.AnthropicApiKey))
+        {
+            // First-run migration: lift the existing per-app key into the shared store
+            // so other MindAttic apps pick it up automatically.
+            MindAtticCredentialStore.SetKey("claude", Current.AnthropicApiKey);
+        }
+
+        if (!settingsExisted) Save();
     }
 
     public void Save()
@@ -106,6 +126,13 @@ public class SettingsService
         Directory.CreateDirectory(SettingsDir);
         var json = JsonSerializer.Serialize(Current, JsonOpts);
         File.WriteAllText(SettingsPath, json);
+
+        // Mirror the Anthropic key into the shared MindAttic.Legion LLM store so a
+        // change made via this app is immediately visible to every other MindAttic app.
+        if (!string.IsNullOrWhiteSpace(Current.AnthropicApiKey))
+        {
+            MindAtticCredentialStore.SetKey("claude", Current.AnthropicApiKey);
+        }
     }
 
     public void SetTheme(string theme)

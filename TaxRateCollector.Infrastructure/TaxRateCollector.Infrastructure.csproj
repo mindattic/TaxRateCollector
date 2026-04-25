@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TaxRateCollector.Core\TaxRateCollector.Core.csproj" />
+    <ProjectReference Include="..\..\MindAttic.Legion\MindAttic.Legion\MindAttic.Legion.csproj" />
   </ItemGroup>
 
   <ItemGroup>
