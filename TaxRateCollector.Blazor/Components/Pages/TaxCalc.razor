@@ -9,73 +9,95 @@
 
 <PageTitle>Tax Calculator — TaxRateCollector</PageTitle>
 
-<h1>Tax Calculator</h1>
+<h1 id="calc-title">Tax Calculator</h1>
 
-<div class="calc-form">
+<form class="calc-form" role="form" aria-labelledby="calc-title" @onsubmit="CalculateAsync" @onsubmit:preventDefault="true">
     <div class="form-group">
-        <label>Jurisdiction</label>
-        <input class="filter-input" placeholder="Type to search…" value="@searchText" @oninput="OnSearchInput" />
+        <label for="calc-jurisdiction">Jurisdiction</label>
+        <input id="calc-jurisdiction"
+               class="filter-input"
+               type="search"
+               role="combobox"
+               aria-expanded="@((suggestions.Count > 0 && !jurisdictionSelected).ToString().ToLower())"
+               aria-controls="calc-jurisdiction-list"
+               aria-autocomplete="list"
+               aria-required="true"
+               required
+               placeholder="Type to search…"
+               value="@searchText"
+               @oninput="OnSearchInput" />
         @if (suggestions.Count > 0 && !jurisdictionSelected)
         {
-            <div class="suggestions">
+            <ul id="calc-jurisdiction-list" class="suggestions" role="listbox" aria-label="Jurisdiction suggestions">
                 @foreach (var j in suggestions)
                 {
-                    <div class="suggestion-item" @onclick="() => SelectJurisdiction(j)">
+                    <li class="suggestion-item"
+                        role="option"
+                        tabindex="0"
+                        aria-selected="false"
+                        @onclick="() => SelectJurisdiction(j)"
+                        @onkeydown="ev => OnSuggestKey(ev, j)">
                         @j.Name (@j.StateCode) — @j.Type
-                    </div>
+                    </li>
                 }
-            </div>
+            </ul>
         }
         @if (jurisdictionSelected)
         {
-            <div class="selected-tag">
-                @selectedName
-                <button class="btn-tiny" @onclick="ClearJurisdiction">✕</button>
+            <div class="selected-tag" role="status" aria-live="polite">
+                <span>@selectedName</span>
+                <button type="button"
+                        class="btn-tiny"
+                        aria-label="Clear selected jurisdiction"
+                        @onclick="ClearJurisdiction">
+                    <span aria-hidden="true">✕</span>
+                </button>
             </div>
         }
     </div>
 
     <div class="form-row">
         <div class="form-group">
-            <label>Price ($)</label>
-            <input class="filter-input" type="number" min="0" step="0.01" @bind="price" />
+            <label for="calc-price">Price ($)</label>
+            <input id="calc-price" class="filter-input" type="number" inputmode="decimal" min="0" step="0.01" required aria-required="true" @bind="price" />
         </div>
         <div class="form-group">
-            <label>Quantity</label>
-            <input class="filter-input" type="number" min="1" @bind="quantity" />
+            <label for="calc-qty">Quantity</label>
+            <input id="calc-qty" class="filter-input" type="number" inputmode="numeric" min="1" required aria-required="true" @bind="quantity" />
         </div>
     </div>
 
     <details style="margin-top:8px">
         <summary style="cursor:pointer;color:var(--muted)">Advanced options</summary>
-        <div class="form-row" style="margin-top:8px">
+        <fieldset class="form-row" style="margin-top:8px;border:0;padding:0">
+            <legend class="sr-only">Advanced calculation options</legend>
             <div class="form-group">
-                <label>ABV % (for excise)</label>
-                <input class="filter-input" type="number" min="0" max="100" step="0.1" @bind="abvPct" placeholder="e.g. 5" />
+                <label for="calc-abv">ABV % (for excise)</label>
+                <input id="calc-abv" class="filter-input" type="number" inputmode="decimal" min="0" max="100" step="0.1" @bind="abvPct" placeholder="e.g. 5" />
             </div>
             <div class="form-group">
-                <label>Volume per unit (gal)</label>
-                <input class="filter-input" type="number" min="0" step="0.001" @bind="volumeGal" placeholder="e.g. 0.5" />
+                <label for="calc-vol">Volume per unit (gal)</label>
+                <input id="calc-vol" class="filter-input" type="number" inputmode="decimal" min="0" step="0.001" @bind="volumeGal" placeholder="e.g. 0.5" />
             </div>
             <div class="form-group">
-                <label>Weight per unit (oz)</label>
-                <input class="filter-input" type="number" min="0" step="0.001" @bind="weightOz" placeholder="e.g. 12" />
+                <label for="calc-wt">Weight per unit (oz)</label>
+                <input id="calc-wt" class="filter-input" type="number" inputmode="decimal" min="0" step="0.001" @bind="weightOz" placeholder="e.g. 12" />
             </div>
             <div class="form-group">
-                <label>Wholesale price ($)</label>
-                <input class="filter-input" type="number" min="0" step="0.01" @bind="wholesalePrice" placeholder="for OTP/cigar rates" />
+                <label for="calc-wholesale">Wholesale price ($)</label>
+                <input id="calc-wholesale" class="filter-input" type="number" inputmode="decimal" min="0" step="0.01" @bind="wholesalePrice" placeholder="for OTP/cigar rates" />
             </div>
-        </div>
+        </fieldset>
     </details>
 
-    <button class="btn-primary" @onclick="CalculateAsync" disabled="@(!CanCalculate)" style="margin-top:12px">Calculate</button>
-</div>
+    <button type="submit" class="btn-primary" disabled="@(!CanCalculate)" style="margin-top:12px">Calculate</button>
+</form>
 
 @if (result is not null)
 {
-    <div class="calc-result">
-        <div class="result-label">Tax to Collect (retailer-remitted)</div>
-        <div class="result-value">@result.TotalTaxAmount.ToString("C")</div>
+    <section class="calc-result" aria-labelledby="calc-result-label" role="region" aria-live="polite">
+        <div id="calc-result-label" class="result-label">Tax to Collect (retailer-remitted)</div>
+        <div class="result-value" aria-live="polite">@result.TotalTaxAmount.ToString("C")</div>
         <div class="result-detail">
             <span>Jurisdiction: <strong>@result.JurisdictionName</strong></span>
             <span>Combined Rate: <strong>@result.TotalPercentageRate.ToString("P4")</strong></span>
@@ -90,21 +112,22 @@
         }
         @if (result.RateLines.Count > 0)
         {
-            <table class="data-table" style="margin-top:12px">
+            <table class="data-table" style="margin-top:12px" aria-label="Rate breakdown for @result.JurisdictionName">
+                <caption class="sr-only">Per-rate breakdown for the selected jurisdiction</caption>
                 <thead>
                     <tr>
-                        <th>Rate Name</th><th>Rate</th><th>Basis</th><th>Compound</th>
-                        <th>Sale Context</th><th>Remittance</th><th>Tax Amount</th><th>Effective</th>
+                        <th scope="col">Rate Name</th><th scope="col">Rate</th><th scope="col">Basis</th><th scope="col">Compound</th>
+                        <th scope="col">Sale Context</th><th scope="col">Remittance</th><th scope="col">Tax Amount</th><th scope="col">Effective</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var line in result.RateLines)
                     {
                         <tr class="@(line.IsIncludedInPrice ? "row-muted" : "")">
-                            <td>
+                            <th scope="row">
                                 @line.RateName
-                                @if (line.IsIncludedInPrice) { <span class="badge badge-muted" title="Already embedded in wholesale price">embedded</span> }
-                            </td>
+                                @if (line.IsIncludedInPrice) { <span class="badge badge-muted" title="Already embedded in wholesale price" aria-label="Already embedded in wholesale price">embedded</span> }
+                            </th>
                             <td>@(line.Basis == TaxRateCollector.Core.Enums.RateBasis.Percentage || line.Basis == TaxRateCollector.Core.Enums.RateBasis.PercentageOfWholesale ? line.Rate.ToString("P4") : line.Rate.ToString("F4") + " " + line.Unit)</td>
                             <td>@line.Basis</td>
                             <td>@(line.IsCompound ? "✓" : "")</td>
@@ -117,11 +140,11 @@
                 </tbody>
             </table>
         }
-    </div>
+    </section>
 }
 @if (noRate)
 {
-    <p class="muted">No current rate found for the selected jurisdiction.</p>
+    <p class="muted" role="status" aria-live="polite">No current rate found for the selected jurisdiction.</p>
 }
 
 @code {
@@ -185,6 +208,11 @@
         searchText = selectedName;
         jurisdictionSelected = true;
         suggestions = [];
+    }
+
+    private void OnSuggestKey(KeyboardEventArgs e, JurisdictionOption j)
+    {
+        if (e.Key == "Enter" || e.Key == " " || e.Code == "Space") SelectJurisdiction(j);
     }
 
     private void ClearJurisdiction()

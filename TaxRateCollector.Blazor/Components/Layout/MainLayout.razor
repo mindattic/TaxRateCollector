@@ -5,27 +5,41 @@
 @inject IDbContextFactory<AppDbContext> DbFactory
 @rendermode InteractiveServer
 
+<a href="#main-content" class="skip-link">Skip to main content</a>
+
 <div class="app-shell">
-    <header class="app-header">
+    <header class="app-header" role="banner">
         <div class="brand">
-            <span class="brand-icon">◈</span>
+            <span class="brand-icon" aria-hidden="true">◈</span>
             <span class="brand-name">TaxRateCollector</span>
         </div>
-        <div class="user-nav">
+        <div class="user-nav" aria-label="User account">
             <AuthorizeView>
                 <Authorized>
                     <div class="user-dropdown @(dropdownOpen ? "user-dropdown-open" : "")">
-                        <button class="user-nav-link" @onclick="ToggleDropdown" @onclick:stopPropagation="true">
-                            👤 @context.User.Identity?.Name ▾
+                        <button type="button"
+                                class="user-nav-link"
+                                aria-haspopup="menu"
+                                aria-expanded="@dropdownOpen.ToString().ToLower()"
+                                aria-controls="user-menu"
+                                @onclick="ToggleDropdown"
+                                @onclick:stopPropagation="true">
+                            <span aria-hidden="true">👤</span>
+                            <span>@context.User.Identity?.Name</span>
+                            <span aria-hidden="true">▾</span>
                         </button>
                         @if (dropdownOpen)
                         {
-                            <div class="user-dropdown-menu" @onclick:stopPropagation="true">
-                                <a href="/settings" class="user-dropdown-item" @onclick="CloseDropdown">⚙ Settings</a>
+                            <div id="user-menu" class="user-dropdown-menu" role="menu" @onclick:stopPropagation="true">
+                                <a href="/settings" class="user-dropdown-item" role="menuitem" @onclick="CloseDropdown">
+                                    <span aria-hidden="true">⚙</span> Settings
+                                </a>
                                 <form method="post" action="/logout" style="margin:0">
-                            <AntiforgeryToken />
-                            <button type="submit" class="user-dropdown-item user-dropdown-item-danger">⏻ Log Out</button>
-                        </form>
+                                    <AntiforgeryToken />
+                                    <button type="submit" class="user-dropdown-item user-dropdown-item-danger" role="menuitem">
+                                        <span aria-hidden="true">⏻</span> Log Out
+                                    </button>
+                                </form>
                             </div>
                         }
                     </div>
@@ -38,20 +52,20 @@
         </div>
     </header>
 
-    <nav class="tab-bar">
+    <nav class="tab-bar" aria-label="Primary">
         <NavLink class="tab" href="" Match="NavLinkMatch.All">
-            <span class="tab-icon">◈</span>
+            <span class="tab-icon" aria-hidden="true">◈</span>
             <span class="tab-label">Jurisdictions</span>
         </NavLink>
         <NavLink class="tab" href="glossary">
-            <span class="tab-icon">☰</span>
+            <span class="tab-icon" aria-hidden="true">☰</span>
             <span class="tab-label">Glossary</span>
         </NavLink>
 
         <AuthorizeView>
             <Authorized>
                 <NavLink class="tab" href="logs">
-                    <span class="tab-icon">◎</span>
+                    <span class="tab-icon" aria-hidden="true">◎</span>
                     <span class="tab-label">Logs</span>
                 </NavLink>
             </Authorized>
@@ -60,32 +74,34 @@
         <AuthorizeView Roles="Administrator">
             <Authorized>
                 <NavLink class="tab tab-admin" href="review">
-                    <span class="tab-icon">✓</span>
+                    <span class="tab-icon" aria-hidden="true">✓</span>
                     <span class="tab-label">
                         Review
                         @if (reviewCount > 0)
                         {
-                            <span class="tab-badge">@reviewCount</span>
+                            <span class="tab-badge" aria-label="@reviewCount items pending review">@reviewCount</span>
                         }
                     </span>
                 </NavLink>
                 <NavLink class="tab tab-admin" href="setup">
-                    <span class="tab-icon">⚒</span>
+                    <span class="tab-icon" aria-hidden="true">⚒</span>
                     <span class="tab-label">Setup</span>
                 </NavLink>
             </Authorized>
         </AuthorizeView>
     </nav>
 
-    <main class="tab-content">
+    <main id="main-content" class="tab-content" tabindex="-1">
         @Body
     </main>
 </div>
 
-<div id="blazor-error-ui" data-nosnippet>
+<div id="blazor-error-ui" data-nosnippet role="alert" aria-live="assertive">
     An unhandled error has occurred.
     <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
+    <button type="button" class="dismiss" aria-label="Dismiss error">
+        <span aria-hidden="true">🗙</span>
+    </button>
 </div>
 
 @code {

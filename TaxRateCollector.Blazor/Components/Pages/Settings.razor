@@ -13,11 +13,11 @@
 
 <div class="settings-grid">
 
-    <section class="settings-section">
-        <h2>Appearance</h2>
+    <section class="settings-section" aria-labelledby="appearance-heading">
+        <h2 id="appearance-heading">Appearance</h2>
         <div class="setting-row">
-            <label class="setting-label">Theme</label>
-            <select class="setting-input" style="max-width:220px"
+            <label class="setting-label" for="settings-theme">Theme</label>
+            <select id="settings-theme" class="setting-input" style="max-width:220px"
                     value="@settings.Current.Theme"
                     @onchange="e => SetTheme(e.Value?.ToString() ?? settings.Current.Theme)">
                 <option value="light">☀ Light</option>
@@ -32,8 +32,8 @@
             </select>
         </div>
         <div class="setting-row">
-            <label class="setting-label">Font</label>
-            <select class="setting-input" style="max-width:220px"
+            <label class="setting-label" for="settings-font">Font</label>
+            <select id="settings-font" class="setting-input" style="max-width:220px"
                     value="@settings.Current.Font"
                     @onchange="e => SetFont(e.Value?.ToString() ?? settings.Current.Font)">
                 <option value="outfit">Outfit</option>
@@ -47,8 +47,8 @@
     </section>
 
     <div class="settings-actions">
-        <button class="btn-primary" @onclick="Save">Save Settings</button>
-        @if (saved) { <span class="save-confirm">✓ Saved</span> }
+        <button type="button" class="btn-primary" @onclick="Save">Save Settings</button>
+        <span class="save-confirm" role="status" aria-live="polite">@(saved ? "✓ Saved" : "")</span>
     </div>
 
 </div>

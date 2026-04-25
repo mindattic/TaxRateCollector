@@ -1,3 +1,107 @@
+/* ── Accessibility utilities ─────────────────────────────────────────────── */
+
+/* Visually hidden but available to screen readers (WCAG SC 1.3.1, 4.1.2). */
+.sr-only {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Skip-to-content link — only visible when focused (WCAG SC 2.4.1). */
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 8px;
+    z-index: 10000;
+    background: var(--accent, #1b6ec2);
+    color: #fff;
+    padding: 8px 14px;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: top 0.15s ease;
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+    top: 8px;
+    outline: 3px solid #fff;
+    outline-offset: 2px;
+}
+
+/* Universal focus-visible outline so keyboard users can always see focus
+   (WCAG SC 2.4.7). Mouse clicks won't trigger it. */
+:focus-visible {
+    outline: 2px solid var(--accent, #1b6ec2);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+/* Don't strip outlines on inputs/buttons for keyboard users. */
+button:focus-visible,
+[role="button"]:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid var(--accent, #1b6ec2);
+    outline-offset: 2px;
+}
+
+/* Make <main> programmatically focusable without a visible outline ring. */
+main[tabindex="-1"]:focus {
+    outline: none;
+}
+
+/* Sortable column headers — pointer + clear focus ring. */
+.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.sortable:focus-visible {
+    outline: 2px solid var(--accent, #1b6ec2);
+    outline-offset: -2px;
+}
+
+/* Tree node keyboard interaction (Jurisdictions). */
+.jnode:focus-visible {
+    outline: 2px solid var(--accent, #1b6ec2);
+    outline-offset: -2px;
+}
+
+/* Honor reduced-motion preferences (WCAG SC 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Forced-colors / Windows High Contrast support — preserve visible borders. */
+@media (forced-colors: active) {
+    button,
+    .btn-primary,
+    .btn-secondary,
+    .btn-tiny,
+    .tab,
+    .cat-chip,
+    .state-tile {
+        border: 1px solid CanvasText;
+    }
+}
+
 html, body {
     font-family: var(--app-font, 'Outfit', system-ui, sans-serif);
     font-size: var(--app-font-size, 17.5px);

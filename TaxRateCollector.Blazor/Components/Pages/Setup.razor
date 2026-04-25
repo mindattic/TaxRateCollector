@@ -41,17 +41,17 @@
 @{ var failedUrlCount = urlResults.Values.Count(v => !v); }
 @if (urlResults.Count > 0 && failedUrlCount > 0)
 {
-    <div class="ds-alert ds-alert-error">
+    <div class="ds-alert ds-alert-error" role="alert">
         <strong>@failedUrlCount source(s) unreachable</strong> — update the broken URLs below and save before the next startup.
     </div>
 }
 else if (urlResults.Count > 0)
 {
-    <div class="ds-alert ds-alert-ok">All @urlResults.Count data sources reachable.</div>
+    <div class="ds-alert ds-alert-ok" role="status">All @urlResults.Count data sources reachable.</div>
 }
 else
 {
-    <div class="ds-alert ds-alert-warn">Data sources not yet validated — use the <em>Check Sources</em> button in the Data Source URLs card below.</div>
+    <div class="ds-alert ds-alert-warn" role="status">Data sources not yet validated — use the <em>Check Sources</em> button in the Data Source URLs card below.</div>
 }
 
 <!-- ── Data Source URLs card ─────────────────────────────────────────────────── -->

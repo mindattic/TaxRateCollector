@@ -5,19 +5,25 @@
 <PageTitle>Glossary — TaxRateCollector</PageTitle>
 
 <div class="page-header">
-    <h1 class="page-title">Glossary</h1>
+    <h1 id="glossary-title" class="page-title">Glossary</h1>
     <p class="page-sub">Definitions for every term, standard, and acronym used in this application.</p>
 </div>
 
-<div class="glossary-search-bar">
-    <input class="setting-input" placeholder="Filter terms…"
+<div class="glossary-search-bar" role="search" aria-label="Filter glossary terms">
+    <label for="glossary-search" class="sr-only">Filter glossary terms</label>
+    <input id="glossary-search"
+           class="setting-input"
+           type="search"
+           placeholder="Filter terms…"
+           aria-controls="glossary-results"
            @bind="search" @bind:event="oninput" />
 </div>
 
+<div id="glossary-results" aria-live="polite">
 @foreach (var grp in Sections.Where(s => s.Terms.Any(t => Matches(t))))
 {
-    <div class="glossary-section">
-        <h2 class="glossary-section-title">@grp.Title</h2>
+    <section class="glossary-section" aria-labelledby="@($"glossary-section-{Slug(grp.Title)}")">
+        <h2 id="@($"glossary-section-{Slug(grp.Title)}")" class="glossary-section-title">@grp.Title</h2>
         <dl class="glossary-list">
             @foreach (var term in grp.Terms.Where(t => Matches(t)))
             {
@@ -26,24 +32,25 @@
                         @term.Name
                         @if (!string.IsNullOrEmpty(term.Abbr))
                         {
-                            <span class="glossary-abbr">(@term.Abbr)</span>
+                            <span class="glossary-abbr"> (<abbr title="@term.Name">@term.Abbr</abbr>)</span>
                         }
                         @if (!string.IsNullOrEmpty(term.Badge))
                         {
-                            <span class="glossary-badge @term.BadgeClass">@term.Badge</span>
+                            <span class="glossary-badge @term.BadgeClass" aria-label="@term.Badge">@term.Badge</span>
                         }
                     </dt>
                     <dd class="glossary-def">@((MarkupString)term.Html)</dd>
                 </div>
             }
         </dl>
-    </div>
+    </section>
 }
 
 @if (!Sections.Any(s => s.Terms.Any(t => Matches(t))))
 {
-    <div class="empty-state">No terms match "<strong>@search</strong>".</div>
+    <div class="empty-state" role="status">No terms match "<strong>@search</strong>".</div>
 }
+</div>
 
 @code {
     private string search = "";

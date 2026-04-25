@@ -12,11 +12,17 @@
 <div class="page-header">
     <div class="page-header-row">
         <div>
-            <h1 class="page-title">Application Logs</h1>
-            <p class="page-sub">@totalCount records · auto-refreshes every 10 s</p>
+            <h1 id="logs-title" class="page-title">Application Logs</h1>
+            <p class="page-sub" aria-live="polite">@totalCount records · auto-refreshes every 10 s</p>
         </div>
         <div class="header-actions">
-            <select class="btn-export-select" value="@clearRange" @onchange="OnClearChange" disabled="@busy">
+            <label for="logs-clear" class="sr-only">Clear logs</label>
+            <select id="logs-clear"
+                    class="btn-export-select"
+                    value="@clearRange"
+                    @onchange="OnClearChange"
+                    disabled="@busy"
+                    aria-busy="@busy.ToString().ToLower()">
                 <option value="">@(busy ? "Clearing…" : "Clear logs ▾")</option>
                 <option value="hour">Last hour</option>
                 <option value="day">Last 24 hours</option>
@@ -29,50 +35,64 @@
 </div>
 
 <!-- Filter bar -->
-<div class="log-filter-bar">
-    <div class="log-level-pills">
+<div class="log-filter-bar" role="search" aria-label="Filter log entries">
+    <div class="log-level-pills" role="group" aria-label="Filter by log level">
         @foreach (var lvl in levels)
         {
-            <button class="log-level-pill log-pill-@lvl.ToLower() @(levelFilter == lvl ? "log-pill-active" : "")"
+            <button type="button"
+                    class="log-level-pill log-pill-@lvl.ToLower() @(levelFilter == lvl ? "log-pill-active" : "")"
+                    aria-pressed="@((levelFilter == lvl).ToString().ToLower())"
                     @onclick="() => SetLevel(lvl)">@lvl</button>
         }
     </div>
-    <input class="setting-input log-search" placeholder="Search message or context…"
+    <label for="logs-search" class="sr-only">Search log messages or source</label>
+    <input id="logs-search"
+           class="setting-input log-search"
+           type="search"
+           placeholder="Search message or context…"
+           aria-controls="logs-table"
            @bind="search" @bind:event="oninput" @bind:after="OnSearchInput" />
 </div>
 
 @if (loading)
 {
-    <div class="loading-state">Loading…</div>
+    <div class="loading-state" role="status" aria-live="polite">Loading…</div>
 }
 else if (entries.Count == 0)
 {
-    <div class="muted" style="padding:2rem;text-align:center">No log entries found.</div>
+    <div class="muted" style="padding:2rem;text-align:center" role="status" aria-live="polite">No log entries found.</div>
 }
 else
 {
     <div class="log-table-wrap">
-        <table class="data-table log-table">
+        <table id="logs-table" class="data-table log-table" aria-labelledby="logs-title">
+            <caption class="sr-only">Application log entries — click a row with an exception to expand its stack trace.</caption>
             <thead>
                 <tr>
-                    <th style="width:160px">Timestamp</th>
-                    <th style="width:140px">Level</th>
-                    <th>Message</th>
-                    <th style="width:220px">Source</th>
+                    <th scope="col" style="width:160px">Timestamp</th>
+                    <th scope="col" style="width:140px">Level</th>
+                    <th scope="col">Message</th>
+                    <th scope="col" style="width:220px">Source</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach (var e in entries)
                 {
-                    <tr class="log-row @(e.Exception is not null ? "log-row-expandable" : "")"
-                        @onclick="() => ToggleExpand(e.Id)">
+                    var isExpandable = e.Exception is not null;
+                    var isExpanded = expanded.Contains(e.Id);
+                    <tr class="log-row @(isExpandable ? "log-row-expandable" : "")"
+                        tabindex="@(isExpandable ? 0 : -1)"
+                        role="@(isExpandable ? "button" : null)"
+                        aria-expanded="@(isExpandable ? isExpanded.ToString().ToLower() : null)"
+                        @onclick="() => ToggleExpand(e.Id)"
+                        @onkeydown="ev => OnRowKey(ev, e.Id, isExpandable)">
                         <td class="mono" style="font-size:.73rem">@e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</td>
-                        <td><span class="log-badge log-badge-@e.Level.ToLower()">@e.Level</span></td>
+                        <td><span class="log-badge log-badge-@e.Level.ToLower()" aria-label="Level: @e.Level">@e.Level</span></td>
                         <td class="log-message">
                             @e.Message
-                            @if (expanded.Contains(e.Id) && e.Exception is not null)
+                            @if (isExpanded && e.Exception is not null)
                             {
-                                <pre class="log-exception">@e.Exception</pre>
+                                <pre class="log-exception" tabindex="0">@e.Exception</pre>
                             }
                         </td>
                         <td class="mono muted" style="font-size:.70rem">@TrimSource(e.SourceContext)</td>
@@ -83,16 +103,20 @@ else
     </div>
 
     <!-- Pagination -->
-    <div class="log-pagination">
-        <button class="btn-tiny" @onclick="PrevPage" disabled="@(page == 0)">← Prev</button>
-        <span class="muted small">Page @(page + 1) of @TotalPages · @totalCount entries</span>
-        <button class="btn-tiny" @onclick="NextPage" disabled="@(page >= TotalPages - 1)">Next →</button>
-    </div>
+    <nav class="log-pagination" aria-label="Log pagination">
+        <button type="button" class="btn-tiny" @onclick="PrevPage" disabled="@(page == 0)" aria-label="Previous page">
+            <span aria-hidden="true">←</span> Prev
+        </button>
+        <span class="muted small" role="status" aria-live="polite">Page @(page + 1) of @TotalPages · @totalCount entries</span>
+        <button type="button" class="btn-tiny" @onclick="NextPage" disabled="@(page >= TotalPages - 1)" aria-label="Next page">
+            Next <span aria-hidden="true">→</span>
+        </button>
+    </nav>
 }
 
 @if (status is not null)
 {
-    <div class="auth-error" style="max-width:480px;margin-top:.5rem">@status</div>
+    <div class="auth-error" style="max-width:480px;margin-top:.5rem" role="alert">@status</div>
 }
 
 @code {
@@ -185,6 +209,12 @@ else
     private void ToggleExpand(long id)
     {
         if (!expanded.Remove(id)) expanded.Add(id);
+    }
+
+    private void OnRowKey(KeyboardEventArgs e, long id, bool isExpandable)
+    {
+        if (!isExpandable) return;
+        if (e.Key == "Enter" || e.Key == " " || e.Code == "Space") ToggleExpand(id);
     }
 
     private async Task OnClearChange(ChangeEventArgs e)

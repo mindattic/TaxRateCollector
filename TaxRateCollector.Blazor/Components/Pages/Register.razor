@@ -8,35 +8,62 @@
 <PageTitle>Create Account — TaxRateCollector</PageTitle>
 
 <div class="auth-shell">
-    <div class="auth-card">
-        <div class="auth-logo">◈ TaxRateCollector</div>
-        <h2 class="auth-title">Create your account</h2>
+    <div class="auth-card" role="region" aria-labelledby="register-title">
+        <div class="auth-logo" aria-hidden="true">◈ TaxRateCollector</div>
+        <h2 id="register-title" class="auth-title">Create your account</h2>
         <p class="auth-sub muted">Browse the full jurisdiction hierarchy. Subscribe by state to unlock rates and evidence.</p>
 
         @if (errors.Count > 0)
         {
-            <div class="auth-error">
+            <div class="auth-error" role="alert" id="register-errors" aria-live="assertive">
                 @foreach (var e in errors) { <div>@e</div> }
             </div>
         }
 
         <div class="auth-field">
-            <label>Email</label>
-            <input type="email" class="setting-input" placeholder="you@example.com"
+            <label for="register-email">Email</label>
+            <input id="register-email"
+                   type="email"
+                   class="setting-input"
+                   placeholder="you@example.com"
+                   autocomplete="email"
+                   required
+                   aria-required="true"
+                   aria-describedby="@(errors.Count > 0 ? "register-errors" : null)"
                    @bind="email" @bind:event="oninput" />
         </div>
         <div class="auth-field">
-            <label>Password <span class="muted">(min 8 chars, at least one digit)</span></label>
-            <input type="password" class="setting-input" placeholder="••••••••"
+            <label for="register-password">
+                Password <span class="muted" id="register-password-hint">(min 8 chars, at least one digit)</span>
+            </label>
+            <input id="register-password"
+                   type="password"
+                   class="setting-input"
+                   placeholder="••••••••"
+                   autocomplete="new-password"
+                   required
+                   aria-required="true"
+                   aria-describedby="register-password-hint"
+                   minlength="8"
                    @bind="password" @bind:event="oninput" />
         </div>
         <div class="auth-field">
-            <label>Confirm password</label>
-            <input type="password" class="setting-input" placeholder="••••••••"
+            <label for="register-confirm">Confirm password</label>
+            <input id="register-confirm"
+                   type="password"
+                   class="setting-input"
+                   placeholder="••••••••"
+                   autocomplete="new-password"
+                   required
+                   aria-required="true"
                    @bind="confirm" @bind:event="oninput" />
         </div>
 
-        <button class="btn-primary auth-btn" @onclick="Submit" disabled="@busy">
+        <button type="button"
+                class="btn-primary auth-btn"
+                @onclick="Submit"
+                disabled="@busy"
+                aria-busy="@busy.ToString().ToLower()">
             @(busy ? "Creating account…" : "Create Account")
         </button>
 

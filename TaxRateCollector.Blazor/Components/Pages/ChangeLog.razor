@@ -9,10 +9,11 @@
 
 <PageTitle>Change Log — TaxRateCollector</PageTitle>
 
-<h1>Change Log</h1>
+<h1 id="changelog-title">Change Log</h1>
 
-<div class="filter-row">
-    <select class="filter-select" @bind="typeFilter">
+<div class="filter-row" role="search" aria-label="Filter change log">
+    <label for="changelog-type" class="sr-only">Change type</label>
+    <select id="changelog-type" class="filter-select" @bind="typeFilter">
         <option value="">All Types</option>
         <option value="RateChanged">Rate Changed</option>
         <option value="NewJurisdiction">New Jurisdiction</option>
@@ -21,36 +22,39 @@
     <label class="filter-check">
         <input type="checkbox" @bind="unackOnly" /> Unacknowledged only
     </label>
-    <button class="btn-secondary" @onclick="AcknowledgeAllAsync">Acknowledge All</button>
+    <button type="button" class="btn-secondary" @onclick="AcknowledgeAllAsync">Acknowledge All</button>
 </div>
 
 @if (entries is null)
 {
-    <p class="muted">Loading…</p>
+    <p class="muted" role="status" aria-live="polite">Loading…</p>
 }
 else if (!Filtered.Any())
 {
-    <p class="muted">No changes found.</p>
+    <p class="muted" role="status" aria-live="polite">No changes found.</p>
 }
 else
 {
-    <div class="timeline">
+    <ol class="timeline" aria-labelledby="changelog-title">
         @foreach (var e in Filtered)
         {
-            <div class="timeline-item change-@e.ChangeType.ToString().ToLower()">
-                <div class="timeline-dot"></div>
+            <li class="timeline-item change-@e.ChangeType.ToString().ToLower()">
+                <div class="timeline-dot" aria-hidden="true"></div>
                 <div class="timeline-body">
                     <div class="timeline-header">
-                        <span class="badge badge-@e.ChangeType.ToString().ToLower()">@e.ChangeType</span>
+                        <span class="badge badge-@e.ChangeType.ToString().ToLower()" aria-label="Change type: @e.ChangeType">@e.ChangeType</span>
                         <strong>@e.Jurisdiction?.JurisdictionName (@e.Jurisdiction?.StateCode)</strong>
-                        <span class="muted">@e.DetectedAt</span>
+                        <time class="muted" datetime="@e.DetectedAt">@e.DetectedAt</time>
                         @if (!e.Acknowledged)
                         {
-                            <button class="btn-tiny" @onclick="() => AcknowledgeAsync(e.Id)">Dismiss</button>
+                            <button type="button"
+                                    class="btn-tiny"
+                                    aria-label="Dismiss change for @e.Jurisdiction?.JurisdictionName"
+                                    @onclick="() => AcknowledgeAsync(e.Id)">Dismiss</button>
                         }
                         else
                         {
-                            <span class="badge badge-ack">Acknowledged</span>
+                            <span class="badge badge-ack" aria-label="Already acknowledged">Acknowledged</span>
                         }
                     </div>
                     <div class="timeline-detail">
@@ -58,9 +62,9 @@ else
                         @if (e.NewRate.HasValue) { <span>Now: <strong>@e.NewRate.Value.ToString("P4")</strong></span> }
                     </div>
                 </div>
-            </div>
+            </li>
         }
-    </div>
+    </ol>
 }
 
 @code {

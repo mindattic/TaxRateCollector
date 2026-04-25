@@ -12,7 +12,7 @@
 <div class="page-header">
     <div class="page-header-row">
         <div>
-            <h1 class="page-title">Rate Law Review Queue</h1>
+            <h1 id="review-title" class="page-title">Rate Law Review Queue</h1>
             <p class="page-sub">
                 AI-extracted rates awaiting human approval.
                 Approve to make a rate live; reject to discard it.
@@ -22,7 +22,7 @@
         @if (pendingCount > 0)
         {
             <div class="header-actions">
-                <span class="review-count-badge">@pendingCount pending</span>
+                <span class="review-count-badge" aria-live="polite" aria-label="@pendingCount items pending review">@pendingCount pending</span>
             </div>
         }
     </div>
@@ -30,26 +30,30 @@
 
 @if (groups is null)
 {
-    <p class="muted">Loading…</p>
+    <p class="muted" role="status" aria-live="polite">Loading…</p>
 }
 else if (groups.Count == 0)
 {
-    <div class="review-empty">
-        <span class="review-empty-icon">✓</span>
+    <div class="review-empty" role="status" aria-live="polite">
+        <span class="review-empty-icon" aria-hidden="true">✓</span>
         <p>No rates pending review.</p>
     </div>
 }
 else
 {
     @* State filter *@
-    <div class="review-filter-bar">
-        <button class="review-filter-btn @(filterState == null ? "active" : "")"
+    <div class="review-filter-bar" role="group" aria-label="Filter review queue by state">
+        <button type="button"
+                class="review-filter-btn @(filterState == null ? "active" : "")"
+                aria-pressed="@((filterState == null).ToString().ToLower())"
                 @onclick="() => SetFilter(null)">
             All (@pendingCount)
         </button>
         @foreach (var g in groups)
         {
-            <button class="review-filter-btn @(filterState == g.StateCode ? "active" : "")"
+            <button type="button"
+                    class="review-filter-btn @(filterState == g.StateCode ? "active" : "")"
+                    aria-pressed="@((filterState == g.StateCode).ToString().ToLower())"
                     @onclick="() => SetFilter(g.StateCode)">
                 @g.StateCode (@g.Rates.Count)
             </button>
@@ -58,12 +62,14 @@ else
 
     @foreach (var g in groups.Where(g => filterState == null || g.StateCode == filterState))
     {
-        <div class="review-state-group">
+        <section class="review-state-group" aria-labelledby="review-state-@g.StateCode">
             <div class="review-state-header">
-                <span class="review-state-name">@g.StateCode — @g.StateName</span>
-                <button class="btn-secondary review-approve-all"
+                <h2 id="review-state-@g.StateCode" class="review-state-name">@g.StateCode — @g.StateName</h2>
+                <button type="button"
+                        class="btn-secondary review-approve-all"
                         @onclick="() => ApproveAll(g.StateCode)"
-                        disabled="@busy">
+                        disabled="@busy"
+                        aria-busy="@busy.ToString().ToLower()">
                     Approve All (@g.Rates.Count)
                 </button>
             </div>
@@ -97,56 +103,64 @@ else
                         @if (!string.IsNullOrEmpty(r.Conditions))
                         { <div class="review-conditions muted small">@r.Conditions</div> }
 
-                                        <div class="review-actions">
+                                        <div class="review-actions" role="group" aria-label="Review actions for @r.Name">
                             @if (!string.IsNullOrEmpty(r.EvidenceFileName))
                             {
-                                <button class="btn-secondary" @onclick="() => OpenViewer(r)">
-                                    📎 View Evidence
+                                <button type="button" class="btn-secondary" @onclick="() => OpenViewer(r)" aria-label="View evidence document for @r.Name">
+                                    <span aria-hidden="true">📎</span> View Evidence
                                 </button>
                             }
-                            <button class="btn-approve" @onclick="() => Approve(r)" disabled="@busy">
-                                ✓ Approve
+                            <button type="button" class="btn-approve" @onclick="() => Approve(r)" disabled="@busy" aria-label="Approve @r.Name">
+                                <span aria-hidden="true">✓</span> Approve
                             </button>
-                            <button class="btn-reject" @onclick="() => Reject(r)" disabled="@busy">
-                                ✕ Reject
+                            <button type="button" class="btn-reject" @onclick="() => Reject(r)" disabled="@busy" aria-label="Reject @r.Name">
+                                <span aria-hidden="true">✕</span> Reject
                             </button>
                         </div>
                     }
                     else
                     {
-                        <span class="muted small review-dismissed-label">@r.DismissedLabel</span>
+                        <span class="muted small review-dismissed-label" role="status">@r.DismissedLabel</span>
                     }
                 </div>
             }
-        </div>
+        </section>
     }
 }
 
 @if (!string.IsNullOrEmpty(statusMessage))
 {
-    <div class="review-status-toast">@statusMessage</div>
+    <div class="review-status-toast" role="status" aria-live="polite">@statusMessage</div>
 }
 
 @if (viewerRow is not null)
 {
-    <div class="review-viewer-backdrop" @onclick="CloseViewer">
+    <div class="review-viewer-backdrop"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="evidence-viewer-title"
+         @onclick="CloseViewer"
+         @onkeydown="OnViewerKey">
         <div class="review-viewer-modal" @onclick:stopPropagation="true">
             <div class="review-viewer-header">
-                <span class="review-viewer-title">@viewerRow.JurisdictionPath — @viewerRow.Name</span>
-                <button class="evidence-reader-close" @onclick="CloseViewer">✕</button>
+                <h2 id="evidence-viewer-title" class="review-viewer-title">@viewerRow.JurisdictionPath — @viewerRow.Name</h2>
+                <button type="button" class="evidence-reader-close" @onclick="CloseViewer" aria-label="Close evidence viewer">
+                    <span aria-hidden="true">✕</span>
+                </button>
             </div>
             <div class="review-viewer-body">
                 <iframe src="/evidence/@viewerRow.EvidenceFileName"
                         class="review-viewer-frame"
+                        title="Evidence document for @viewerRow.Name"
                         allow="fullscreen"
                         referrerpolicy="no-referrer"></iframe>
             </div>
-            <div class="review-viewer-actions">
-                <button class="btn-approve" @onclick="ApproveFromViewer" disabled="@busy">
-                    ✓ Approve
+            <div class="review-viewer-actions" role="group" aria-label="Review actions">
+                <button type="button" class="btn-approve" @onclick="ApproveFromViewer" disabled="@busy" aria-label="Approve @viewerRow.Name">
+                    <span aria-hidden="true">✓</span> Approve
                 </button>
-                <button class="btn-reject" @onclick="RejectFromViewer" disabled="@busy">
-                    ✕ Reject
+                <button type="button" class="btn-reject" @onclick="RejectFromViewer" disabled="@busy" aria-label="Reject @viewerRow.Name">
+                    <span aria-hidden="true">✕</span> Reject
                 </button>
             </div>
         </div>
@@ -163,6 +177,11 @@ else
 
     private void OpenViewer(ReviewRow row) { viewerRow = row; StateHasChanged(); }
     private void CloseViewer() { viewerRow = null; StateHasChanged(); }
+
+    private void OnViewerKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CloseViewer();
+    }
 
     private async Task ApproveFromViewer()
     {

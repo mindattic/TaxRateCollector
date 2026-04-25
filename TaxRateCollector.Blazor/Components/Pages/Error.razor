@@ -3,7 +3,8 @@
 
 <PageTitle>Error</PageTitle>
 
-<h1 class="text-danger">Error.</h1>
+<section role="alert" aria-labelledby="error-title">
+<h1 id="error-title" class="text-danger">Error.</h1>
 <h2 class="text-danger">An error occurred while processing your request.</h2>
 
 @if (ShowRequestId)
@@ -23,6 +24,7 @@
     For local debugging, enable the <strong>Development</strong> environment by setting the <strong>ASPNETCORE_ENVIRONMENT</strong> environment variable to <strong>Development</strong>
     and restarting the app.
 </p>
+</section>
 
 @code{
     [CascadingParameter]

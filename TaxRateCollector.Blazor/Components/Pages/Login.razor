@@ -3,30 +3,44 @@
 <PageTitle>Log In — TaxRateCollector</PageTitle>
 
 <div class="auth-shell">
-    <div class="auth-card">
-        <div class="auth-logo">◈ TaxRateCollector</div>
-        <h2 class="auth-title">Log in to your account</h2>
+    <div class="auth-card" role="region" aria-labelledby="login-title">
+        <div class="auth-logo" aria-hidden="true">◈ TaxRateCollector</div>
+        <h2 id="login-title" class="auth-title">Log in to your account</h2>
 
         @if (Error == "invalid")
         {
-            <div class="auth-error">Invalid email or password.</div>
+            <div class="auth-error" role="alert" id="login-error">Invalid email or password.</div>
         }
         else if (Error == "locked")
         {
-            <div class="auth-error">Account locked. Try again later.</div>
+            <div class="auth-error" role="alert" id="login-error">Account locked. Try again later.</div>
         }
 
-        <form method="post" action="/login-submit">
+        <form method="post" action="/login-submit" aria-describedby="@(Error is null ? null : "login-error")">
             <AntiforgeryToken />
             <input type="hidden" name="returnUrl" value="@ReturnUrl" />
 
             <div class="auth-field">
-                <label>Email</label>
-                <input type="email" name="email" class="setting-input" placeholder="you@example.com" autocomplete="username" />
+                <label for="login-email">Email</label>
+                <input id="login-email"
+                       type="email"
+                       name="email"
+                       class="setting-input"
+                       placeholder="you@example.com"
+                       autocomplete="username"
+                       required
+                       aria-required="true" />
             </div>
             <div class="auth-field">
-                <label>Password</label>
-                <input type="password" name="password" class="setting-input" placeholder="••••••••" autocomplete="current-password" />
+                <label for="login-password">Password</label>
+                <input id="login-password"
+                       type="password"
+                       name="password"
+                       class="setting-input"
+                       placeholder="••••••••"
+                       autocomplete="current-password"
+                       required
+                       aria-required="true" />
             </div>
 
             <button type="submit" class="btn-primary auth-btn">Log In</button>

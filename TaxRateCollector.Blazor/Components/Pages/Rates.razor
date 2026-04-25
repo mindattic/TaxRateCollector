@@ -9,47 +9,55 @@
 
 <PageTitle>Rates — TaxRateCollector</PageTitle>
 
-<h1>Rates Browser</h1>
+<h1 id="rates-title">Rates Browser</h1>
 
-<div class="filter-row">
-    <input class="filter-input" placeholder="Search jurisdiction…" @bind="search" @bind:event="oninput" />
-    <select class="filter-select" @bind="stateFilter">
+<div class="filter-row" role="search" aria-label="Filter rates">
+    <label for="rates-search" class="sr-only">Search jurisdiction</label>
+    <input id="rates-search"
+           class="filter-input"
+           type="search"
+           placeholder="Search jurisdiction…"
+           aria-controls="rates-table"
+           @bind="search" @bind:event="oninput" />
+    <label for="rates-state" class="sr-only">Filter by state</label>
+    <select id="rates-state" class="filter-select" aria-controls="rates-table" @bind="stateFilter">
         <option value="">All States</option>
         <option value="IL">Illinois</option>
         <option value="CA">California</option>
         <option value="TX">Texas</option>
     </select>
-    <button class="btn-secondary" @onclick="ExportCsv">Export CSV</button>
+    <button type="button" class="btn-secondary" @onclick="ExportCsv">Export CSV</button>
 </div>
 
 @if (rates is null)
 {
-    <p class="muted">Loading…</p>
+    <p class="muted" role="status" aria-live="polite">Loading…</p>
 }
 else if (rates.Count == 0)
 {
-    <p class="muted">No rates found.</p>
+    <p class="muted" role="status" aria-live="polite">No rates found.</p>
 }
 else
 {
-    <table class="data-table">
+    <table id="rates-table" class="data-table" aria-labelledby="rates-title">
+        <caption class="sr-only">Current tax rates by jurisdiction. Activate a column header to sort.</caption>
         <thead>
             <tr>
-                <th @onclick='() => SetSort("name")' class="sortable">Jurisdiction @SortIcon("name")</th>
-                <th @onclick='() => SetSort("state")' class="sortable">State @SortIcon("state")</th>
-                <th @onclick='() => SetSort("type")' class="sortable">Type @SortIcon("type")</th>
-                <th @onclick='() => SetSort("rate")' class="sortable">Rate @SortIcon("rate")</th>
-                <th>Rate Type</th>
-                <th>Effective</th>
-                <th>Scraped</th>
-                <th>Statute / Conditions</th>
+                <th scope="col" @onclick='() => SetSort("name")'  class="sortable" aria-sort="@SortAttr("name")"  tabindex="0" role="columnheader" @onkeydown='e => OnSortKey(e, "name")'>Jurisdiction <span aria-hidden="true">@SortIcon("name")</span></th>
+                <th scope="col" @onclick='() => SetSort("state")' class="sortable" aria-sort="@SortAttr("state")" tabindex="0" role="columnheader" @onkeydown='e => OnSortKey(e, "state")'>State <span aria-hidden="true">@SortIcon("state")</span></th>
+                <th scope="col" @onclick='() => SetSort("type")'  class="sortable" aria-sort="@SortAttr("type")"  tabindex="0" role="columnheader" @onkeydown='e => OnSortKey(e, "type")'>Type <span aria-hidden="true">@SortIcon("type")</span></th>
+                <th scope="col" @onclick='() => SetSort("rate")'  class="sortable" aria-sort="@SortAttr("rate")"  tabindex="0" role="columnheader" @onkeydown='e => OnSortKey(e, "rate")'>Rate <span aria-hidden="true">@SortIcon("rate")</span></th>
+                <th scope="col">Rate Type</th>
+                <th scope="col">Effective</th>
+                <th scope="col">Scraped</th>
+                <th scope="col">Statute / Conditions</th>
             </tr>
         </thead>
         <tbody>
             @foreach (var r in Filtered)
             {
                 <tr>
-                    <td>@r.JurisdictionName</td>
+                    <th scope="row">@r.JurisdictionName</th>
                     <td>@r.StateCode</td>
                     <td>@r.JurisdictionType</td>
                     <td class="rate-cell">@r.Rate.ToString("P4")</td>
@@ -61,7 +69,7 @@ else
             }
         </tbody>
     </table>
-    <div class="muted" style="margin-top:8px">Showing @Filtered.Count() of @rates.Count rates</div>
+    <div class="muted" style="margin-top:8px" role="status" aria-live="polite">Showing @Filtered.Count() of @rates.Count rates</div>
 }
 
 @code {
@@ -122,6 +130,14 @@ else
 
     private string SortIcon(string col) =>
         sortCol != col ? "" : sortAsc ? " ▲" : " ▼";
+
+    private string SortAttr(string col) =>
+        sortCol != col ? "none" : sortAsc ? "ascending" : "descending";
+
+    private void OnSortKey(KeyboardEventArgs e, string col)
+    {
+        if (e.Key == "Enter" || e.Key == " " || e.Code == "Space") SetSort(col);
+    }
 
     private async Task ExportCsv()
     {

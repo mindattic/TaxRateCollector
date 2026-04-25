@@ -22,11 +22,17 @@
 <div class="page-header">
     <div class="page-header-row">
         <div>
-            <h1 class="page-title">Jurisdictions</h1>
+            <h1 id="jurisdictions-title" class="page-title">Jurisdictions</h1>
             <p class="page-sub">Select a product category, then expand any tier to view or edit rates and attach evidence.</p>
         </div>
         <div class="header-actions">
-            <select class="btn-export-select" value="@exportFormat" @onchange="OnExportChange" disabled="@exporting">
+            <label for="jur-export" class="sr-only">Export jurisdictions</label>
+            <select id="jur-export"
+                    class="btn-export-select"
+                    value="@exportFormat"
+                    @onchange="OnExportChange"
+                    disabled="@exporting"
+                    aria-busy="@exporting.ToString().ToLower()">
                 <option value="">@(exporting ? "Exporting…" : "Export ▾")</option>
                 <option value="csv">CSV</option>
                 <option value="xlsx">Excel (XLSX)</option>
@@ -47,14 +53,22 @@
     }
     else
     {
-        <div class="cat-type-row cat-type-@(selectedTopLevel.ToLower())">
-            <button class="cat-type-btn @(selectedTopLevel == "Goods" ? "cat-type-active" : "")" @onclick='() => OnTopLevelClick("Goods")'>Goods</button>
-            <button class="cat-type-btn @(selectedTopLevel == "Services" ? "cat-type-active" : "")" @onclick='() => OnTopLevelClick("Services")'>Services</button>
+        <div class="cat-type-row cat-type-@(selectedTopLevel.ToLower())" role="tablist" aria-label="Top-level category">
+            <button type="button"
+                    class="cat-type-btn @(selectedTopLevel == "Goods" ? "cat-type-active" : "")"
+                    role="tab"
+                    aria-selected="@((selectedTopLevel == "Goods").ToString().ToLower())"
+                    @onclick='() => OnTopLevelClick("Goods")'>Goods</button>
+            <button type="button"
+                    class="cat-type-btn @(selectedTopLevel == "Services" ? "cat-type-active" : "")"
+                    role="tab"
+                    aria-selected="@((selectedTopLevel == "Services").ToString().ToLower())"
+                    @onclick='() => OnTopLevelClick("Services")'>Services</button>
         </div>
         <div class="cat-page">
             @foreach (var (groupName, leaves) in categoryGroups)
             {
-                <div class="cat-group">
+                <div class="cat-group" role="group" aria-label="@groupName">
                     <span class="cat-group-label">@groupName</span>
                     <div class="cat-chips">
                         @foreach (var leaf in leaves)
@@ -62,14 +76,19 @@
                             var catLocked = !isAdmin && !IsGuestMode && !subscribedCategoryIds.Contains(leaf.Id);
                             @if (catLocked)
                             {
-                                <button class="cat-chip cat-chip-locked" title="Subscribe to this category to access rates"
+                                <button type="button"
+                                        class="cat-chip cat-chip-locked"
+                                        title="Subscribe to this category to access rates"
+                                        aria-label="@leaf.Name (locked — subscribe to access)"
                                         @onclick="() => ShowCategoryLockedHint()">
                                     🔒 @leaf.Name
                                 </button>
                             }
                             else
                             {
-                                <button class="cat-chip @(selectedCategoryId == leaf.Id ? "cat-chip-active" : "")"
+                                <button type="button"
+                                        class="cat-chip @(selectedCategoryId == leaf.Id ? "cat-chip-active" : "")"
+                                        aria-pressed="@((selectedCategoryId == leaf.Id).ToString().ToLower())"
                                         @onclick="() => SelectCategory(leaf.Id)">
                                     @leaf.Name
                                 </button>
@@ -101,25 +120,31 @@ else if (!isAdmin && HasUnsubscribedContent)
 <div class="tree-container">
     @if (loading)
     {
-        <div class="cat-loading-overlay">
+        <div class="cat-loading-overlay" role="status" aria-live="polite">
             <div class="export-spinner-card">
-                <div class="spinner"></div>
+                <div class="spinner" aria-hidden="true"></div>
                 <span>Loading rates…</span>
             </div>
         </div>
     }
-    <div class="tree-root">
+    <div class="tree-root" role="tree" aria-label="Jurisdiction hierarchy">
         @if (!loading && states.Count == 0)
         {
-            <div class="loading-state muted">No jurisdictions found — run <a href="/setup">Setup → Import Jurisdictions</a> to populate.</div>
+            <div class="loading-state muted" role="status">No jurisdictions found — run <a href="/setup">Setup → Import Jurisdictions</a> to populate.</div>
         }
         @foreach (var state in states)
         {
             @if (IsStateSubscribed(state.StateCode))
             {
             <!-- ── State row (subscribed) ── -->
-            <div class="jnode state-node" @onclick="() => ToggleState(state.Id)">
-                <span class="expand-icon">@(IsExpanded(state.Id) ? "▼" : "▶")</span>
+            <div class="jnode state-node"
+                 role="treeitem"
+                 tabindex="0"
+                 aria-expanded="@IsExpanded(state.Id).ToString().ToLower()"
+                 aria-label="State: @state.Name"
+                 @onclick="() => ToggleState(state.Id)"
+                 @onkeydown="ev => OnNodeKey(ev, () => ToggleState(state.Id))">
+                <span class="expand-icon" aria-hidden="true">@(IsExpanded(state.Id) ? "▼" : "▶")</span>
                 <span class="tier-badge tier-state">State</span>
                 <span class="jname">@state.Name</span>
                 <span class="fips mono">(FIPS: @state.FipsCode)</span>
@@ -150,8 +175,14 @@ else if (!isAdmin && HasUnsubscribedContent)
                     @foreach (var county in children[state.Id])
                     {
                         <!-- ── County row ── -->
-                        <div class="jnode county-node" @onclick="() => ToggleCounty(county.Id)">
-                            <span class="expand-icon">@(IsExpanded(county.Id) ? "▼" : "▶")</span>
+                        <div class="jnode county-node"
+                             role="treeitem"
+                             tabindex="0"
+                             aria-expanded="@IsExpanded(county.Id).ToString().ToLower()"
+                             aria-label="County: @county.Name"
+                             @onclick="() => ToggleCounty(county.Id)"
+                             @onkeydown="ev => OnNodeKey(ev, () => ToggleCounty(county.Id))">
+                            <span class="expand-icon" aria-hidden="true">@(IsExpanded(county.Id) ? "▼" : "▶")</span>
                             <span class="tier-badge tier-county">County</span>
                             <span class="jname">@county.Name</span>
                             <span class="fips mono">(FIPS: @county.FipsCode)</span>
@@ -176,8 +207,14 @@ else if (!isAdmin && HasUnsubscribedContent)
                                 @foreach (var city in children[county.Id])
                                 {
                                     <!-- ── City row ── -->
-                                    <div class="jnode city-node" @onclick="() => ToggleCity(city.Id)">
-                                        <span class="expand-icon">@(IsExpanded(city.Id) ? "▼" : "▶")</span>
+                                    <div class="jnode city-node"
+                                         role="treeitem"
+                                         tabindex="0"
+                                         aria-expanded="@IsExpanded(city.Id).ToString().ToLower()"
+                                         aria-label="City: @city.Name"
+                                         @onclick="() => ToggleCity(city.Id)"
+                                         @onkeydown="ev => OnNodeKey(ev, () => ToggleCity(city.Id))">
+                                        <span class="expand-icon" aria-hidden="true">@(IsExpanded(city.Id) ? "▼" : "▶")</span>
                                         <span class="tier-badge tier-city">City</span>
                                         <span class="jname">@city.Name</span>
                                         <span class="fips mono">(FIPS: @city.FipsCode)</span>
@@ -805,6 +842,16 @@ else if (!isAdmin && HasUnsubscribedContent)
 
     // ── Expand / collapse ─────────────────────────────────────────────────────
     private bool IsExpanded(int id) => expanded.Contains(id);
+
+    private void OnNodeKey(KeyboardEventArgs e, Action toggle)
+    {
+        if (e.Key == "Enter" || e.Key == " " || e.Code == "Space") toggle();
+    }
+
+    private async Task OnNodeKey(KeyboardEventArgs e, Func<Task> toggle)
+    {
+        if (e.Key == "Enter" || e.Key == " " || e.Code == "Space") await toggle();
+    }
 
     private async Task ToggleState(int stateId)
     {

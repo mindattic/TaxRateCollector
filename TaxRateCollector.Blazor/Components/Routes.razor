@@ -8,6 +8,7 @@
                 @{ Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(Nav.Uri)}", forceLoad: false); }
             </NotAuthorized>
         </AuthorizeRouteView>
-        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        @* No FocusOnNavigate — initial focus is blank by design. *@
+        @* Keyboard users press Tab to enter the page (skip-link is the first stop). *@
     </Found>
 </Router>

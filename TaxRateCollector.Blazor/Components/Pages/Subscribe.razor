@@ -22,14 +22,14 @@
 
 @if (loading)
 {
-    <div class="loading-state">Loading…</div>
+    <div class="loading-state" role="status" aria-live="polite">Loading…</div>
 }
 else if (step == 3)
 {
     <!-- Success -->
-    <div class="auth-card" style="max-width:520px">
-        <div style="font-size:2.5rem;margin-bottom:.5rem">✓</div>
-        <h2 class="auth-title" style="color:var(--green)">Payment Complete!</h2>
+    <div class="auth-card" style="max-width:520px" role="status" aria-live="polite" aria-labelledby="payment-complete-title">
+        <div style="font-size:2.5rem;margin-bottom:.5rem" aria-hidden="true">✓</div>
+        <h2 id="payment-complete-title" class="auth-title" style="color:var(--green)">Payment Complete!</h2>
         <p>You now have access to tax rates for <strong>@selectedStates.Count state(s)</strong> across <strong>@selectedCategories.Count product category/categories</strong>.</p>
         @if (lastBillingRecord is not null)
         {
@@ -51,46 +51,52 @@ else
     <div class="subscribe-layout">
 
         <!-- ── Left: State selector ── -->
-        <div class="subscribe-states">
-            <div class="subscribe-section-title">
+        <section class="subscribe-states" aria-labelledby="select-states-title">
+            <div id="select-states-title" class="subscribe-section-title">
                 Select States
-                <span class="muted small">@selectedStates.Count selected</span>
+                <span class="muted small" aria-live="polite">@selectedStates.Count selected</span>
             </div>
-            <div class="states-grid">
+            <div class="states-grid" role="group" aria-labelledby="select-states-title">
                 @foreach (var state in availableStates)
                 {
                     var sc = state.StateCode;
                     var active = selectedStates.Contains(sc);
-                    <button class="state-tile @(active ? "state-tile-active" : "")" @onclick="() => ToggleState(sc)">
-                        <span class="state-tile-code">@sc</span>
+                    <button type="button"
+                            class="state-tile @(active ? "state-tile-active" : "")"
+                            aria-pressed="@active.ToString().ToLower()"
+                            aria-label="@(active ? $"Selected: {state.Name}" : $"Select {state.Name}")"
+                            @onclick="() => ToggleState(sc)">
+                        <span class="state-tile-code" aria-hidden="true">@sc</span>
                         <span class="state-tile-name">@state.Name</span>
-                        @if (active) { <span class="state-tile-check">✓</span> }
+                        @if (active) { <span class="state-tile-check" aria-hidden="true">✓</span> }
                     </button>
                 }
             </div>
             <div class="states-actions">
-                <button class="btn-tiny" @onclick="SelectAll">Select All</button>
-                <button class="btn-tiny" @onclick="ClearAll">Clear</button>
+                <button type="button" class="btn-tiny" @onclick="SelectAll">Select All</button>
+                <button type="button" class="btn-tiny" @onclick="ClearAll">Clear</button>
             </div>
-        </div>
+        </section>
 
         <!-- ── Middle: Category selector ── -->
-        <div class="subscribe-categories">
-            <div class="subscribe-section-title">
+        <section class="subscribe-categories" aria-labelledby="select-cats-title">
+            <div id="select-cats-title" class="subscribe-section-title">
                 Select Product Categories
-                <span class="muted small">@selectedCategories.Count selected</span>
+                <span class="muted small" aria-live="polite">@selectedCategories.Count selected</span>
             </div>
             <div class="category-select-list">
                 @foreach (var (groupName, leaves) in availableCategoryGroups)
                 {
-                    <div class="cat-select-group">
+                    <div class="cat-select-group" role="group" aria-label="@groupName">
                         <div class="cat-select-group-label">@groupName</div>
                         @foreach (var cat in leaves)
                         {
                             var active = selectedCategories.Contains(cat.Id);
-                            <button class="cat-select-chip @(active ? "cat-select-active" : "")"
+                            <button type="button"
+                                    class="cat-select-chip @(active ? "cat-select-active" : "")"
+                                    aria-pressed="@active.ToString().ToLower()"
                                     @onclick="() => ToggleCategory(cat.Id)">
-                                @if (active) { <span>✓</span> }
+                                @if (active) { <span aria-hidden="true">✓</span> }
                                 @cat.Name
                             </button>
                         }
@@ -98,37 +104,65 @@ else
                 }
             </div>
             <div class="states-actions">
-                <button class="btn-tiny" @onclick="SelectAllCategories">Select All</button>
-                <button class="btn-tiny" @onclick="ClearCategories">Clear</button>
+                <button type="button" class="btn-tiny" @onclick="SelectAllCategories">Select All</button>
+                <button type="button" class="btn-tiny" @onclick="ClearCategories">Clear</button>
             </div>
-        </div>
+        </section>
 
         <!-- ── Right: Billing address + order summary ── -->
-        <div class="subscribe-checkout">
-            <div class="subscribe-section-title">Billing Address</div>
-            <p class="muted small" style="margin-bottom:.8rem">Used to calculate sales tax on your subscription using our own jurisdiction data.</p>
+        <section class="subscribe-checkout" aria-labelledby="billing-address-title">
+            <div id="billing-address-title" class="subscribe-section-title">Billing Address</div>
+            <p class="muted small" id="billing-address-desc" style="margin-bottom:.8rem">
+                Used to calculate sales tax on your subscription using our own jurisdiction data.
+            </p>
 
             <div class="auth-field">
-                <label>Full Name</label>
-                <input class="setting-input" placeholder="Jane Smith" @bind="fullName" @bind:event="oninput" />
+                <label for="bill-full-name">Full Name</label>
+                <input id="bill-full-name"
+                       class="setting-input"
+                       autocomplete="name"
+                       placeholder="Jane Smith"
+                       required aria-required="true"
+                       @bind="fullName" @bind:event="oninput" />
             </div>
             <div class="auth-field">
-                <label>Address</label>
-                <input class="setting-input" placeholder="123 Main St" @bind="address" @bind:event="oninput" />
+                <label for="bill-address">Address</label>
+                <input id="bill-address"
+                       class="setting-input"
+                       autocomplete="street-address"
+                       placeholder="123 Main St"
+                       required aria-required="true"
+                       @bind="address" @bind:event="oninput" />
             </div>
             <div style="display:grid;grid-template-columns:1fr 80px;gap:.6rem">
                 <div class="auth-field">
-                    <label>City</label>
-                    <input class="setting-input" placeholder="Springfield" @bind="city" @bind:event="oninput" />
+                    <label for="bill-city">City</label>
+                    <input id="bill-city"
+                           class="setting-input"
+                           autocomplete="address-level2"
+                           placeholder="Springfield"
+                           required aria-required="true"
+                           @bind="city" @bind:event="oninput" />
                 </div>
                 <div class="auth-field">
-                    <label>ZIP</label>
-                    <input class="setting-input" placeholder="62701" @bind="zip" @bind:event="oninput" />
+                    <label for="bill-zip">ZIP</label>
+                    <input id="bill-zip"
+                           class="setting-input"
+                           autocomplete="postal-code"
+                           inputmode="numeric"
+                           pattern="[0-9]{5}(-[0-9]{4})?"
+                           placeholder="62701"
+                           required aria-required="true"
+                           @bind="zip" @bind:event="oninput" />
                 </div>
             </div>
             <div class="auth-field">
-                <label>State</label>
-                <select class="setting-input" @bind="billingState" @bind:after="OnBillingStateChange">
+                <label for="bill-state">State</label>
+                <select id="bill-state"
+                        class="setting-input"
+                        autocomplete="address-level1"
+                        required aria-required="true"
+                        @bind="billingState" @bind:after="OnBillingStateChange">
                     <option value="">— Select state —</option>
                     @foreach (var s in availableStates)
                     {
@@ -138,8 +172,8 @@ else
             </div>
 
             <!-- Order summary -->
-            <div class="order-summary">
-                <div class="subscribe-section-title" style="margin-bottom:.6rem">Order Summary</div>
+            <div class="order-summary" role="region" aria-labelledby="order-summary-title" aria-live="polite">
+                <div id="order-summary-title" class="subscribe-section-title" style="margin-bottom:.6rem">Order Summary</div>
                 <div class="billing-row"><span>States × @pricing.PricePerState.ToString("C")/mo</span><span>@selectedStates.Count × @pricing.PricePerState.ToString("C") = @StateSubtotal.ToString("C")</span></div>
                 <div class="billing-row"><span>Categories × @pricing.PricePerCategory.ToString("C")/mo</span><span>@selectedCategories.Count × @pricing.PricePerCategory.ToString("C") = @CatSubtotal.ToString("C")</span></div>
                 <div class="billing-row"><span>Subtotal</span><span>@PricePerMonth.ToString("C") / month</span></div>
@@ -156,26 +190,34 @@ else
 
             @if (error is not null)
             {
-                <div class="auth-error">@error</div>
+                <div class="auth-error" role="alert">@error</div>
             }
 
             @if (!isMock)
             {
                 <!-- Real PayPal: show the standard button text -->
-                <button class="btn-paypal" @onclick="Checkout" disabled="@(!CanCheckout || processing)">
+                <button type="button"
+                        class="btn-paypal"
+                        @onclick="Checkout"
+                        disabled="@(!CanCheckout || processing)"
+                        aria-busy="@processing.ToString().ToLower()">
                     @(processing ? "Processing…" : "Pay with PayPal")
                 </button>
             }
             else
             {
-                <button class="btn-paypal btn-paypal-mock" @onclick="Checkout" disabled="@(!CanCheckout || processing)">
+                <button type="button"
+                        class="btn-paypal btn-paypal-mock"
+                        @onclick="Checkout"
+                        disabled="@(!CanCheckout || processing)"
+                        aria-busy="@processing.ToString().ToLower()">
                     @(processing ? "Processing…" : "Mock Payment — No charge")
                 </button>
                 <p class="muted small" style="text-align:center;margin-top:.4rem">
                     Credentials not configured — enter PayPal API keys in Settings → Admin → PayPal to accept real payments.
                 </p>
             }
-        </div>
+        </section>
     </div>
 }
 
