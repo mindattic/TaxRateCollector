@@ -32,6 +32,42 @@ public class EvidenceFileStoreTests
         return result.FileName;
     }
 
+    // ── ContentHash re-verification (re-hashing the on-disk file must match) ──
+
+    [Test]
+    public async Task ContentHash_MatchesOnDiskBytes_ForPdf()
+    {
+        var store = MakeStore();
+        var pdfBytes = Encoding.UTF8.GetBytes("%PDF-1.4 sample bytes");
+        var result = await store.SaveAsync("http://ex.gov/doc", pdfBytes, "application/pdf");
+        createdFiles.Add(result.FileName);
+
+        var path = Path.Combine(SettingsService.EvidenceDirectory, result.FileName);
+        var rehash = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
+
+        Assert.That(rehash, Is.EqualTo(result.ContentHash));
+        Assert.That(result.ContentHash, Has.Length.EqualTo(64));
+    }
+
+    [Test]
+    public async Task ContentHash_MatchesOnDiskBytes_ForHtml()
+    {
+        // HTML is wrapped/stripped before saving — the hash must reflect the
+        // wrapped bytes (what's on disk), not the raw fetched HTML.
+        var store = MakeStore();
+        var html = "<html><head><title>State Tax</title></head><body>Rate is 6.25%</body></html>";
+        var result = await store.SaveAsync("http://ex.gov/page",
+            Encoding.UTF8.GetBytes(html), "text/html");
+        createdFiles.Add(result.FileName);
+
+        var path = Path.Combine(SettingsService.EvidenceDirectory, result.FileName);
+        var rehash = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
+
+        Assert.That(rehash, Is.EqualTo(result.ContentHash));
+    }
+
     // ── MIME classification ───────────────────────────────────────────────────
 
     [Test]

@@ -21,8 +21,21 @@ public class Jurisdiction
     /// <summary>Denormalised state abbreviation kept for fast filtering (e.g. "CA", "TX").</summary>
     public string StateCode { get; set; } = string.Empty;
 
-    /// <summary>Root URL of the data source for this jurisdiction's tax rate laws.</summary>
+    /// <summary>
+    /// Source URL(s) for this jurisdiction's tax rate laws. The first non-empty URL is the
+    /// primary source — used by the AI extractor to derive structured rate laws.
+    /// Additional URLs (newline-separated) are fetched and attached as supplementary
+    /// SourceDocument evidence, letting one rate stack a statute PDF, the live DOR HTML,
+    /// and a news article — all hashed and verifiable.
+    /// </summary>
     public string SourceUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Returns the non-empty URLs from <see cref="SourceUrl"/> in declaration order.
+    /// Splits on newlines so the field can hold multiple corroborating sources.
+    /// </summary>
+    public IReadOnlyList<string> SourceUrls() =>
+        SourceUrl.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     public bool IsActive { get; set; } = true;
 

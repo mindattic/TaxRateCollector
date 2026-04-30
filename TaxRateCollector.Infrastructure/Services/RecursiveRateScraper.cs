@@ -164,16 +164,22 @@ public sealed class RecursiveRateScraper(
             return (0, 0, 0);
         }
 
-        var (rawBytes, mimeType) = await FetchBytesAsync(discovery.SourceUsed, ct);
+        // Primary URL drives extraction; additional URLs (newline-separated in SourceUrl)
+        // are fetched and attached as supplementary corroborating evidence.
+        var primaryUrl = discovery.SourceUsed;
+        var allUrls = jurisdiction.SourceUrls();
+        var supplementaryUrls = allUrls.Where(u => !string.Equals(u, primaryUrl, StringComparison.OrdinalIgnoreCase));
+
+        var (rawBytes, mimeType) = await FetchBytesAsync(primaryUrl, ct);
         if (rawBytes.Length == 0) return (0, 0, 0);
 
         // Convert to text for the AI extractor (binary types get a placeholder)
         var rawText = IsTextMime(mimeType)
             ? Encoding.UTF8.GetString(rawBytes)
-            : $"[Binary: {mimeType}, {rawBytes.Length:N0} bytes from {discovery.SourceUsed}]";
+            : $"[Binary: {mimeType}, {rawBytes.Length:N0} bytes from {primaryUrl}]";
 
         var extracted = await extractor.ExtractAsync(
-            jurisdiction, rawText, mimeType, discovery.SourceUsed, ct);
+            jurisdiction, rawText, mimeType, primaryUrl, ct);
 
         if (extracted.Count == 0) return (0, 0, 0);
 
@@ -185,67 +191,94 @@ public sealed class RecursiveRateScraper(
 
         if (applicable.Count == 0) return (0, 0, 0);
 
-        // Save evidence file to disk once per source (shared across all extracted laws)
-        StoredEvidenceFile? storedFile = null;
+        // Save primary evidence
+        StoredEvidenceFile? primaryStored = null;
         try
         {
-            storedFile = await evidenceStore.SaveAsync(discovery.SourceUsed, rawBytes, mimeType, ct);
+            primaryStored = await evidenceStore.SaveAsync(primaryUrl, rawBytes, mimeType, ct);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Evidence save failed for {Url}", discovery.SourceUsed);
+            logger.LogWarning(ex, "Evidence save failed for {Url}", primaryUrl);
         }
 
-        var contentHash = ComputeHash(rawBytes);
+        var contentHash = primaryStored?.ContentHash ?? ComputeHash(rawBytes);
         var now         = DateTime.UtcNow.ToString("o");
+
+        // Pre-fetch supplementary sources once and reuse across all extracted laws
+        var supplements = new List<SupplementaryEvidence>();
+        foreach (var url in supplementaryUrls)
+        {
+            try
+            {
+                var (suppBytes, suppMime) = await FetchBytesAsync(url, ct);
+                if (suppBytes.Length == 0) continue;
+                var stored = await evidenceStore.SaveAsync(url, suppBytes, suppMime, ct);
+                supplements.Add(new SupplementaryEvidence(url, suppMime, stored,
+                    stored.ContentHash, ExcerptText(suppBytes, suppMime)));
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Supplementary evidence fetch failed for {Url}", url);
+            }
+        }
+
         int created = 0, evidenceCount = 0;
 
         foreach (var law in applicable)
         {
-            var (wasCreated, docCreated) = await UpsertRateLawAsync(
+            var (wasCreated, docsCreated) = await UpsertRateLawAsync(
                 db, scrapeRunId, jurisdiction.Id, law,
-                discovery.SourceUsed, rawText, rawBytes, mimeType, contentHash,
-                storedFile, now, options.OverwriteExisting, ct);
+                primaryUrl, rawText, mimeType, contentHash,
+                primaryStored, supplements, now, options.OverwriteExisting, ct);
 
             if (wasCreated) created++;
-            if (docCreated) evidenceCount++;
+            evidenceCount += docsCreated;
         }
 
         await db.SaveChangesAsync(ct);
 
         logger.LogInformation(
-            "{Name}: {Found} laws extracted, {Created} persisted",
-            jurisdiction.JurisdictionName, applicable.Count, created);
+            "{Name}: {Found} laws extracted, {Created} persisted, {Evidence} evidence docs (primary + {Supps} supplementary)",
+            jurisdiction.JurisdictionName, applicable.Count, created, evidenceCount, supplements.Count);
 
         return (applicable.Count, created, evidenceCount);
     }
 
+    private sealed record SupplementaryEvidence(
+        string SourceUrl, string MimeType, StoredEvidenceFile Stored, string ContentHash, string Excerpt);
+
+    private static string ExcerptText(byte[] bytes, string mimeType) =>
+        IsTextMime(mimeType) && bytes.Length > 0
+            ? Encoding.UTF8.GetString(bytes, 0, Math.Min(bytes.Length, 8192))
+            : string.Empty;
+
     // ── Upsert a single extracted rate law ───────────────────────────────────
 
-    private static async Task<(bool rateCreated, bool docCreated)> UpsertRateLawAsync(
+    private static async Task<(bool rateCreated, int docsCreated)> UpsertRateLawAsync(
         AppDbContext db,
         int scrapeRunId,
         int jurisdictionId,
         ExtractedRateLaw law,
         string sourceUrl,
         string rawText,
-        byte[] rawBytes,
         string mimeType,
         string contentHash,
         StoredEvidenceFile? storedFile,
+        IReadOnlyList<SupplementaryEvidence> supplements,
         string now,
         bool overwrite,
         CancellationToken ct)
     {
         var alreadyPending = await db.TaxRates
             .AnyAsync(t => t.JurisdictionId == jurisdictionId && t.Name == law.Name && !t.AutoApprove, ct);
-        if (alreadyPending) return (false, false);
+        if (alreadyPending) return (false, 0);
 
         if (!overwrite)
         {
             var liveExists = await db.TaxRates
                 .AnyAsync(t => t.JurisdictionId == jurisdictionId && t.Name == law.Name && t.IsCurrent, ct);
-            if (liveExists) return (false, false);
+            if (liveExists) return (false, 0);
         }
 
         var isIncludedInPrice = law.TaxType == Core.Enums.TaxType.ExciseTax
@@ -289,7 +322,7 @@ public sealed class RecursiveRateScraper(
 
         db.TaxRates.Add(rate);
 
-        var doc = new SourceDocument
+        var primaryDoc = new SourceDocument
         {
             TaxRate          = rate,
             SourceType       = InferSourceType(mimeType),
@@ -304,9 +337,27 @@ public sealed class RecursiveRateScraper(
             RawContent       = rawText.Length <= 8192 ? rawText : rawText[..8192],
             IsActive         = true,
         };
-        db.SourceDocuments.Add(doc);
+        db.SourceDocuments.Add(primaryDoc);
 
-        return (true, true);
+        foreach (var supp in supplements)
+        {
+            db.SourceDocuments.Add(new SourceDocument
+            {
+                TaxRate          = rate,
+                SourceType       = InferSourceType(supp.MimeType),
+                SourceUrl        = supp.SourceUrl,
+                MimeType         = supp.MimeType,
+                FetchedAt        = now,
+                ContentHash      = supp.ContentHash,
+                EvidenceType     = supp.Stored.EvidenceType,
+                FileName         = supp.Stored.FileName,
+                OriginalFileName = Path.GetFileName(new Uri(supp.SourceUrl).AbsolutePath),
+                RawContent       = supp.Excerpt,
+                IsActive         = true,
+            });
+        }
+
+        return (true, 1 + supplements.Count);
     }
 
     // ── HTTP fetch (bytes, preserves binary) ──────────────────────────────────

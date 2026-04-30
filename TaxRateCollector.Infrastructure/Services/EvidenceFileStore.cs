@@ -36,8 +36,11 @@ public sealed class EvidenceFileStore(
             toWrite = content;
         }
 
-        var hash     = Convert.ToHexString(SHA256.HashData(toWrite))[..12].ToLowerInvariant();
-        var fileName = GenerateFileName(extension, slug, hash);
+        // Hash the bytes that actually go to disk so the DB ContentHash can be
+        // verified later by re-reading the file and re-hashing it.
+        var fullHash = Convert.ToHexString(SHA256.HashData(toWrite)).ToLowerInvariant();
+        var shortHash = fullHash[..12];
+        var fileName = GenerateFileName(extension, slug, shortHash);
         var fullPath = Path.Combine(SettingsService.EvidenceDirectory, fileName);
 
         if (File.Exists(fullPath))
@@ -51,7 +54,7 @@ public sealed class EvidenceFileStore(
         }
 
         var size = new FileInfo(fullPath).Length;
-        return new StoredEvidenceFile(fileName, evidenceType, size);
+        return new StoredEvidenceFile(fileName, evidenceType, size, fullHash);
     }
 
     private static (byte[] Bytes, string? Slug) StripHtmlBytes(string sourceUrl, byte[] htmlBytes)

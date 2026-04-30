@@ -57,7 +57,8 @@ public class ScrapeOrchestratorTests
     private sealed class NullEvidenceFileStore : IEvidenceFileStore
     {
         public Task<StoredEvidenceFile> SaveAsync(string sourceUrl, byte[] content, string mimeType, CancellationToken ct = default)
-            => Task.FromResult(new StoredEvidenceFile("evidence.txt", "txt", content.Length));
+            => Task.FromResult(new StoredEvidenceFile("evidence.txt", "txt", content.Length,
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(content)).ToLowerInvariant()));
     }
 
     private sealed class NullDiffEngine : IDiffEngine

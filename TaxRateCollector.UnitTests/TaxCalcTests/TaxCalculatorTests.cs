@@ -347,6 +347,40 @@ public class TaxCalculatorTests
         Assert.That(result.RateLines[0].RateName, Is.EqualTo("Any Tax"));
     }
 
+    // ── Placeholder exclusion ─────────────────────────────────────────────────
+
+    [Test]
+    public async Task Calculate_PlaceholderZeroRate_IsExcluded()
+    {
+        var factory = CreateFactory();
+        await using var db = factory.CreateDbContext();
+        var (j, run) = await SeedJurisdiction(db);
+        // Skeleton row left over from Census import: Rate=0 placeholder
+        db.TaxRates.Add(MakeRate(j.Id, run.Id, 0m,    name: "General Sales Tax"));
+        // Real evidence-backed rate
+        db.TaxRates.Add(MakeRate(j.Id, run.Id, 0.0625m, name: "State Sales Tax"));
+        await db.SaveChangesAsync();
+
+        var result = await new TaxCalculator(factory).CalculateAsync(j.Id, 100m, 1);
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.RateLines, Has.Count.EqualTo(1));
+        Assert.That(result.RateLines[0].RateName, Is.EqualTo("State Sales Tax"));
+        Assert.That(result.TotalTaxAmount, Is.EqualTo(6.25m).Within(0.001m));
+    }
+
+    [Test]
+    public async Task Calculate_OnlyPlaceholders_ReturnsNull()
+    {
+        var factory = CreateFactory();
+        await using var db = factory.CreateDbContext();
+        var (j, run) = await SeedJurisdiction(db);
+        db.TaxRates.Add(MakeRate(j.Id, run.Id, 0m, name: "General Sales Tax"));
+        await db.SaveChangesAsync();
+
+        Assert.That(await new TaxCalculator(factory).CalculateAsync(j.Id, 100m, 1), Is.Null);
+    }
+
     // ── Multiple rates ────────────────────────────────────────────────────────
 
     [Test]

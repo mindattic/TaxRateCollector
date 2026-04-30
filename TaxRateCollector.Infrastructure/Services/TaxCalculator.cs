@@ -45,10 +45,14 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
 
         // ── Load rates ────────────────────────────────────────────────────────
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // Exclude unpopulated placeholder rows (Rate == 0 with no source document).
+        // True 0% laws (e.g. grocery exemptions) live in StateCategoryRule, not TaxRates,
+        // so any Rate==0 row in this table is a skeleton waiting for a real scrape.
         var ratesQuery = db.TaxRates
             .Where(t => t.JurisdictionId == effectiveJurisdictionId
                      && t.IsCurrent
                      && t.AutoApprove
+                     && t.Rate > 0
                      && (t.EffectiveDate == null || t.EffectiveDate <= today)
                      && (t.ExpirationDate == null || t.ExpirationDate > today));
 

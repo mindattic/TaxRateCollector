@@ -287,7 +287,9 @@ public class ScrapeOrchestrator(
                 logger.LogWarning(ex, "Evidence save failed for bulk result {Name}", result.JurisdictionName);
             }
 
-            var hash = Convert.ToHexString(SHA256.HashData(result.EvidenceBytes)).ToLowerInvariant();
+            // Prefer the post-strip hash so the DB ContentHash matches the bytes on disk.
+            var hash = storedFile?.ContentHash
+                       ?? Convert.ToHexString(SHA256.HashData(result.EvidenceBytes)).ToLowerInvariant();
 
             var rate = new TaxRate
             {

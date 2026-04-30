@@ -154,6 +154,50 @@ public class RecursiveRateScraperTests
         Assert.That(rate.IsCurrent, Is.False);
     }
 
+    // ── Tests: multi-source evidence stacking ─────────────────────────────────
+
+    [Test]
+    public async Task MultipleSourceUrls_StacksEvidenceDocuments()
+    {
+        var factory = CreateFactory();
+        await using var setup = factory.CreateDbContext();
+        var (state, _) = await SeedStateAsync(setup);
+        // Newline-separated URLs: primary statute + DOR HTML + a press release
+        state.SourceUrl = "https://test.gov/rates\nhttps://test.gov/statute.pdf\nhttps://test.gov/news";
+        await setup.SaveChangesAsync();
+
+        var scraper = CreateScraper(factory, extractor: new FixedExtractor([MakeLaw()]));
+        await scraper.ScrapeAsync(state.Id, new RateScrapeOptions(), CancellationToken.None);
+
+        await using var verify = factory.CreateDbContext();
+        var rate = await verify.TaxRates.Include(t => t.SourceDocuments)
+            .SingleAsync(t => t.Name == "General Sales Tax");
+        Assert.That(rate.SourceDocuments, Has.Count.EqualTo(3),
+            "Each non-empty SourceUrl line should produce a SourceDocument.");
+        var urls = rate.SourceDocuments.Select(d => d.SourceUrl).ToList();
+        Assert.That(urls, Does.Contain("https://test.gov/rates"));
+        Assert.That(urls, Does.Contain("https://test.gov/statute.pdf"));
+        Assert.That(urls, Does.Contain("https://test.gov/news"));
+    }
+
+    [Test]
+    public async Task SingleSourceUrl_ProducesOneDocument()
+    {
+        var factory = CreateFactory();
+        await using var setup = factory.CreateDbContext();
+        var (state, _) = await SeedStateAsync(setup);
+        state.SourceUrl = "https://test.gov/rates";
+        await setup.SaveChangesAsync();
+
+        var scraper = CreateScraper(factory, extractor: new FixedExtractor([MakeLaw()]));
+        await scraper.ScrapeAsync(state.Id, new RateScrapeOptions(), CancellationToken.None);
+
+        await using var verify = factory.CreateDbContext();
+        var rate = await verify.TaxRates.Include(t => t.SourceDocuments)
+            .SingleAsync(t => t.Name == "General Sales Tax");
+        Assert.That(rate.SourceDocuments, Has.Count.EqualTo(1));
+    }
+
     // ── Tests: skip logic ─────────────────────────────────────────────────────
 
     [Test]
@@ -815,6 +859,7 @@ public class RecursiveRateScraperTests
     private sealed class NullEvidenceFileStore : IEvidenceFileStore
     {
         public Task<StoredEvidenceFile> SaveAsync(string sourceUrl, byte[] content, string mimeType, CancellationToken ct = default)
-            => Task.FromResult(new StoredEvidenceFile("evidence.txt", "txt", content.Length));
+            => Task.FromResult(new StoredEvidenceFile("evidence.txt", "txt", content.Length,
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(content)).ToLowerInvariant()));
     }
 }

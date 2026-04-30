@@ -729,7 +729,7 @@ public class TaxCalculatorTests
         db.TaxCategories.Add(cat);
         await db.SaveChangesAsync();
 
-        db.TaxRates.Add(MakeRate(jur.Id, "Food Rate",    rate: 0.00m));
+        db.TaxRates.Add(MakeRate(jur.Id, "Food Rate",    rate: 0.01m));
         db.TaxRates.Add(MakeRate(jur.Id, "General Rate", rate: 0.06m));
         var foodRate = db.TaxRates.Local.First(t => t.Name == "Food Rate");
         foodRate.TaxCategoryId = cat.Id;
