@@ -16,12 +16,21 @@ public sealed class EfCoreSink : ILogEventSink
     private readonly Func<IServiceProvider?> providerFactory;
     private readonly IFormatProvider? formatProvider;
 
+    /// <summary>
+    /// The <paramref name="providerFactory"/> is invoked on every <see cref="Emit"/>
+    /// call so logging can be wired before <c>WebApplication.Build()</c> completes;
+    /// it returns null until the container is ready, in which case the event is dropped.
+    /// </summary>
     public EfCoreSink(Func<IServiceProvider?> providerFactory, IFormatProvider? formatProvider = null)
     {
         this.providerFactory = providerFactory;
         this.formatProvider = formatProvider;
     }
 
+    /// <summary>
+    /// Persists a single log event to the LogEntries table. Failures (DI not yet
+    /// ready, DB unavailable, etc.) are swallowed because a sink must never throw.
+    /// </summary>
     public void Emit(LogEvent logEvent)
     {
         var provider = providerFactory();
