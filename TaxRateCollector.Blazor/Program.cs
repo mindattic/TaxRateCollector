@@ -1,4 +1,6 @@
 using MindAttic.Legion;
+using MindAttic.Vault.Configuration;
+using MindAttic.Vault.DependencyInjection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -30,6 +32,26 @@ Log.Logger = new LoggerConfiguration()
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
+
+// Cloud-native configuration chain. Layered (later sources win):
+//   AddJsonFile (already added by WebApplicationBuilder for appsettings.json).
+//   AddMindAtticVaultFiles surfaces %APPDATA%\MindAttic\<bucket>\providers.json on dev.
+//   AddUserSecrets pinned to mindattic-vault-shared so the same secret store is
+//     visible to every MindAttic project that pins the same id.
+//   AddEnvironmentVariables (already present) picks up App Service Application
+//     Settings + Azure Key Vault references in production.
+builder.Configuration
+    .AddMindAtticVaultFiles()
+    .AddUserSecrets<Program>(optional: true);
+
+// Vault: cloud-native credential resolvers (LlmCredentialResolver,
+// BrokerCredentialResolver) registered alongside the legacy file-backed stores.
+builder.Services.AddMindAtticVault(builder.Configuration);
+
+// Hand IConfiguration to SettingsService BEFORE it loads so the very first
+// Anthropic key resolution sees the cloud-native value. Static-field injection
+// keeps SettingsService's parameterless constructor unchanged.
+SettingsService.VaultConfiguration = builder.Configuration;
 
 // ── Blazor ────────────────────────────────────────────────────────────────────
 builder.Services.AddRazorComponents()

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Configuration;
 using MindAttic.Legion;
 
 namespace TaxRateCollector.Infrastructure.Services;
@@ -103,33 +104,77 @@ public class SettingsService
             Current = new AppSettings();
         }
 
-        // %APPDATA%\MindAttic\LLM\providers.json is the first stop for any LLM key,
-        // shared across every MindAttic app via MindAttic.Legion. The per-app
-        // settings.json is a fallback.
-        var centralAnthropic = MindAtticCredentialStore.GetKey("claude");
-        if (!string.IsNullOrWhiteSpace(centralAnthropic))
-        {
-            Current.AnthropicApiKey = centralAnthropic;
-        }
-        else if (!string.IsNullOrWhiteSpace(Current.AnthropicApiKey))
-        {
-            // First-run migration: lift the existing per-app key into the shared store
-            // so other MindAttic apps pick it up automatically.
-            MindAtticCredentialStore.SetKey("claude", Current.AnthropicApiKey);
-        }
-
+        // First-run save BEFORE any cloud overlay so secrets resolved from
+        // IConfiguration never get persisted to disk (settings.json should
+        // only contain user-typed defaults, never values lifted from User
+        // Secrets / App Service / Key Vault).
         if (!settingsExisted) Save();
+
+        // Resolution chain (highest priority first):
+        //   1. VaultConfiguration["MindAttic:Vault:LLM:claude:apiKey"] —
+        //      User Secrets / App Service Application Settings / Azure Key Vault.
+        //   2. %APPDATA%\MindAttic\LLM\providers.json — shared across every
+        //      MindAttic app via MindAttic.Legion / Vault file store.
+        //   3. Per-app settings.json (Current.AnthropicApiKey) — fallback only.
+        // The cloud-native value is held in-memory only — never persisted back
+        // to settings.json (Save() runs ABOVE this overlay).
+        var fromConfig = VaultConfiguration?["MindAttic:Vault:LLM:claude:apiKey"];
+        if (!string.IsNullOrWhiteSpace(fromConfig))
+        {
+            Current.AnthropicApiKey = fromConfig.Trim();
+        }
+        else
+        {
+            var centralAnthropic = MindAtticCredentialStore.GetKey("claude");
+            if (!string.IsNullOrWhiteSpace(centralAnthropic))
+            {
+                Current.AnthropicApiKey = centralAnthropic;
+            }
+            else if (!string.IsNullOrWhiteSpace(Current.AnthropicApiKey))
+            {
+                // First-run migration: lift the existing per-app key into the shared store
+                // so other MindAttic apps pick it up automatically.
+                MindAtticCredentialStore.SetKey("claude", Current.AnthropicApiKey);
+            }
+        }
     }
+
+    /// <summary>
+    /// Optional cloud-native configuration source. Set once at host startup via
+    /// <c>SettingsService.VaultConfiguration = builder.Configuration</c>. When set,
+    /// the LLM key resolution chain consults <c>MindAttic:Vault:LLM:claude:apiKey</c>
+    /// first (User Secrets / App Service Application Settings / Azure Key Vault)
+    /// before falling back to the file-based MindAttic store and the legacy
+    /// per-app settings.json field.
+    /// </summary>
+    public static IConfiguration? VaultConfiguration { get; set; }
 
     public void Save()
     {
         Directory.CreateDirectory(SettingsDir);
+
+        // If the current Anthropic key was loaded from IConfiguration (User Secrets,
+        // App Service Application Settings, or Azure Key Vault), don't persist it to
+        // settings.json or mirror it into the file store — IConfiguration is the
+        // source of truth in cloud deployments and we shouldn't echo secrets back
+        // to disk.
+        var fromConfig = VaultConfiguration?["MindAttic:Vault:LLM:claude:apiKey"];
+        var overlaidFromConfig = !string.IsNullOrWhiteSpace(fromConfig)
+            && string.Equals(Current.AnthropicApiKey, fromConfig.Trim(), StringComparison.Ordinal);
+
+        var preservedKey = Current.AnthropicApiKey;
+        if (overlaidFromConfig) Current.AnthropicApiKey = "";
+
         var json = JsonSerializer.Serialize(Current, JsonOpts);
         File.WriteAllText(SettingsPath, json);
 
+        if (overlaidFromConfig) Current.AnthropicApiKey = preservedKey;
+
         // Mirror the Anthropic key into the shared MindAttic.Legion LLM store so a
-        // change made via this app is immediately visible to every other MindAttic app.
-        if (!string.IsNullOrWhiteSpace(Current.AnthropicApiKey))
+        // change made via this app is immediately visible to every other MindAttic
+        // app — but ONLY if the user typed it here. Cloud-resolved values stay in
+        // their original source (User Secrets / App Service / Key Vault).
+        if (!overlaidFromConfig && !string.IsNullOrWhiteSpace(Current.AnthropicApiKey))
         {
             MindAtticCredentialStore.SetKey("claude", Current.AnthropicApiKey);
         }
