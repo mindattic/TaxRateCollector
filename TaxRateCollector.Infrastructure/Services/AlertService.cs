@@ -28,8 +28,8 @@ public class AlertService(IDbContextFactory<AppDbContext> dbFactory)
     public async Task AcknowledgeAllAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        var entries = await db.ChangeLog.Where(c => !c.Acknowledged).ToListAsync();
-        foreach (var e in entries) e.Acknowledged = true;
-        await db.SaveChangesAsync();
+        await db.ChangeLog
+            .Where(c => !c.Acknowledged)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.Acknowledged, true));
     }
 }

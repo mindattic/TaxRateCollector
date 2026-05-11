@@ -130,6 +130,12 @@ public sealed class RecursiveRateScraper(
         var byId = all.ToDictionary(j => j.Id);
         if (!byId.TryGetValue(rootId, out var root)) yield break;
 
+        // Pre-build children-by-parent index so traversal is O(n) instead of O(n²).
+        var byParent = all
+            .Where(j => j.ParentId.HasValue)
+            .GroupBy(j => j.ParentId!.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         var queue = new Queue<Jurisdiction>();
         queue.Enqueue(root);
 
@@ -138,7 +144,8 @@ public sealed class RecursiveRateScraper(
             var node = queue.Dequeue();
             yield return node;
 
-            foreach (var child in all.Where(j => j.ParentId == node.Id))
+            if (!byParent.TryGetValue(node.Id, out var children)) continue;
+            foreach (var child in children)
             {
                 if (child.JurisdictionType == JurisdictionType.County   && !options.IncludeCounties)  continue;
                 if (child.JurisdictionType == JurisdictionType.City      && !options.IncludeCities)    continue;
