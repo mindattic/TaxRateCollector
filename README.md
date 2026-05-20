@@ -1,6 +1,23 @@
 # TaxRateCollector
 
-A Blazor Server application that builds and maintains an exhaustively researched, evidence-backed master table of US sales and excise tax rates for every jurisdiction (Country → State → County → City). Every tax rate row stores the raw source document — API response, PDF, or website capture — and a SHA-256 content hash to prove its veracity without a live network call.
+**Provably accurate US sales tax rates — for billing systems that can't afford to be wrong.**
+
+Most tax-rate APIs hand you a number. TaxRateCollector hands you the number *and the official government PDF, CSV, or API response it came from* — hashed, timestamped, and stored alongside every rate so your audit team can trace every cent back to the statute that authorized it.
+
+### Why teams use it
+
+- **Evidence on every row.** Each `TaxRate` is bound to a `SourceDocument` holding the raw `.gov` artifact, its SHA-256 content hash, and the `FetchedAt` timestamp. Rates are independently verifiable without a live network call.
+- **All 14,000+ US jurisdictions.** Country → State → County → City hierarchy seeded from the US Census Bureau gazetteers. ZIP-to-jurisdiction lookup covers ~33,000 ZCTAs out of the box.
+- **SSUTA-aligned product taxonomy.** Categorize taxable items against the Streamlined Sales & Use Tax Agreement Appendix C — the same legal framework 24 member states already use — with documented overrides for non-member states like CA, TX, NY, and FL.
+- **Continuous re-scraping with change detection.** A background scheduler re-checks each jurisdiction's official `.gov` source on a configurable cadence. The diff engine writes a `ChangeLogEntry` the moment a rate moves.
+- **Pay only for what you bill in.** Subscribers pick the states *and* product categories that match their footprint at $0.01 each per month — no flat enterprise contract, no rates for jurisdictions you don't operate in.
+- **Plugs into your stack.** Blazor Server UI for your tax team, plus CSV / XLSX / SQL / HTML exports for your billing system.
+
+### Built for compliance
+
+Tax compliance is not a "best guess" problem. When an auditor asks why you charged 8.25% on a transaction in Beverly Hills, "our API said so" is not a defense. TaxRateCollector gives you the original CDTFA PDF, hashed at fetch time, with a timestamp — the kind of paper trail that ends audits instead of starting them.
+
+A Blazor Server application that builds and maintains an exhaustively researched, evidence-backed master table of US sales and excise tax rates for every jurisdiction (Country → State → County → City).
 
 ---
 
