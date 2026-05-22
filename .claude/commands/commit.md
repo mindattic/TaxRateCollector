@@ -1,6 +1,6 @@
 ---
-allowed-tools: Bash(git add:*), Bash(git status:*), Bash(git commit:*)
-description: Create a git commit
+allowed-tools: Bash(git add:*), Bash(git status:*), Bash(git commit:*), Bash(git push:*)
+description: Create a git commit and push to origin
 ---
 
 ## Context
@@ -12,6 +12,6 @@ description: Create a git commit
 
 ## Your task
 
-Based on the above changes, create a single git commit.
+Based on the above changes, create a single git commit, then push it to origin.
 
-You have the capability to call multiple tools in a single response. Stage and create the commit using a single message. Do not use any other tools or do anything else. Do not send any other text or messages besides these tool calls.
+You have the capability to call multiple tools in a single response. Stage, create the commit, and push in a single message. Do not use any other tools or do anything else. Do not send any other text or messages besides these tool calls. Do not force-push.
