@@ -1,0 +1,14 @@
+{
+  "name": "taxratecollector-landing",
+  "private": true,
+  "version": "1.0.0",
+  "description": "README -> index.htm renderer for the TaxRateCollector mindattic.com landing page.",
+  "scripts": {
+    "build": "node scripts/cli/build-html.js",
+    "deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/cli/deploy.ps1"
+  },
+  "dependencies": {
+    "highlight.js": "^11.9.0",
+    "marked": "^4.3.0"
+  }
+}
