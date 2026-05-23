@@ -56,8 +56,11 @@ A Blazor Server application that builds and maintains an exhaustively researched
 TaxRateCollector.Core           Domain entities, enums, interfaces
 TaxRateCollector.Infrastructure EF Core, migrations, seeders, importers, scrapers, services
 TaxRateCollector.Blazor         Blazor Server UI, pages, exports
+TaxRateCollector.Worker         Background host (MonthlySchedulerService, ScrapeJobWorker) for unattended re-scrapes
 TaxRateCollector.UnitTests      NUnit 4 — hierarchy, seeder correctness, DB population
 ```
+
+The Blazor host and the Worker share the same `Core` + `Infrastructure` projects and read the same connection string — the Worker is just the background-execution side of the same engine, designed to run separately (e.g. as an Azure App Service WebJob or a sibling container) so re-scraping doesn't compete with interactive traffic.
 
 **Stack:**
 

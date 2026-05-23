@@ -1,7 +1,7 @@
 # deploy.ps1 - landing-page FTP deploy (project name read from deploy.settings.json -> Subscriber).
 #
 # 1. (build)  Renders README.md -> index.htm README-CONTENT marker block via build-html.js.
-# 2. (sync)   Pulls MindAttic.Components, then splices Outfit/Attic/Cyberspace marker blocks
+# 2. (sync)   Pulls MindAttic.UIUX, then splices Outfit/Attic/Cyberspace marker blocks
 #             into index.htm via sync-landing-page.ps1.
 # 3. (stamp)  Refreshes "Last Updated" comment at top of index.htm.
 # 4. (deploy) Uploads index.htm to /mindattic.com/idiotproof/ via curl.exe (FTPS).
@@ -72,31 +72,31 @@ if (-not $NoBuild) {
 }
 
 # ---------------------------------------------------------------------------
-# 2. Sync MindAttic.Components -> index.htm (Outfit / Attic / Cyberspace)
+# 2. Sync MindAttic.UIUX -> index.htm (Outfit / Attic / Cyberspace)
 # ---------------------------------------------------------------------------
-$contentRoot = Join-Path (Split-Path -Parent $repoRoot) 'MindAttic.Components'
+$contentRoot = Join-Path (Split-Path -Parent $repoRoot) 'MindAttic.UIUX'
 $syncScript  = Join-Path $contentRoot 'sync\sync-landing-page.ps1'
 
 if (-not $NoSync) {
     if (-not (Test-Path "$contentRoot\.git")) {
-        Write-Error "MindAttic.Components is not a git repo at $contentRoot. Clone https://github.com/mindattic/MindAttic.Components.git there first."
+        Write-Error "MindAttic.UIUX is not a git repo at $contentRoot. Clone https://github.com/mindattic/MindAttic.UIUX.git there first."
         exit 1
     }
 
-    Write-Host "Pulling MindAttic.Components..."
+    Write-Host "Pulling MindAttic.UIUX..."
     $ErrorActionPreference = "Continue"
     $pullOut  = & git -C $contentRoot pull --no-edit --no-rebase 2>&1
     $pullExit = $LASTEXITCODE
     $ErrorActionPreference = "Stop"
     if ($pullExit -ne 0) {
         Write-Host $pullOut -ForegroundColor Red
-        Write-Error "git pull on MindAttic.Components failed (exit $pullExit)."
+        Write-Error "git pull on MindAttic.UIUX failed (exit $pullExit)."
         exit 1
     }
 
     if (-not (Test-Path $syncScript)) { Write-Error "sync-landing-page.ps1 not found at $syncScript"; exit 1 }
 
-    Write-Host "Syncing MindAttic.Components -> index.htm (subscriber: $subscriber)..."
+    Write-Host "Syncing MindAttic.UIUX -> index.htm (subscriber: $subscriber)..."
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $syncScript -Subscriber $subscriber -TargetIndex "$repoRoot\index.htm"
     if ($LASTEXITCODE -ne 0) { Write-Error "sync-landing-page.ps1 failed (exit $LASTEXITCODE)"; exit 1 }
 }
