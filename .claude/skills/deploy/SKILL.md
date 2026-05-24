@@ -1,23 +1,15 @@
 ---
 name: deploy
-description: Render README.md, sync MindAttic.Components, and FTP-upload index.htm to mindattic.com/taxratecollector/. Runs scripts/cli/deploy.bat.
+description: Deploy TaxRateCollector via MindAttic.Deploy (sibling repo). Fires the GitHub Actions workflow that targets the taxratecollector Azure App Service. Currently DISABLED in MindAttic.Deploy until Azure infrastructure + AZURE_WEBAPP_PUBLISH_PROFILE secret are provisioned.
 ---
 
-When invoked:
+When invoked, run:
 
-1. Run `scripts\cli\deploy.bat` from the project root (`D:\Projects\MindAttic\TaxRateCollector`).
-2. The script will:
-   - `node scripts/cli/build-html.js` -- renders `README.md` into the `<!-- BEGIN README-CONTENT -->` marker block of `index.htm` (using marked + highlight.js). Auto-runs `npm install` if `node_modules` is absent.
-   - `git pull` MindAttic.Components (sibling repo) for the latest font / Cyberspace bundle.
-   - `sync-landing-page.ps1 -Subscriber TaxRateCollector` -- splices OutfitFont / AtticFont / Cyberspace marker blocks into `index.htm`.
-   - Stamp `<!-- Last Updated: ... -->` at the top of `index.htm`.
-   - FTPS upload `index.htm` to `/mindattic.com/taxratecollector/` (defined in `scripts/cli/deploy.settings.json`).
-3. Report the FTP outcome (OK/FAIL) and the deployed URL.
+```
+powershell -NoProfile -ExecutionPolicy Bypass -Command "cd D:\Projects\MindAttic\MindAttic.Deploy; npm run deploy -- --app taxratecollector"
+```
 
-Flags:
-- `-NoBuild` -- skip the README render step.
-- `-NoSync` -- skip the components pull/splice.
+Report the result. Today this prints the "disabled" note and exits 0 -- the project's `.github/workflows/azure-deploy.yml` exists but the Azure side is not yet provisioned. To enable: provision the `taxratecollector` App Service in Azure, add the `AZURE_WEBAPP_PUBLISH_PROFILE` secret to `mindattic/TaxRateCollector`, then flip `apps[].disabled` from `true` to `false` in `MindAttic.Deploy/projects.json`.
 
 Notes:
-- Credentials come from `scripts/cli/deploy.settings.json` (gitignored). If missing, copy `deploy.settings.json.template` and fill in.
-- `node_modules/` is gitignored; `npm install` runs on first deploy.
+- The legacy `scripts/cli/deploy.{bat,ps1}` + `build-html.js` in this repo only deployed the FTP **landing page** (`mindattic.com/taxratecollector.htm`) -- not the Blazor app. The landing page is now deployed centrally from MindAttic.Deploy (`npm run deploy -- --only taxratecollector`); this `/deploy` command is for the APP.
