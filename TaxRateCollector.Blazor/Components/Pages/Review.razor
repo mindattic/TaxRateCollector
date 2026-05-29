@@ -227,11 +227,17 @@ else
             .Where(j => jurisdictionIds.Contains(j.Id) || jurisdictionIds.Contains(j.Id))
             .ToDictionaryAsync(j => j.Id);
 
+        // Resolve human-readable state names (e.g. "IL" → "Illinois") from the
+        // state-tier jurisdictions; fall back to the code when no name is on file.
+        var stateNames = await db.Jurisdictions
+            .Where(j => j.JurisdictionType == JurisdictionType.State)
+            .ToDictionaryAsync(j => j.StateCode, j => j.JurisdictionName);
+
         groups = rates
             .GroupBy(r => r.Jurisdiction.StateCode)
             .Select(g => new StateGroup(
                 g.Key,
-                g.First().Jurisdiction.StateCode,
+                stateNames.GetValueOrDefault(g.Key, g.Key),
                 g.Select(r =>
                 {
                     docByRate.TryGetValue(r.Id, out var doc);

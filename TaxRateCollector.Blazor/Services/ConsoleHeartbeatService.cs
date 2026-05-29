@@ -14,9 +14,10 @@ public sealed class ConsoleHeartbeatService : BackgroundService
         var tick = 1;
         while (!stoppingToken.IsCancellationRequested)
         {
-            await Task.Delay(15_000, stoppingToken).ContinueWith(_ => { });
-            if (!stoppingToken.IsCancellationRequested)
-                Console.WriteLine($"[tick] {tick++}");
+            try { await Task.Delay(15_000, stoppingToken); }
+            catch (OperationCanceledException) { break; }
+
+            Console.WriteLine($"[tick] {tick++}");
         }
     }
 }

@@ -339,7 +339,7 @@ public sealed class RecursiveRateScraper(
             ContentHash      = contentHash,
             EvidenceType     = storedFile?.EvidenceType ?? MimeToEvidenceType(mimeType),
             FileName         = storedFile?.FileName ?? string.Empty,
-            OriginalFileName = Path.GetFileName(new Uri(sourceUrl).AbsolutePath),
+            OriginalFileName = FileNameFromUrl(sourceUrl),
             // Keep a readable snippet inline even when file is on disk
             RawContent       = rawText.Length <= 8192 ? rawText : rawText[..8192],
             IsActive         = true,
@@ -358,7 +358,7 @@ public sealed class RecursiveRateScraper(
                 ContentHash      = supp.ContentHash,
                 EvidenceType     = supp.Stored.EvidenceType,
                 FileName         = supp.Stored.FileName,
-                OriginalFileName = Path.GetFileName(new Uri(supp.SourceUrl).AbsolutePath),
+                OriginalFileName = FileNameFromUrl(supp.SourceUrl),
                 RawContent       = supp.Excerpt,
                 IsActive         = true,
             });
@@ -409,6 +409,23 @@ public sealed class RecursiveRateScraper(
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
         return DateOnly.TryParse(value, out var d) ? d : null;
+    }
+
+    /// <summary>
+    /// Extracts a file name from a source URL without throwing. Source URLs come
+    /// from scraped/admin data and may be relative or malformed; in that case we
+    /// return an empty string rather than aborting persistence of a valid rate.
+    /// </summary>
+    private static string FileNameFromUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return string.Empty;
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return Path.GetFileName(uri.AbsolutePath);
+
+        // Best-effort for relative/odd values: take the last path segment.
+        var trimmed = url.Split('?', '#')[0].TrimEnd('/');
+        var slash = trimmed.LastIndexOf('/');
+        return slash >= 0 ? trimmed[(slash + 1)..] : trimmed;
     }
 
     private static string MimeToEvidenceType(string mimeType) => mimeType switch

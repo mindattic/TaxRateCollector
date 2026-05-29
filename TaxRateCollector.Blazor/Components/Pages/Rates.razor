@@ -63,7 +63,7 @@ else
                     <td class="rate-cell">@r.Rate.ToString("P4")</td>
                     <td>@r.Name</td>
                     <td>@r.EffectiveDate</td>
-                    <td>@r.ScrapedAt[..10]</td>
+                    <td>@(r.ScrapedAt.Length >= 10 ? r.ScrapedAt[..10] : r.ScrapedAt)</td>
                     <td class="conditions-cell" title="@r.Conditions">@r.Conditions</td>
                 </tr>
             }

@@ -41,8 +41,11 @@ public sealed class MonthlySchedulerService(
         await using var db = await dbFactory.CreateDbContextAsync(ct);
 
         var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc).ToString("o");
+        // Only real scrape runs count toward "already queued this month". Manual rows
+        // (the seeder's bootstrap run, UI-entered rates) must not suppress the scheduled job.
         var alreadyQueued = await db.ScrapeRuns
-            .AnyAsync(r => string.Compare(r.StartedAt, monthStart, StringComparison.Ordinal) >= 0, ct);
+            .AnyAsync(r => r.Status != ScrapeStatus.Manual
+                        && string.Compare(r.StartedAt, monthStart, StringComparison.Ordinal) >= 0, ct);
 
         if (alreadyQueued)
             return;

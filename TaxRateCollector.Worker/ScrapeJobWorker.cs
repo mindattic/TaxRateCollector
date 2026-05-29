@@ -48,7 +48,7 @@ public sealed class ScrapeJobWorker(
 
         await using var ctx = await db.CreateDbContextAsync(ct);
 
-        // Claim the oldest pending run atomically
+        // Find the oldest pending run.
         var run = await ctx.ScrapeRuns
             .Where(r => r.Status == ScrapeStatus.Pending)
             .OrderBy(r => r.StartedAt)
@@ -56,9 +56,20 @@ public sealed class ScrapeJobWorker(
 
         if (run is null) return;
 
-        logger.LogInformation("Claiming ScrapeRun #{Id}", run.Id);
-        run.Status = ScrapeStatus.Running;
-        await ctx.SaveChangesAsync(ct);
+        // Claim it atomically: only the worker that flips Pending → Running proceeds.
+        // A conditional UPDATE on Status means a second worker (or instance) that read
+        // the same row affects 0 rows and bails, so a run is never processed twice.
+        var claimed = await ctx.ScrapeRuns
+            .Where(r => r.Id == run.Id && r.Status == ScrapeStatus.Pending)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, ScrapeStatus.Running), ct);
+
+        if (claimed == 0)
+        {
+            logger.LogInformation("ScrapeRun #{Id} already claimed by another worker — skipping", run.Id);
+            return;
+        }
+
+        logger.LogInformation("Claimed ScrapeRun #{Id}", run.Id);
 
         // Load all active states to scrape
         var states = await ctx.Jurisdictions

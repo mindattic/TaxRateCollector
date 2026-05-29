@@ -40,7 +40,6 @@ public sealed class WebDirectoryScanner : IWebDirectoryScanner
 
         // Walk every <a href> in the page, resolving each relative to baseUri.
         var lastModMatches = LastModRegex.Matches(html);
-        int lmIdx = 0;
 
         foreach (Match m in HrefRegex.Matches(html))
         {
@@ -67,11 +66,14 @@ public sealed class WebDirectoryScanner : IWebDirectoryScanner
 
             var isDir = href.EndsWith('/');
 
-            // Best-effort: grab last-modified from the same row (Apache listings
-            // have one date per link; we pair them positionally).
-            string? lastMod = lmIdx < lastModMatches.Count
-                ? lastModMatches[lmIdx++].Value
-                : null;
+            // Best-effort: grab last-modified from the same row. In a directory
+            // listing the date follows its link, so the first date occurring after
+            // this href's position is this row's date. Pairing by position (rather
+            // than by surviving-entry index) stays correct even though some hrefs
+            // above — parent dir, query strings, off-site links — were skipped.
+            string? lastMod = lastModMatches
+                .Cast<Match>()
+                .FirstOrDefault(d => d.Index > m.Index)?.Value;
 
             entries.Add(new WebDirectoryEntry(resolved.ToString(), name, isDir, lastMod));
         }

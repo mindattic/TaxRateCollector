@@ -182,7 +182,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
             e.Property(b => b.Status).HasConversion<string>();
             e.Property(b => b.PricePerState).HasPrecision(18, 2);
             e.Property(b => b.Subtotal).HasPrecision(18, 2);
-            e.Property(b => b.TaxRate).HasPrecision(18, 2);
+            // TaxRate is a rate fraction (e.g. 0.08875), not a dollar amount — needs
+            // the same scale as every other rate column or it rounds to 2 decimals.
+            e.Property(b => b.TaxRate).HasPrecision(18, 6);
             e.Property(b => b.TaxAmount).HasPrecision(18, 2);
             e.Property(b => b.Total).HasPrecision(18, 2);
         });

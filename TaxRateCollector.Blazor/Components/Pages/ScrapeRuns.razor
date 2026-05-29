@@ -57,8 +57,8 @@ else
             {
                 <tr>
                     <td>#@r.Id</td>
-                    <td>@r.StartedAt[..19]</td>
-                    <td>@(r.CompletedAt is not null ? r.CompletedAt[..19] : "—")</td>
+                    <td>@(r.StartedAt.Length >= 19 ? r.StartedAt[..19] : r.StartedAt)</td>
+                    <td>@(r.CompletedAt is { Length: >= 19 } ? r.CompletedAt[..19] : r.CompletedAt ?? "—")</td>
                     <td><span class="badge badge-@r.Status.ToString().ToLower()">@r.Status</span></td>
                     <td>
                         @if (r.Status == ScrapeStatus.Running || r.Status == ScrapeStatus.Pending)
