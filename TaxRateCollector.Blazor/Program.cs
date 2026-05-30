@@ -36,13 +36,10 @@ builder.Host.UseSerilog();
 // Cloud-native configuration chain. Layered (later sources win):
 //   AddJsonFile (already added by WebApplicationBuilder for appsettings.json).
 //   AddMindAtticVaultFiles surfaces %APPDATA%\MindAttic\<bucket>\providers.json on dev.
-//   AddUserSecrets pinned to mindattic-vault-shared so the same secret store is
-//     visible to every MindAttic project that pins the same id.
 //   AddEnvironmentVariables (already present) picks up App Service Application
 //     Settings + Azure Key Vault references in production.
 builder.Configuration
-    .AddMindAtticVaultFiles()
-    .AddUserSecrets<Program>(optional: true);
+    .AddMindAtticVaultFiles();
 
 // Vault: cloud-native credential resolvers (LlmCredentialResolver,
 // BrokerCredentialResolver) registered alongside the legacy file-backed stores.

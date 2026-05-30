@@ -4,7 +4,6 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <UserSecretsId>dotnet-TaxRateCollector.Worker-e3073697-f510-439e-87b2-f56b5ab86d38</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

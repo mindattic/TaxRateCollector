@@ -19,7 +19,6 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
-    <UserSecretsId>mindattic-vault-shared</UserSecretsId>
   </PropertyGroup>
 
 </Project>
