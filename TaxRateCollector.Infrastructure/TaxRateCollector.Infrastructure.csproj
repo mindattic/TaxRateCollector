@@ -6,7 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.105.0" />
-    <PackageReference Include="MindAttic.Legion" Version="2.4.0" />
+    <PackageReference Include="MindAttic.Legion" Version="2.5.0" />
     <PackageReference Include="CsvHelper" Version="33.1.0" />
     <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.5" />
