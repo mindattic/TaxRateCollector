@@ -79,7 +79,7 @@ The system targets SQL Server (LocalDB dev / Azure SQL prod) via EF Core 10. The
 
 ## Status index
 
-- ✅ done: 18
+- ✅ done: 20
 - 🟡 partial: 7
 - ⬜ planned: 6
 - 🗑 cut: 1

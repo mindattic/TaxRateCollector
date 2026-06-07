@@ -40,6 +40,8 @@ updated: 2026-06-07
 - **TRC-US-D3 ✅** As the system, format-specific strategies parse CA CSV / IL HTML table / TX XLSX and skip invalid or out-of-range rows. *(verified by `StrategyScraperTests` — `ScrapeAsync_ParsesValidCsvRow`, `ScrapeAsync_SkipsRowWithInvalidRate`, `ScrapeAsync_SkipsRowAboveCeiling`, `ScrapeAsync_ParsesHtmlTableRow`, `CanHandle_ReturnsTrue_ForCA`.)*
 - **TRC-US-D4 ✅** As the system, the rate-string `Sanitizer` normalises `"6.25%"`, `"0.0625"`, `"$0.231/pack"` to a decimal. *(verified by `SanitizerTests`.)*
 - **TRC-US-D5 ✅** As the system, AI rate extraction routes through MindAttic.Legion and degrades safely without a key. *(verified by `ClaudeExtractionParserTests`; enforces [TRC-LAW-3](BIBLE.md#TRC-LAW-3).)*
+- **TRC-US-D6 ✅** As the system, the recursive scraper walks a jurisdiction hierarchy, AI-extracts rate laws with evidence, and persists them flagged `NeedsReview=true` for admin approval. *(verified by `RecursiveRateScraperTests`.)*
+- **TRC-US-D7 ✅** As an admin, I can approve or reject AI-extracted rates via the review flow; approved rates become `IsCurrent=true` and rejected rates are removed. *(verified by `NeedsReviewFlowTests`.)*
 
 ## Epic E — SSUTA member-state scraping (frontier)
 
