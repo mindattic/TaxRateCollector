@@ -16,7 +16,7 @@ public interface IEvidenceFileStore
 }
 
 public record StoredEvidenceFile(
-    string FileName,      // stored filename on disk, e.g. "scraped_20260419_ab12cd34.pdf"
-    string EvidenceType,  // "pdf" | "csv" | "xlsx" | "zip" | "txt"
+    string FileName,      // stored filename on disk, e.g. "scraped_ab12cd34ef56.pdf" or "<slug>_ab12cd34ef56.html"
+    string EvidenceType,  // "pdf" | "csv" | "xlsx" | "html" | "txt"
     long SizeBytes,
     string ContentHash);  // SHA-256 hex of the bytes actually written to disk (re-hashable)

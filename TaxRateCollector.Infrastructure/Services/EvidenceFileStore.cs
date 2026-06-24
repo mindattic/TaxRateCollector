@@ -161,6 +161,7 @@ public sealed class EvidenceFileStore(
             "application/pdf"                                          => ("pdf",  ".pdf"),
             var m when m.StartsWith("application/vnd.openxmlformats") => ("xlsx", ".xlsx"),
             var m when m.StartsWith("application/vnd.ms-excel")       => ("xlsx", ".xlsx"),
+            var m when m.StartsWith("text/csv", StringComparison.OrdinalIgnoreCase) => ("csv", ".csv"),
             var m when IsHtml(m)                                       => ("html", ".html"),
             _                                                          => ("txt",  ".txt"),
         };

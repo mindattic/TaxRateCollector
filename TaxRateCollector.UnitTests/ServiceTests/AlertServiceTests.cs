@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using TaxRateCollector.Core.Entities;
 using TaxRateCollector.Core.Enums;
@@ -9,8 +10,14 @@ namespace TaxRateCollector.UnitTests.ServiceTests;
 [TestFixture]
 public class AlertServiceTests
 {
-    private sealed class Factory(DbContextOptions<AppDbContext> opts) : IDbContextFactory<AppDbContext>
+    // SQLite in-memory (not the EF InMemory provider) so relational features the
+    // service relies on — notably ExecuteUpdateAsync in AcknowledgeAllAsync — are
+    // supported. The open connection is held by the factory to keep the
+    // ":memory:" database alive for the lifetime of each test.
+    private sealed class Factory(DbContextOptions<AppDbContext> opts, SqliteConnection conn)
+        : IDbContextFactory<AppDbContext>
     {
+        public SqliteConnection Connection { get; } = conn;
         public AppDbContext CreateDbContext() => new(opts);
         public Task<AppDbContext> CreateDbContextAsync(CancellationToken ct = default)
             => Task.FromResult(new AppDbContext(opts));
@@ -18,10 +25,14 @@ public class AlertServiceTests
 
     private static Factory MakeFactory()
     {
+        var conn = new SqliteConnection("DataSource=:memory:");
+        conn.Open();
         var opts = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .UseSqlite(conn)
             .Options;
-        return new Factory(opts);
+        using (var ctx = new AppDbContext(opts))
+            ctx.Database.EnsureCreated();
+        return new Factory(opts, conn);
     }
 
     private static async Task SeedChangeLogAsync(AppDbContext db,

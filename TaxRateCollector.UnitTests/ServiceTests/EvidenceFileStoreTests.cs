@@ -1,8 +1,6 @@
-using System.IO.Compression;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using TaxRateCollector.Infrastructure.Services;
-using TaxRateCollector.UnitTests.Helpers;
 
 namespace TaxRateCollector.UnitTests.ServiceTests;
 
@@ -99,13 +97,15 @@ public class EvidenceFileStoreTests
     }
 
     [Test]
-    public async Task Html_ReturnsEvidenceType_Zip()
+    public async Task Html_ReturnsEvidenceType_Html()
     {
+        // HTML evidence is saved as a single stripped .html file (the legacy
+        // zip-bundling scheme was removed), so the discriminator is "html".
         var store = MakeStore();
         var result = await store.SaveAsync("http://ex.gov/page",
             Encoding.UTF8.GetBytes("<html><body>Hello</body></html>"), "text/html");
         createdFiles.Add(result.FileName);
-        Assert.That(result.EvidenceType, Is.EqualTo("zip"));
+        Assert.That(result.EvidenceType, Is.EqualTo("html"));
     }
 
     [Test]
@@ -118,23 +118,22 @@ public class EvidenceFileStoreTests
         Assert.That(result.EvidenceType, Is.EqualTo("txt"));
     }
 
-    // ── Simple zip contents ───────────────────────────────────────────────────
+    // ── Stripped-HTML evidence file ─────────────────────────────────────────────
 
     [Test]
-    public async Task SimpleHtmlZip_ContainsIndexHtml()
+    public async Task Html_SavedAsSingleHtmlFile()
     {
         var store = MakeStore();
         var html = Encoding.UTF8.GetBytes("<html><body>Tax page</body></html>");
         var result = await store.SaveAsync("http://ex.gov/page", html, "text/html");
         createdFiles.Add(result.FileName);
 
-        var fullPath = Path.Combine(SettingsService.EvidenceDirectory, result.FileName);
-        using var zip = ZipFile.OpenRead(fullPath);
-        Assert.That(zip.GetEntry("index.html"), Is.Not.Null);
+        Assert.That(result.FileName, Does.EndWith(".html"));
+        Assert.That(File.Exists(Path.Combine(SettingsService.EvidenceDirectory, result.FileName)), Is.True);
     }
 
     [Test]
-    public async Task SimpleHtmlZip_IndexHtml_ContainsOriginalContent()
+    public async Task Html_SavedFile_ContainsOriginalContent()
     {
         var store = MakeStore();
         var html = Encoding.UTF8.GetBytes("<html><body>Tax rate: 6.25%</body></html>");
@@ -142,9 +141,7 @@ public class EvidenceFileStoreTests
         createdFiles.Add(result.FileName);
 
         var fullPath = Path.Combine(SettingsService.EvidenceDirectory, result.FileName);
-        using var zip = ZipFile.OpenRead(fullPath);
-        using var sr = new StreamReader(zip.GetEntry("index.html")!.Open());
-        var content = await sr.ReadToEndAsync();
+        var content = await File.ReadAllTextAsync(fullPath);
         Assert.That(content, Does.Contain("6.25%"));
     }
 
@@ -156,7 +153,8 @@ public class EvidenceFileStoreTests
         var store = MakeStore();
         var result = await store.SaveAsync("http://ex.gov/doc", [1, 2, 3], "application/pdf");
         createdFiles.Add(result.FileName);
-        Assert.That(result.FileName, Does.Match(@"^scraped_\d{14}_[0-9a-f]{8}\.pdf$"));
+        // No title slug available → "scraped_<12 hex of content hash>.<ext>".
+        Assert.That(result.FileName, Does.Match(@"^scraped_[0-9a-f]{12}\.pdf$"));
     }
 
     // ── SizeBytes ─────────────────────────────────────────────────────────────
@@ -173,25 +171,22 @@ public class EvidenceFileStoreTests
         Assert.That(result.SizeBytes, Is.EqualTo(new FileInfo(fullPath).Length));
     }
 
-    // ── Full-page zip ─────────────────────────────────────────────────────────
+    // ── Asset stripping ─────────────────────────────────────────────────────────
 
     [Test]
-    public async Task FullPageZip_BundlesLinkedAssets()
+    public async Task Html_StripsLinkedAssetReferences()
     {
-        var handler = new FakeHttpMessageHandler();
-        handler.Register("http://ex.gov/style.css", Encoding.UTF8.GetBytes("body{}"), "text/css");
-
-        var store = new EvidenceFileStore(NullLogger<EvidenceFileStore>.Instance);
-
+        // The stripper removes <link>/<script>/<style> noise nodes, so external
+        // asset references do not survive into the saved evidence file (the old
+        // full-page asset-bundling behavior was removed).
+        var store = MakeStore();
         var html = Encoding.UTF8.GetBytes(
             "<html><head><link href=\"http://ex.gov/style.css\" rel=\"stylesheet\"></head><body>Tax</body></html>");
 
         var result = await store.SaveAsync("http://ex.gov/page", html, "text/html");
         createdFiles.Add(result.FileName);
 
-        var fullPath = Path.Combine(SettingsService.EvidenceDirectory, result.FileName);
-        using var zip = ZipFile.OpenRead(fullPath);
-        var hasAsset = zip.Entries.Any(e => e.FullName.Contains("style.css"));
-        Assert.That(hasAsset, Is.True);
+        var content = await File.ReadAllTextAsync(Path.Combine(SettingsService.EvidenceDirectory, result.FileName));
+        Assert.That(content, Does.Not.Contain("style.css"));
     }
 }
