@@ -1,0 +1,629 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TaxRateCollector</title>
+<meta name="description" content="Provably accurate US sales tax rates — for billing systems that can't afford to be wrong.">
+<meta name="generator" content="MindAttic Codex build-readme.ps1">
+<meta name="generated" content="2026-08-14">
+<style>:root{
+  --bg:#0d1117;--bg2:#161b22;--bg3:#21262d;
+  --border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;
+  --h1:#58a6ff;--h2:#79c0ff;--h3:#d2a8ff;
+  --link:#58a6ff;--code:#f0f6fc;
+  --sidebar-w:272px;--content-max:900px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  background:var(--bg);color:var(--text);font-size:15px;line-height:1.8
+}
+#layout{display:flex;min-height:100vh}
+#sidebar{
+  width:var(--sidebar-w);flex-shrink:0;
+  position:sticky;top:0;height:100vh;overflow-y:auto;
+  background:var(--bg2);border-right:1px solid var(--border);
+  padding:1.5rem 0
+}
+#sidebar::-webkit-scrollbar{width:4px}
+#sidebar::-webkit-scrollbar-track{background:transparent}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+#toc-inner{padding:0 .75rem}
+.toc-title{
+  display:block;font-size:.68rem;font-weight:700;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.1em;padding:.1rem .5rem .9rem
+}
+.toc-a{
+  display:block;padding:.22rem .5rem;font-size:.79rem;color:var(--muted);
+  border-radius:4px;text-decoration:none;line-height:1.35;margin-bottom:1px;
+  transition:color .15s,background .15s
+}
+.toc-a:hover{color:var(--text);background:rgba(255,255,255,.05)}
+.toc-a.active{color:var(--h1);background:rgba(88,166,255,.12);font-weight:500}
+.toc-a.is-h3{padding-left:1.25rem;font-size:.75rem}
+.toc-sep{border:none;border-top:1px solid var(--border);margin:.6rem .5rem}
+#content{
+  flex:1;min-width:0;
+  max-width:calc(var(--sidebar-w) + var(--content-max));
+  padding:2.5rem 3.5rem 5rem
+}
+h1{color:var(--h1);font-size:2rem;font-weight:700;
+   border-bottom:1px solid var(--border);padding-bottom:.5rem;margin-bottom:1.25rem}
+h2{color:var(--h2);font-size:1.35rem;font-weight:600;
+   margin-top:2.75rem;margin-bottom:.75rem;
+   border-bottom:1px solid var(--border);padding-bottom:.3rem}
+h3{color:var(--h3);font-size:1.05rem;font-weight:600;margin-top:1.5rem;margin-bottom:.4rem}
+h4{color:var(--text);font-size:.95rem;font-weight:600;margin-top:1rem}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+p{margin:.7rem 0}
+ul,ol{padding-left:1.75rem;margin:.4rem 0}
+li{margin:.2rem 0}
+li>ul,li>ol{padding-left:1.5rem;margin:.1rem 0}
+hr{border:none;border-top:1px solid var(--border);margin:2.25rem 0}
+blockquote{
+  border-left:3px solid var(--h1);background:var(--bg2);
+  color:var(--muted);padding:.65rem 1rem;margin:1rem 0;
+  border-radius:0 4px 4px 0;font-style:italic
+}
+blockquote p{margin:0}
+code{
+  background:var(--bg2);color:var(--code);
+  padding:.15em .45em;border-radius:4px;font-size:.84em;
+  font-family:'Cascadia Code','Fira Code','Consolas','SF Mono',monospace
+}
+pre{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:6px;padding:1rem 1.25rem;overflow-x:auto;
+  margin:1rem 0;position:relative
+}
+pre code{background:none;padding:0;font-size:.84rem;line-height:1.65;color:var(--code)}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.875rem;overflow-x:auto;display:block}
+thead th{
+  background:var(--bg3);color:var(--h2);font-weight:600;
+  text-align:left;padding:.5rem .75rem;border:1px solid var(--border)
+}
+tbody td{padding:.4rem .75rem;border:1px solid var(--border);vertical-align:top}
+tbody tr:hover{background:rgba(255,255,255,.025)}
+.cpbtn{
+  position:absolute;top:.5rem;right:.5rem;
+  background:var(--bg3);color:var(--muted);
+  border:1px solid var(--border);border-radius:4px;
+  padding:.15rem .55rem;font-size:.71rem;font-family:inherit;
+  cursor:pointer;opacity:0;transition:opacity .15s,color .15s;line-height:1.5
+}
+pre:hover .cpbtn{opacity:1}
+.cpbtn:hover{color:var(--text)}
+.cpbtn.ok{color:#7ee787}
+.codex-footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--border);color:var(--muted);font-size:.78rem}
+@media(max-width:820px){
+  #sidebar{display:none}
+  #content{padding:1.5rem 1.25rem 3.5rem}
+}</style>
+</head>
+<body>
+<div id="layout">
+  <nav id="sidebar" aria-label="Table of contents">
+    <div id="toc-inner"></div>
+  </nav>
+  <main id="content">
+<h1 id="taxratecollector">TaxRateCollector</h1>
+<p><strong>Provably accurate US sales tax rates — for billing systems that can't afford to be wrong.</strong></p>
+<p>Most tax-rate APIs hand you a number. TaxRateCollector hands you the number <em>and the official government PDF, CSV, or API response it came from</em> — SHA-256 hashed, timestamped, and stored alongside every rate so an audit team can trace every cent back to the statute that authorized it.</p>
+<ul>
+<li><strong>Evidence on every row.</strong> Each <code>TaxRate</code> is bound to a <code>SourceDocument</code> holding the raw <code>.gov</code> artifact, its SHA-256 content hash, and the <code>FetchedAt</code> timestamp.</li>
+<li><strong>All US jurisdictions.</strong> Country → State → County → City hierarchy seeded from US Census Bureau gazetteers, with ZIP-to-jurisdiction lookup over ~33,000 ZCTAs.</li>
+<li><strong>SSUTA-aligned product taxonomy.</strong> ~200 SST taxonomy nodes (Streamlined Sales &amp; Use Tax Agreement Appendix C), with documented per-state overrides for non-member states.</li>
+<li><strong>Excise / sin taxes modeled properly.</strong> Per-unit, per-volume, per-proof-gallon, per-weight, and percentage-of-wholesale bases; brackets; per-unit caps; compound tax-on-tax; ABV gating;   origin/destination sourcing — not just a flat percentage.</li>
+<li><strong>Continuous re-scraping with change detection.</strong> A background scheduler re-checks each jurisdiction's source on a configurable cadence; <code>DiffEngine</code> writes a <code>ChangeLogEntry</code> the   moment a rate moves.</li>
+<li><strong>AI-assisted discovery, human-approved.</strong> <code>RecursiveRateScraper</code> walks a jurisdiction hierarchy and uses an LLM (routed through <code>MindAttic.Legion</code>, never a hard-coded vendor SDK) to extract   candidate rate laws with evidence; every AI-extracted rate lands <code>NeedsReview=true</code> until an   admin approves or rejects it.</li>
+<li><strong>Plugs into a billing stack.</strong> Blazor Server UI plus CSV / XLSX / SQL / HTML exports.</li>
+</ul>
+<p>This README covers day-to-day build/run/test mechanics. For architecture, invariants, and verified state, the canonical source of truth is <strong><a href="docs/BIBLE.md">docs/BIBLE.md</a></strong> — read that first for how to <em>think about</em> the system; this file is how to <em>operate</em> it. See also <strong><a href="docs/AMENDMENTS.md">docs/AMENDMENTS.md</a></strong> (things that changed since the bible was written), <strong><a href="docs/USER<em>STORIES.md">docs/USER</em>STORIES.md</a></strong> (test-cited feature status), and <strong><a href="docs/rfc/">docs/rfc/</a></strong> (design notes not yet folded into canon).</p>
+<hr>
+<h2 id="what-it-is-is-not">What it is / is not</h2>
+<table><thead><tr>
+<th>It IS</th>
+<th>It is NOT</th>
+</tr></thead><tbody>
+<tr>
+<td>A Blazor Server app + background Worker that maintain an evidence-backed master table of US sales &amp; excise tax rates</td>
+<td>A live public tax-calc REST/GraphQL API — there's no such endpoint yet (<a href="docs/USER_STORIES.md">TRC-US-G1</a>, backlog)</td>
+</tr>
+<tr>
+<td>Backed by <strong>SQL Server</strong> (LocalDB dev, Azure SQL prod) via EF Core 10</td>
+<td>A SQLite app — <code>TODO.md</code> has stale SQLite-era prose; superseded by <a href="docs/AMENDMENTS.md#TRC-A1">TRC-A1</a> / <a href="docs/BIBLE.md#TRC-LAW-8">TRC-LAW-8</a></td>
+</tr>
+<tr>
+<td>A soft-delete system — rates retire (<code>IsCurrent=false</code>), jurisdictions deactivate (<code>IsActive=false</code>)</td>
+<td>A hard-delete system (<a href="docs/BIBLE.md#TRC-LAW-2">TRC-LAW-2</a>)</td>
+</tr>
+<tr>
+<td>Provider-agnostic for LLM calls, via <code>MindAttic.Legion</code></td>
+<td>Vendor-locked to any one LLM SDK (<a href="docs/BIBLE.md#TRC-LAW-3">TRC-LAW-3</a>)</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="architecture">Architecture</h2>
+<pre><code>                  +------------------------------+
+                  |  TaxRateCollector.Blazor      |  Blazor Server UI (InteractiveServer),
+                  |  (front door: interactive)    |  pages, exports, DI composition root
+                  +---------------+---------------+
+                                  |
+   +------------------------------+------------------------------+
+   |                              |                              |
++--v---------------+   +----------v-----------+   +--------------v-------+
+| TaxRateCollector |   | TaxRateCollector      |   | TaxRateCollector     |
+| .Worker          |   | .Infrastructure       |   | .UnitTests           |
+| (front door:     |   | EF Core 10, scrapers, |   | NUnit 4, InMemory +  |
+|  background)     |   | seeders, services     |   | LocalDB integration  |
++--------+---------+   +----------+------------+   +----------------------+
+         |                        |
+         |             +----------v-----------+
+         +------------&gt;| TaxRateCollector.Core |  Entities, Enums, Interfaces, Options
+                       | (nouns + contracts)   |
+                       +----------------------+
+                                  |
+                          +-------v--------+
+                          |  SQL Server    |  LocalDB (dev) / Azure SQL (prod)
+                          +----------------+</code></pre>
+<p>The Blazor host and the Worker are <strong>two front doors over one engine</strong>: both register the same <code>Core</code> + <code>Infrastructure</code> DI graph and read the same <code>DefaultConnection</code> connection string. The Worker exists so unattended re-scraping doesn't compete with interactive traffic — the Blazor host <em>also</em> runs its own hosted <code>ScrapeWorkerService</code> for on-demand scrape jobs kicked off from the UI, while <code>TaxRateCollector.Worker</code> runs the unattended cadence (<code>MonthlySchedulerService</code> + <code>ScrapeJobWorker</code>) as a standalone process/service.</p>
+<p><strong>Stack:</strong></p>
+<table><thead><tr>
+<th>Layer</th>
+<th>Technology</th>
+</tr></thead><tbody>
+<tr>
+<td>Target framework</td>
+<td><code>net10.0</code> (all five projects)</td>
+</tr>
+<tr>
+<td>UI</td>
+<td>ASP.NET Core 10, Blazor Server (<code>InteractiveServer</code> render mode)</td>
+</tr>
+<tr>
+<td>ORM</td>
+<td>EF Core 10 (<code>Microsoft.EntityFrameworkCore.SqlServer</code> 10.0.5)</td>
+</tr>
+<tr>
+<td>Database</td>
+<td>SQL Server LocalDB (dev) / Azure SQL (prod) — no SQLite path</td>
+</tr>
+<tr>
+<td>PDF extraction</td>
+<td><code>UglyToad.PdfPig</code> 1.7.0-custom-5</td>
+</tr>
+<tr>
+<td>XLSX export</td>
+<td><code>ClosedXML</code> 0.105.0</td>
+</tr>
+<tr>
+<td>HTML scraping</td>
+<td><code>HtmlAgilityPack</code> 1.12.4</td>
+</tr>
+<tr>
+<td>CSV parsing</td>
+<td><code>CsvHelper</code> 33.1.0</td>
+</tr>
+<tr>
+<td>Logging</td>
+<td><code>Serilog.AspNetCore</code> / <code>Serilog.Extensions.Hosting</code>, console + EF-backed sink</td>
+</tr>
+<tr>
+<td>Auth</td>
+<td>ASP.NET Core Identity (<code>IdentityUser</code>/<code>IdentityRole</code>, cookie auth)</td>
+</tr>
+<tr>
+<td>LLM extraction</td>
+<td><code>MindAttic.Legion</code> 22.0.0 (<code>LegionClient</code>) — never a raw vendor SDK</td>
+</tr>
+<tr>
+<td>Credentials</td>
+<td><code>MindAttic.Vault</code> 1.0.0 (<code>AddMindAtticVaultFiles</code> / <code>AddMindAtticVault</code>)</td>
+</tr>
+<tr>
+<td>Testing</td>
+<td>NUnit 4.3.2, <code>Microsoft.EntityFrameworkCore.InMemory</code>, LocalDB integration, <code>Microsoft.Data.SqlClient</code></td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="prerequisites">Prerequisites</h2>
+<ul>
+<li>.NET 10 SDK</li>
+<li>SQL Server LocalDB (<code>sqllocaldb create MSSQLLocalDB</code>) for local dev</li>
+<li>An Anthropic key resolvable via the shared MindAttic credential store (<code>MindAttic.Vault</code>) for AI rate-law extraction — optional; without one, <code>StubRateLawExtractor</code> is used and nothing throws</li>
+</ul>
+<hr>
+<h2 id="project-structure">Project structure</h2>
+<pre><code>TaxRateCollector/
+├── TaxRateCollector.Core/                  Domain layer — no EF, no I/O
+│   ├── Entities/        Jurisdiction, TaxRate, TaxCategory, SourceDocument, ExciseTaxRate,
+│   │                     StateTaxProfile, ScrapeRun, ZipCodeRecord, ZipCodeDistrict,
+│   │                     ChangeLogEntry, Subscriber/SubscribedState/SubscribedCategory,
+│   │                     BillingRecord, PricingConfig, PayPalConfig, LogEntry, DiscoveryResult,
+│   │                     JurisdictionData (ICanonEntity)
+│   ├── Enums/            JurisdictionType, RateBasis, TaxType, CategoryTaxability, ChangeType,
+│   │                     SourceType, SourceConfidence, ScrapeStatus, ProductCategory,
+│   │                     LocalTaxAuthorityType, SourcingRule, SaleContext, RemittancePoint,
+│   │                     RateAdjustmentFrequency, BillingStatus
+│   ├── Interfaces/       IScrapeOrchestrator, IScrapeStrategy, IStateBulkScraper, IDiffEngine,
+│   │                     ITaxCalculator, IRecursiveRateScraper (+ IRateLawExtractor),
+│   │                     IEvidenceFileStore, IPayPalService, IDiscoveryService,
+│   │                     IWebDirectoryScanner, ICensusJurisdictionImportService,
+│   │                     IZipImportService, ISstTaxonomyImportService, ICanonEntity
+│   ├── Constants/        TaxRateConstants
+│   └── Options/          AnthropicOptions
+├── TaxRateCollector.Infrastructure/
+│   ├── Data/AppDbContext.cs                EF Core context — all tables
+│   ├── Migrations/                         20260418044705_InitialCreate … 20260529033323_FixBillingTaxRatePrecision
+│   ├── Seeding/          JurisdictionSeeder, TaxCategorySeeder, StateTaxProfileSeeder,
+│   │                     SstTaxonomyData, DemoSubscriberSeeder
+│   ├── Scrapers/         ScrapeOrchestrator, ScraperHttpHelper, Sanitizer, 12 per-state
+│   │                     "AlcoholScraper" classes (WI/IL/MN/IA/IN/MI/ND/SD/OH/MT/ID/OR),
+│   │                     WisconsinSalesTaxScraper
+│   │   └── Strategies/   CaliforniaCsvScraper, IllinoisTableScraper, TexasExcelScraper
+│   └── Services/         TaxCalculator, DiffEngine, RecursiveRateScraper,
+│                         ClaudeRateLawExtractor / StubRateLawExtractor, EvidenceFileStore,
+│                         CensusJurisdictionImportService, ZipImportService,
+│                         SstTaxonomyImportService, CensusGazetteerParser, ZipCrosswalkParser,
+│                         SstDefinitionParser, ScrapeSchedulerService, ScrapeWorkerService,
+│                         ScrapeJobCoordinator, SettingsService, AlertService, PayPalService,
+│                         DiscoveryService, WebDirectoryScanner
+├── TaxRateCollector.Blazor/
+│   ├── Program.cs                          DI composition root; migrate+seed on startup;
+│   │                                       `--populate` / `--zero-rates` / `--scrape` CLI modes
+│   └── Components/Pages/  Jurisdictions, Rates, TaxCalc, Setup, ZipImport, Discovery, Review,
+│                           ScrapeRuns, ChangeLog, Logs, Glossary, Settings, Subscribe, Account,
+│                           Login, Register, TermsViolation, Error, NotFound
+├── TaxRateCollector.Worker/                 MonthlySchedulerService, ScrapeJobWorker, Worker.cs
+├── TaxRateCollector.UnitTests/
+│   └── AdminTools, DataCollectionTests, DataSourceTests, EvidenceTests, ExportTests,
+│       JurisdictionTests, LoggingTests, PayPalTests, ScraperTests, ServiceTests, SetupTests,
+│       StartupTests, SubscriptionTests, TaxCalcTests, Helpers/
+├── TaxRateCollector.Frontend/                Effectively empty — see "Known quirks" below
+├── TaxRateCollector.bacpac                  SQL Server data-tier backup (see "Database" below)
+├── TaxRateCollector.slnx                    Solution — does NOT include .Frontend
+├── docs/                                    Codex canon (BIBLE / AMENDMENTS / USER_STORIES / rfc)
+├── index.htm                                Generated mindattic.com landing page (do not hand-edit)
+└── tools/                                   codex.ps1 (Codex digest/doctor), build-readme.ps1</code></pre>
+<hr>
+<h2 id="getting-started">Getting started</h2>
+<pre><code class="language-powershell"># Restore + run (migrations + seeders run automatically on first launch)
+dotnet restore
+dotnet run --project TaxRateCollector.Blazor
+# -&gt; https://localhost:5001 (see TaxRateCollector.Blazor/Properties/launchSettings.json for the exact port)
+
+# Log in as dev admin (set before launch; Program.cs reads these via IConfiguration):
+# $env:DEV_ADMIN_EMAIL = "admin@example.com"
+# $env:DEV_ADMIN_PASSWORD = "..."
+# In Development only, GET /dev-login signs that user in directly (bypasses the login form).
+
+# Navigate to /setup to run the data import pipeline</code></pre>
+<p>On first launch <code>Program.cs</code>:</p>
+<ol>
+<li>Applies EF Core migrations (<code>db.Database.MigrateAsync()</code>).</li>
+<li>Seeds <code>TaxCategories</code> (~200 SST nodes) and <code>Jurisdictions</code> (Country + 51 States).</li>
+<li>Ensures Census counties/cities are present (imports automatically if under 3,000 counties or 5,000 cities — this can take 20–40 minutes on a cold cache).</li>
+<li>Ensures ZIP crosswalks are present (imports automatically if under 30,000 ZIP rows — 15–30 minutes cold).</li>
+<li>Seeds <code>StateTaxProfiles</code> (51 profiles), <code>PricingConfig</code>, <code>PayPalConfig</code>.</li>
+<li>Ensures the <code>Administrator</code> and <code>Approver</code> Identity roles exist; seeds the dev admin user (if <code>DEV_ADMIN_EMAIL</code>/<code>DEV_ADMIN_PASSWORD</code> are set) and demo subscribers (<code>DemoSubscriberSeeder</code>).</li>
+</ol>
+<h3 id="blazor-host-cli-switches">Blazor host CLI switches</h3>
+<p><code>Program.cs</code> also branches on <code>args</code>, so the same executable doubles as an operational CLI:</p>
+<table><thead><tr>
+<th>Switch</th>
+<th>Effect</th>
+</tr></thead><tbody>
+<tr>
+<td><code>--populate</code></td>
+<td>Truncates billing/log/rate/jurisdiction/category tables, then runs the full seed+import pipeline fresh, and exits (does not start serving requests).</td>
+</tr>
+<tr>
+<td><code>--zero-rates</code></td>
+<td>Deletes all <code>SourceDocuments</code>, zeroes every <code>TaxRate.Rate</code>, and deletes evidence files on disk — a reset for demo/test data without touching the jurisdiction hierarchy.</td>
+</tr>
+<tr>
+<td>`--scrape --state &lt;WI\</td>
+<td>IL\</td>
+<td>MN\</td>
+<td>...\</td>
+<td>all&gt; [--category &lt;name&gt;]`</td>
+<td>Runs one or more registered <code>IStateBulkScraper</code> implementations outside the UI; <code>--state all</code> runs every registered scraper.</td>
+</tr>
+</tbody></table>
+<p>Census gazetteer files are cached to <code>%APPDATA%\MindAttic\TaxRateCollector\cache\</code> after first download.</p>
+<hr>
+<h2 id="data-import-pipeline-setup-page">Data import pipeline (Setup page)</h2>
+<table><thead><tr>
+<th>Step</th>
+<th>What it does</th>
+</tr></thead><tbody>
+<tr>
+<td>1. Validate URLs</td>
+<td>HTTP HEAD checks all Census + SST source URLs</td>
+</tr>
+<tr>
+<td>2. Import SST Taxonomy</td>
+<td>Downloads the SSUTA Agreement PDF, refreshes <code>TaxCategory</code> descriptions from Appendix C via <code>SstTaxonomyImportService</code> / <code>SstDefinitionParser</code></td>
+</tr>
+<tr>
+<td>3. Import Census Jurisdictions</td>
+<td>Census Gazetteer ZIPs → counties + cities via <code>CensusJurisdictionImportService</code> / <code>CensusGazetteerParser</code> (~20–40 min first run)</td>
+</tr>
+<tr>
+<td>4. Import ZIP Crosswalks</td>
+<td>Census ZCTA TXTs → ZIPs linked to jurisdictions via <code>ZipImportService</code> / <code>ZipCrosswalkParser</code> (~15–30 min first run; enriches city names via the USPS CityStateLookup API and persists <code>UspsValidated</code> when a USPS key is configured)</td>
+</tr>
+<tr>
+<td>5. Assign Source URLs</td>
+<td>Set <code>Jurisdiction.SourceUrl</code> for each state via the Jurisdictions page</td>
+</tr>
+<tr>
+<td>6. Run Scrape</td>
+<td><code>ScrapeOrchestrator</code> dispatches every active jurisdiction with a source URL to the matching <code>IScrapeStrategy</code> / <code>IStateBulkScraper</code></td>
+</tr>
+</tbody></table>
+<p>Per <a href="docs/USER<em>STORIES.md">docs/USER</em>STORIES.md</a> (<code>TRC-US-B3</code>), full-corpus population (~3,144 counties, 10,000+ cities) is a live-download integration step, not asserted by the default unit test run — run it and verify manually, or via <code>Category=Integration</code> tests against LocalDB.</p>
+<hr>
+<h2 id="data-pipeline-internals-the-worker-story">Data pipeline internals (the "Worker" story)</h2>
+<p>TaxRateCollector's rate data flows through two complementary paths:</p>
+<p><strong>1. Structured strategy scrapers (<code>IScrapeStrategy</code>).</strong> One class per known source <em>format</em>, dispatched by <code>ScrapeOrchestrator</code>:</p>
+<ul>
+<li><code>CaliforniaCsvScraper</code> — CSV</li>
+<li><code>IllinoisTableScraper</code> — HTML table</li>
+<li><code>TexasExcelScraper</code> — XLSX</li>
+</ul>
+<p><strong>2. Per-state bulk scrapers (<code>IStateBulkScraper</code>).</strong> One class per state's specific <code>.gov</code> page format/statute set — currently Wisconsin (general sales tax + alcohol), Illinois, Minnesota, Iowa, Indiana, Michigan, North Dakota, South Dakota, Ohio, Montana, Idaho, and Oregon (alcohol/excise). A shared <code>SstSalesTaxScraper</code> for the 24 Streamlined Sales Tax member states is designed but not yet built — see <a href="docs/rfc/0001-sst-bulk-scraper.md">docs/rfc/0001-sst-bulk-scraper.md</a> and <code>TRC-US-E2</code>.</p>
+<p><strong>3. AI-assisted discovery (<code>RecursiveRateScraper</code> + <code>IRateLawExtractor</code>).</strong> Walks a jurisdiction hierarchy (State → County → City → District), fetches raw source content, and asks an LLM (via <code>MindAttic.Legion</code>'s <code>ClaudeRateLawExtractor</code>, or <code>StubRateLawExtractor</code> when no key is configured) to extract a structured candidate rate law with evidence attached. Extracted rates are persisted with <code>NeedsReview=true</code> and surfaced on the <strong>Review</strong> page for an admin to approve (→ <code>IsCurrent=true</code>) or reject (→ removed).</p>
+<p><strong>Every path converges on the same two invariants:</strong></p>
+<ul>
+<li><strong>Evidence first</strong> (<a href="docs/BIBLE.md#TRC-LAW-1">TRC-LAW-1</a>): a scraped/extracted rate is backed by a <code>SourceDocument</code> — raw content + SHA-256 <code>ContentHash</code> + <code>FetchedAt</code> + <code>SourceUrl</code> — before it   counts as validated for export.</li>
+<li><strong>Change detection</strong> (<a href="docs/BIBLE.md#TRC-LAW-4">TRC-LAW-4</a>): <code>DiffEngine</code> compares each new scrape against the current <code>IsCurrent</code> rows and writes a <code>ChangeLogEntry</code> only for   new/changed/removed/structurally-altered rates (visible on the <strong>Change Log</strong> page); unchanged   rates produce no entry.</li>
+</ul>
+<p><strong>Two schedulers run the pipeline unattended, in different processes:</strong></p>
+<ul>
+<li><code>TaxRateCollector.Blazor</code>'s own hosted <code>ScrapeWorkerService</code> + <code>ScrapeJobCoordinator</code> — executes scrape jobs kicked off interactively from the UI (Setup / ScrapeRuns pages) without blocking   request handling.</li>
+<li><code>TaxRateCollector.Worker</code>'s <code>MonthlySchedulerService</code> + <code>ScrapeJobWorker</code> — a standalone background host for the unattended re-scrape cadence, so scheduled runs don't compete with   interactive Blazor traffic.</li>
+</ul>
+<hr>
+<h2 id="front-ends">Front-ends</h2>
+<h3 id="blazor-server-pages-taxratecollectorblazorcomponentspages">Blazor Server pages (<code>TaxRateCollector.Blazor/Components/Pages/</code>)</h3>
+<table><thead><tr>
+<th>Page</th>
+<th>Purpose</th>
+</tr></thead><tbody>
+<tr>
+<td><code>Jurisdictions.razor</code></td>
+<td>Lazy-loading Country→State→County→City tree; inline rate editing; evidence panel (drag-and-drop upload)</td>
+</tr>
+<tr>
+<td><code>Rates.razor</code></td>
+<td>Master rate table view</td>
+</tr>
+<tr>
+<td><code>TaxCalc.razor</code></td>
+<td>Point-of-sale combined-rate calculator (ZIP → tiers → total)</td>
+</tr>
+<tr>
+<td><code>Setup.razor</code></td>
+<td>Data import pipeline (URL validation, SST/Census/ZIP import, source URL assignment, scrape trigger)</td>
+</tr>
+<tr>
+<td><code>ZipImport.razor</code></td>
+<td>ZIP crosswalk import UI</td>
+</tr>
+<tr>
+<td><code>Discovery.razor</code></td>
+<td>Drives <code>IDiscoveryService</code> / <code>RecursiveRateScraper</code> AI-assisted rate discovery</td>
+</tr>
+<tr>
+<td><code>Review.razor</code></td>
+<td>Approve/reject AI-extracted (<code>NeedsReview=true</code>) rates</td>
+</tr>
+<tr>
+<td><code>ScrapeRuns.razor</code></td>
+<td><code>ScrapeRun</code> history — status, counts, pause/resume</td>
+</tr>
+<tr>
+<td><code>ChangeLog.razor</code></td>
+<td><code>ChangeLogEntry</code> history from <code>DiffEngine</code></td>
+</tr>
+<tr>
+<td><code>Logs.razor</code></td>
+<td>Application log viewer (Serilog EF sink)</td>
+</tr>
+<tr>
+<td><code>Glossary.razor</code></td>
+<td>Domain glossary</td>
+</tr>
+<tr>
+<td><code>Settings.razor</code></td>
+<td>Theme/font, USPS key, scraper options — backed by <code>SettingsService</code></td>
+</tr>
+<tr>
+<td><code>Subscribe.razor</code></td>
+<td>PayPal subscription checkout</td>
+</tr>
+<tr>
+<td><code>Account.razor</code>, <code>Login.razor</code>, <code>Register.razor</code></td>
+<td>Identity auth flows</td>
+</tr>
+<tr>
+<td><code>TermsViolation.razor</code>, <code>Error.razor</code>, <code>NotFound.razor</code></td>
+<td>Error/status pages</td>
+</tr>
+</tbody></table>
+<h3 id="roles-and-access-tiers">Roles and access tiers</h3>
+<p>Two different mechanisms gate access — don't conflate them:</p>
+<ul>
+<li><strong>ASP.NET Core Identity roles</strong> — only <code>Administrator</code> and <code>Approver</code> exist as real Identity roles (created in <code>Program.cs</code> on startup). These gate write actions (rate edits, evidence,   setup pipeline, settings, scrape approval).</li>
+<li><strong>Subscriber tier (domain concept, not an Identity role)</strong> — <code>Subscriber</code> / <code>SubscribedState</code> / <code>SubscribedCategory</code> entities gate <em>read</em> access by state + category; a   subscriber needs both a <code>SubscribedState</code> and a <code>SubscribedCategory</code> row for a given   state+category combination to see its rates. Subscription is ~$0.01/state/month + $0.01/category,   checked out via PayPal (<code>IPayPalService</code>).</li>
+<li><strong>"View as" preview</strong> (<code>ViewAsService</code>, admin-only) — lets an admin render the UI as <code>Subscriber</code> or <code>Guest</code> without actually losing their session, for demoing the paid/unpaid   experience. <code>ViewAsRole.Guest</code> has no persisted concept of its own; it's purely a UI   impersonation mode with rates redacted, and <code>ViewAsService.DemoSubscribedStateCodes</code> fakes a   west+east-coast subscription for the preview.</li>
+</ul>
+<h3 id="indexhtm-landing-page">index.htm / landing page</h3>
+<p><code>index.htm</code> at the repo root is a generated mindattic.com landing page (README → HTML). It is <strong>not</strong> part of the Blazor/Worker application and is out of scope for this README's build/run instructions — do not hand-edit it or the <code>README.htm</code> this repo's own <code>tools/build-readme.ps1</code> produces; they're generated artifacts of separate tooling.</p>
+<hr>
+<h2 id="database">Database</h2>
+<h3 id="connection">Connection</h3>
+<p>Both <code>TaxRateCollector.Blazor</code> and <code>TaxRateCollector.Worker</code> read <code>ConnectionStrings:DefaultConnection</code> from configuration. <code>appsettings.Development.json</code> in each project ships:</p>
+<pre><code class="language-json">"ConnectionStrings": {
+  "DefaultConnection": "Server=(localdb)\\MSSQLLocalDB;Database=TaxRateCollector;Trusted_Connection=True;MultipleActiveResultSets=True;"
+}</code></pre>
+<p>Production resolves the same key from environment variables / Azure Key Vault — no code changes needed (<code>UseSqlServer</code> throughout).</p>
+<h3 id="migrations">Migrations</h3>
+<p>EF Core tooling targets <code>TaxRateCollector.Infrastructure</code>, with <code>TaxRateCollector.Blazor</code> as the startup project:</p>
+<pre><code class="language-powershell">dotnet ef database update `
+    --project TaxRateCollector.Infrastructure `
+    --startup-project TaxRateCollector.Blazor
+
+dotnet ef migrations add &lt;Name&gt; `
+    --project TaxRateCollector.Infrastructure `
+    --startup-project TaxRateCollector.Blazor</code></pre>
+<p>The real, on-disk migration history (see <a href="docs/AMENDMENTS.md#TRC-A2">TRC-A2</a> — an older README table of "friendly names" here did not match reality and has been removed) runs from <code>20260418044705_InitialCreate</code> through <code>20260529033323_FixBillingTaxRatePrecision</code> (<code>TaxRateCollector.Infrastructure/Migrations/</code>). Use <code>dotnet ef migrations list</code> for the live, authoritative history rather than trusting any name in prose.</p>
+<h3 id="bacpac-backup"><code>.bacpac</code> backup</h3>
+<p><code>TaxRateCollector.bacpac</code> at the repo root is a SQL Server data-tier application package — a portable snapshot of schema + data. Restore it with <code>sqlpackage</code> (ships with SQL Server / SSMS / the <code>Microsoft.SqlPackage</code> dotnet tool):</p>
+<pre><code class="language-powershell">sqlpackage /Action:Import `
+    /SourceFile:TaxRateCollector.bacpac `
+    /TargetServerName:"(localdb)\MSSQLLocalDB" `
+    /TargetDatabaseName:TaxRateCollector</code></pre>
+<p>This is the fastest way to get a fully-seeded local database without running the Setup pipeline's 20–40 minute Census/ZIP import from scratch. It is explicitly gitignored (<code>.gitignore</code> line <code>/TaxRateCollector.bacpac</code>) — it lives on disk in this working copy but is not a tracked file; treat it as a large local binary, not something to commit or diff.</p>
+<hr>
+<h2 id="settings">Settings</h2>
+<p>Settings file: <code>%APPDATA%\MindAttic\TaxRateCollector\settings.json</code> (read/written by <code>SettingsService</code>).</p>
+<p>Key settings: <code>theme</code>, <code>font</code>, <code>font_size</code>, <code>default_update_frequency_days</code> (90), <code>evidence_auto_fetch</code>, <code>wayback_machine_fallback</code> (setting exists; the actual Wayback capture path is not yet built — see <code>TRC-US-C3</code>), all Census and SST source URLs, <code>AutoApprove</code> (whether scraped rates skip the <code>NeedsReview</code> gate).</p>
+<p>Evidence files land in <code>%APPDATA%\MindAttic\TaxRateCollector\evidence\</code> (<code>EvidenceFileStore</code>), served back to the browser via <code>GET /evidence/{filename}</code> (path-traversal guarded, requires authorization).</p>
+<p>Credentials (Anthropic key for LLM extraction, USPS key, PayPal) resolve through the shared MindAttic credential store (<code>MindAttic.Vault</code>) or <code>IConfiguration</code> — never hard-coded (<a href="docs/BIBLE.md#TRC-LAW-5">TRC-LAW-5</a>).</p>
+<hr>
+<h2 id="scraper-framework">Scraper framework</h2>
+<pre><code class="language-csharp">public interface IScrapeStrategy
+{
+    string StrategyKey { get; }
+    bool CanHandle(Jurisdiction jurisdiction);
+    Task&lt;IReadOnlyList&lt;RawScrapeResult&gt;&gt; ScrapeAsync(Jurisdiction jurisdiction, CancellationToken ct = default);
+}</code></pre>
+<p>Existing strategies: <code>IllinoisTableScraper</code> (HTML), <code>CaliforniaCsvScraper</code> (CSV), <code>TexasExcelScraper</code> (XLSX). To add a new state: implement <code>IScrapeStrategy</code>, register it in <code>TaxRateCollector.Blazor/Program.cs</code> (<code>AddScoped&lt;IScrapeStrategy, ...&gt;()</code>), and set <code>Jurisdiction.SourceUrl</code> for that state.</p>
+<p>For a full state (general sales tax + excise) bulk import, implement <code>IStateBulkScraper</code> instead — see the twelve <code>*AlcoholScraper</code> classes and <code>WisconsinSalesTaxScraper</code> in <code>TaxRateCollector.Infrastructure/Scrapers/</code> for the pattern, and register it the same way (<code>AddScoped&lt;IStateBulkScraper, ...&gt;()</code>).</p>
+<hr>
+<h2 id="build-test">Build / test</h2>
+<pre><code class="language-powershell"># Build everything (TreatWarningsAsErrors is NOT globally set here — check individual .csproj files)
+dotnet build TaxRateCollector.slnx
+
+# Run the Blazor host
+dotnet run --project TaxRateCollector.Blazor
+
+# Run the background Worker
+dotnet run --project TaxRateCollector.Worker
+
+# Unit tests (no SQL required — EF Core InMemory / pure logic)
+dotnet test TaxRateCollector.UnitTests --filter "Category!=Integration"
+
+# Integration tests (requires LocalDB with migrations applied)
+dotnet test TaxRateCollector.UnitTests --filter Category=Integration</code></pre>
+<p>Test folders: <code>AdminTools</code>, <code>DataCollectionTests</code>, <code>DataSourceTests</code>, <code>EvidenceTests</code>, <code>ExportTests</code>, <code>JurisdictionTests</code>, <code>LoggingTests</code>, <code>PayPalTests</code>, <code>ScraperTests</code>, <code>ServiceTests</code>, <code>SetupTests</code>, <code>StartupTests</code>, <code>SubscriptionTests</code>, <code>TaxCalcTests</code>.</p>
+<p>Last-verified state (see <a href="docs/BIBLE.md#TRC-§6">docs/BIBLE.md §6</a> for the authoritative, dated snapshot — this file will drift, that one is kept current): build clean, 736/744 unit tests passing, with 8 known-failing tests around <code>EvidenceFileStore</code> type detection and <code>AlertService</code> acknowledge-all — tracked as the top item in the <a href="docs/USER_STORIES.md#priority-backlog">priority backlog</a>.</p>
+<hr>
+<h2 id="deploying-to-azure">Deploying to Azure</h2>
+<pre><code class="language-powershell">az group create --name rg-taxratecollector --location eastus
+az appservice plan create --name asp-taxratecollector `
+    --resource-group rg-taxratecollector --sku B1 --is-linux
+az webapp create --name taxratecollector `
+    --resource-group rg-taxratecollector `
+    --plan asp-taxratecollector --runtime "DOTNETCORE:10.0"</code></pre>
+<p>Store the SQL connection string in Azure Key Vault and reference it via <code>ConnectionStrings:DefaultConnection</code>. The app uses <code>UseSqlServer</code> throughout — no code changes needed to run against Azure SQL instead of LocalDB.</p>
+<hr>
+<h2 id="known-quirks-worth-knowing-about">Known quirks worth knowing about</h2>
+<ul>
+<li><strong><code>TaxRateCollector.Frontend/</code> is effectively empty.</strong> It contains only a stale <code>bin/Debug/net10.0/TaxRateCollector.Frontend.exe</code> build artifact — no source files — and it is   <strong>not</strong> referenced by <code>TaxRateCollector.slnx</code>. Do not expect it to build or run anything; if you   need it for something, it needs source added first.</li>
+<li><strong><code>TODO.md</code> is stale in places.</strong> It predates a lot of shipped work: ASP.NET Core Identity + roles, PayPal subscription checkout, and per-jurisdiction excise tax rates are all marked   incomplete there but are implemented and covered by tests per   <a href="docs/USER<em>STORIES.md">docs/USER</em>STORIES.md</a> — trust the Codex canon (BIBLE / AMENDMENTS /   USER_STORIES) over <code>TODO.md</code> prose when the two disagree, per   <a href="docs/AMENDMENTS.md#TRC-A1">TRC-A1</a>.</li>
+<li><strong><code>package.json</code> at the repo root</strong> describes a "README → index.htm renderer" with <code>build</code> / <code>deploy</code> npm scripts, but the <code>scripts/cli/</code> directory those scripts point at was removed when   landing-page deployment moved to the shared <code>MindAttic.Deploy</code> tooling — don't expect   <code>npm run build</code>/<code>npm run deploy</code> to work as documented in <code>package.json</code> today.</li>
+</ul>
+<h2 id="todo-highlights-see-todomdtodomd-for-the-full-backlog">TODO highlights (see <a href="TODO.md">TODO.md</a> for the full backlog)</h2>
+<p>The largest remaining items, in the project's own stated priority order:</p>
+<ol>
+<li><strong>Data completeness</strong> — expand the seeder from partial coverage to the full ~3,144 US counties and 5,000+ cities (the importer exists; running the Setup pipeline's Step 3 is what's pending).</li>
+<li><strong>USPS batch validation</strong> — validate every <code>Jurisdiction</code> row against the USPS Address Validator API directly as a background job, not only incidentally via ZIP import.</li>
+<li><strong>Evidence capture</strong> — a web scraper that captures a <code>.gov</code> page as PDF/HTML snapshot with SHA-256 hash, a Wayback Machine fallback for dead URLs, and PDF OCR cross-check of extracted    rate values.</li>
+<li><strong>Shared SST bulk scraper</strong> — one class covering all 24 Streamlined Sales Tax member states instead of per-state classes, per <a href="docs/rfc/0001-sst-bulk-scraper.md">docs/rfc/0001-sst-bulk-scraper.md</a>.</li>
+<li><strong>Public integration surface</strong> — a <code>GET /api/rates</code> REST endpoint, webhooks on rate change, and a GraphQL endpoint are all still ⬜ (backlog only, no code yet).</li>
+<li><strong>Export completeness</strong> — include excise tax rates in the Master Table export (currently general sales tax only).</li>
+</ol>
+<hr>
+<p>Internal tool — MindAttic proprietary.</p>
+
+    <p class="codex-footer">Generated 2026-08-14 by the shared MindAttic Codex engine (<code>codex-standard/build-readme.ps1</code>) from <code>README.md</code>. Edit the Markdown source, not this file.</p>
+  </main>
+</div>
+<script>(function(){
+  'use strict';
+  var inner   = document.getElementById('toc-inner');
+  var content = document.getElementById('content');
+  if(!inner||!content) return;
+
+  var headings = Array.from(content.querySelectorAll('h2,h3'));
+  if(headings.length){
+    var title = document.createElement('span');
+    title.className = 'toc-title';
+    title.textContent = 'Contents';
+    inner.appendChild(title);
+
+    headings.forEach(function(h){
+      var a = document.createElement('a');
+      a.href      = '#'+h.id;
+      a.textContent = h.textContent.replace(/[#¶]/g,'').trim();
+      a.className = 'toc-a'+(h.tagName==='H3'?' is-h3':'');
+      if(h.tagName==='H2' && inner.children.length>1){
+        var sep=document.createElement('hr');
+        sep.className='toc-sep';
+        inner.appendChild(sep);
+      }
+      inner.appendChild(a);
+    });
+  }
+
+  var tocLinks = inner.querySelectorAll('.toc-a');
+  if(tocLinks.length && 'IntersectionObserver' in window){
+    var idMap={};
+    tocLinks.forEach(function(l){idMap[decodeURIComponent(l.getAttribute('href').slice(1))]=l;});
+    var active=null;
+    var obs=new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){
+          if(active)active.classList.remove('active');
+          active=idMap[e.target.id]||null;
+          if(active){
+            active.classList.add('active');
+            var sidebar=document.getElementById('sidebar');
+            if(sidebar){
+              var ar=active.getBoundingClientRect();
+              var sr=sidebar.getBoundingClientRect();
+              if(ar.top<sr.top||ar.bottom>sr.bottom)
+                active.scrollIntoView({block:'nearest'});
+            }
+          }
+        }
+      });
+    },{rootMargin:'-8% 0px -78% 0px',threshold:0});
+    headings.forEach(function(h){obs.observe(h);});
+  }
+
+  content.querySelectorAll('pre').forEach(function(pre){
+    var btn=document.createElement('button');
+    btn.className='cpbtn';
+    btn.textContent='copy';
+    btn.setAttribute('aria-label','Copy code');
+    btn.addEventListener('click',function(){
+      var text=(pre.querySelector('code')||pre).textContent;
+      if(!navigator.clipboard){return;}
+      navigator.clipboard.writeText(text).then(function(){
+        btn.textContent='copied!';btn.classList.add('ok');
+        setTimeout(function(){btn.textContent='copy';btn.classList.remove('ok');},1800);
+      }).catch(function(){});
+    });
+    pre.appendChild(btn);
+  });
+}());</script>
+</body>
+</html>
