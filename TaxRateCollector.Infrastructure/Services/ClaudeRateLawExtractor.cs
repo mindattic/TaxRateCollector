@@ -40,9 +40,9 @@ public sealed class ClaudeRateLawExtractor(
     {
         var opts = options.Value;
 
-        // Key is loaded by SettingsService from %APPDATA%\MindAttic\LLM\providers.json
-        // (the shared MindAttic.Legion credential store) with a fallback to this app's
-        // settings.json — see MindAttic.Legion.MindAtticCredentialStore.
+        // Key is loaded by SettingsService: cloud config, then this app's own Vault-backed
+        // key, then the shared %APPDATA%\MindAttic\LLM\providers.json entry, then this
+        // app's settings.json — see SettingsService.Load().
         var apiKey = settings.Current.AnthropicApiKey;
         if (string.IsNullOrWhiteSpace(apiKey))
         {

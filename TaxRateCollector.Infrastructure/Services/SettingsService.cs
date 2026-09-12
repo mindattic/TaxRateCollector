@@ -1,7 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Configuration;
-using MindAttic.Legion;
+using MindAttic.Vault.Credentials;
+using MindAttic.Vault.Paths;
 
 namespace TaxRateCollector.Infrastructure.Services;
 
@@ -82,6 +83,26 @@ public class SettingsService
         PropertyNameCaseInsensitive = true
     };
 
+    /// <summary>TaxRateCollector's own Vault provider id prefix — see <see cref="OwnKeys"/>.</summary>
+    private const string AppId = "taxratecollector";
+
+    /// <summary>
+    /// The shared %APPDATA%\MindAttic\LLM\ keyring every MindAttic app can fall back to.
+    /// Re-resolved on every access (not cached) so tests can redirect it via the
+    /// <c>MINDATTIC_LLM_CREDENTIALS</c> env var.
+    /// </summary>
+    private static ICredentialStore SharedKeys => new LlmCredentialStore(
+        Environment.GetEnvironmentVariable(LlmCredentialStore.DirectoryEnvVar)
+        ?? VaultPaths.RoamingBucket(LlmCredentialStore.Bucket));
+
+    /// <summary>
+    /// TaxRateCollector's own Vault-backed keys, namespaced under <c>"taxratecollector-"</c>
+    /// so a key entered in this app's Settings never changes what another MindAttic app
+    /// resolves. Falls back to <see cref="SharedKeys"/> only via explicit calls in
+    /// <see cref="Load"/>/<see cref="Save"/> below, never automatically.
+    /// </summary>
+    private static ICredentialStore OwnKeys => new AppScopedCredentialStore(AppId, SharedKeys);
+
     public AppSettings Current { get; private set; } = new();
 
     public void Load()
@@ -113,9 +134,11 @@ public class SettingsService
         // Resolution chain (highest priority first):
         //   1. VaultConfiguration["MindAttic:Vault:LLM:claude:apiKey"] —
         //      User Secrets / App Service Application Settings / Azure Key Vault.
-        //   2. %APPDATA%\MindAttic\LLM\providers.json — shared across every
-        //      MindAttic app via MindAttic.Legion / Vault file store.
-        //   3. Per-app settings.json (Current.AnthropicApiKey) — fallback only.
+        //   2. This app's own Vault-backed key (OwnKeys, "taxratecollector-claude") —
+        //      set via this app's own Settings; never changes what another app sees.
+        //   3. %APPDATA%\MindAttic\LLM\providers.json (SharedKeys, "claude") — the
+        //      cross-app default every MindAttic app falls back to.
+        //   4. Per-app settings.json (Current.AnthropicApiKey) — fallback only.
         // The cloud-native value is held in-memory only — never persisted back
         // to settings.json (Save() runs ABOVE this overlay).
         var fromConfig = VaultConfiguration?["MindAttic:Vault:LLM:claude:apiKey"];
@@ -125,16 +148,25 @@ public class SettingsService
         }
         else
         {
-            var centralAnthropic = MindAtticCredentialStore.GetKey("claude");
-            if (!string.IsNullOrWhiteSpace(centralAnthropic))
+            var ownKey = OwnKeys.GetKey("claude");
+            if (!string.IsNullOrWhiteSpace(ownKey))
             {
-                Current.AnthropicApiKey = centralAnthropic;
+                Current.AnthropicApiKey = ownKey;
             }
-            else if (!string.IsNullOrWhiteSpace(Current.AnthropicApiKey))
+            else
             {
-                // First-run migration: lift the existing per-app key into the shared store
-                // so other MindAttic apps pick it up automatically.
-                MindAtticCredentialStore.SetKey("claude", Current.AnthropicApiKey);
+                var sharedKey = SharedKeys.GetKey("claude");
+                if (!string.IsNullOrWhiteSpace(sharedKey))
+                {
+                    Current.AnthropicApiKey = sharedKey;
+                }
+                else if (!string.IsNullOrWhiteSpace(Current.AnthropicApiKey))
+                {
+                    // First-run migration: lift the existing per-app key into THIS app's
+                    // own scoped store — never the shared one, so this migration can't
+                    // change what another MindAttic app resolves.
+                    OwnKeys.SetKey("claude", Current.AnthropicApiKey);
+                }
             }
         }
     }
@@ -170,13 +202,13 @@ public class SettingsService
 
         if (overlaidFromConfig) Current.AnthropicApiKey = preservedKey;
 
-        // Mirror the Anthropic key into the shared MindAttic.Legion LLM store so a
-        // change made via this app is immediately visible to every other MindAttic
-        // app — but ONLY if the user typed it here. Cloud-resolved values stay in
-        // their original source (User Secrets / App Service / Key Vault).
+        // Mirror the Anthropic key into THIS app's own Vault-backed store (never the
+        // shared cross-app id) so entering it here never changes what another MindAttic
+        // app resolves — but ONLY if the user typed it here. Cloud-resolved values stay
+        // in their original source (User Secrets / App Service / Key Vault).
         if (!overlaidFromConfig && !string.IsNullOrWhiteSpace(Current.AnthropicApiKey))
         {
-            MindAtticCredentialStore.SetKey("claude", Current.AnthropicApiKey);
+            OwnKeys.SetKey("claude", Current.AnthropicApiKey);
         }
     }
 
