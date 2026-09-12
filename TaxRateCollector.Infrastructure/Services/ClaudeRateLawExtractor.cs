@@ -145,7 +145,7 @@ public sealed class ClaudeRateLawExtractor(
     private Task<string> CallClaudeAsync(
         string prompt, string apiKey, AnthropicOptions opts, CancellationToken ct)
         => legion.CallAsync(
-            providerId: "claude-api",
+            providerId: "claude",
             apiKey: apiKey,
             model: opts.Model,
             systemPrompt: "",

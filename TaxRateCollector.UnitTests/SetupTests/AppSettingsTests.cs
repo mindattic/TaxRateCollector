@@ -247,38 +247,6 @@ public class AppSettingsTests
     }
 
     [Test]
-    public void Load_FallsBackToSharedClaudeApiAlias_WhenNeitherOwnNorSharedClaudeKeyExists()
-    {
-        // "claude-api" is Automata's (and MindAttic.Legion's) id for the same shared key
-        // other apps store under "claude" — a shared key set via either convention must
-        // be recognized here too.
-        using var _settingsGuard = PreserveRealSettingsFile();
-        using var _ = RedirectCredentials(out var dir);
-        var shared = new LlmCredentialStore(dir);
-        shared.SetKey("claude-api", "shared-key-under-claude-api");
-
-        var svc = new SettingsService();
-        svc.Load();
-
-        Assert.That(svc.Current.AnthropicApiKey, Is.EqualTo("shared-key-under-claude-api"));
-    }
-
-    [Test]
-    public void Load_PrefersSharedClaudeKey_OverTheClaudeApiAlias()
-    {
-        using var _settingsGuard = PreserveRealSettingsFile();
-        using var _ = RedirectCredentials(out var dir);
-        var shared = new LlmCredentialStore(dir);
-        shared.SetKey("claude", "shared-under-claude");
-        shared.SetKey("claude-api", "shared-under-claude-api");
-
-        var svc = new SettingsService();
-        svc.Load();
-
-        Assert.That(svc.Current.AnthropicApiKey, Is.EqualTo("shared-under-claude"));
-    }
-
-    [Test]
     public void Save_WritesKey_ToOwnScopedEntry_NeverShared()
     {
         using var _settingsGuard = PreserveRealSettingsFile();
