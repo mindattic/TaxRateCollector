@@ -132,16 +132,18 @@ public class SettingsService
         if (!settingsExisted) Save();
 
         // Resolution chain (highest priority first):
-        //   1. VaultConfiguration["MindAttic:Vault:LLM:claude:apiKey"] —
+        //   1. VaultConfiguration["MindAttic:Vault:LLM:claude:apiKey"] (or "claude-api",
+        //      Automata/Legion's id for the same shared key) —
         //      User Secrets / App Service Application Settings / Azure Key Vault.
         //   2. This app's own Vault-backed key (OwnKeys, "taxratecollector-claude") —
         //      set via this app's own Settings; never changes what another app sees.
-        //   3. %APPDATA%\MindAttic\LLM\providers.json (SharedKeys, "claude") — the
-        //      cross-app default every MindAttic app falls back to.
+        //   3. %APPDATA%\MindAttic\LLM\providers.json (SharedKeys, "claude" then
+        //      "claude-api") — the cross-app default every MindAttic app falls back to.
         //   4. Per-app settings.json (Current.AnthropicApiKey) — fallback only.
         // The cloud-native value is held in-memory only — never persisted back
         // to settings.json (Save() runs ABOVE this overlay).
-        var fromConfig = VaultConfiguration?["MindAttic:Vault:LLM:claude:apiKey"];
+        var fromConfig = VaultConfiguration?["MindAttic:Vault:LLM:claude:apiKey"]
+            ?? VaultConfiguration?["MindAttic:Vault:LLM:claude-api:apiKey"];
         if (!string.IsNullOrWhiteSpace(fromConfig))
         {
             Current.AnthropicApiKey = fromConfig.Trim();
@@ -155,7 +157,7 @@ public class SettingsService
             }
             else
             {
-                var sharedKey = SharedKeys.GetKey("claude");
+                var sharedKey = SharedKeys.GetKey("claude") ?? SharedKeys.GetKey("claude-api");
                 if (!string.IsNullOrWhiteSpace(sharedKey))
                 {
                     Current.AnthropicApiKey = sharedKey;

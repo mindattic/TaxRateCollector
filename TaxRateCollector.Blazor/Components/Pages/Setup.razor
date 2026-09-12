@@ -166,6 +166,13 @@ else
         <input class="setting-input" type="password" placeholder="USPS Web Tools API key" @bind="settings.Current.UspsApiKey" />
     </div>
     <div class="setting-row" style="margin-top:.6rem">
+        <label class="setting-label">
+            Claude API Key <span class="muted">(optional)</span>
+            <span class="setting-hint">Powers AI extraction of tax rates from raw source pages. Leave blank to use a shared default key if one is configured elsewhere on this machine.</span>
+        </label>
+        <input class="setting-input" type="password" placeholder="sk-ant-..." @bind="settings.Current.AnthropicApiKey" />
+    </div>
+    <div class="setting-row" style="margin-top:.6rem">
         <label class="setting-label">Re-scrape interval (days)</label>
         <input class="setting-input setting-input-sm" type="number" min="1" max="365" @bind="settings.Current.DefaultUpdateFrequencyDays" />
     </div>
