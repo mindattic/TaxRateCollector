@@ -4,7 +4,7 @@ project: TaxRateCollector
 code: TRC
 layer: rfc
 status: planned
-updated: 2026-06-07
+updated: 2026-10-03
 ---
 
 # RFC 0001 — One shared SST bulk scraper for the 24 SSUTA member states
@@ -15,7 +15,7 @@ The 24 SSUTA full-member states (AR, GA, IN, IA, KS, KY, MI, MN, NE, NV, NJ, NC,
 ## Options compared
 1. **24 per-state classes.** Maximum flexibility, maximum duplication. Rejected: the member states are uniform by treaty.
 2. **One `SstSalesTaxScraper` that fans out by state code over the uniform SST feed.** Single parser, single maintenance point; per-state behaviour is data (the state's SST endpoint + code), not a class.
-3. **Hybrid (chosen).** One shared `SstSalesTaxScraper` for the 24 members; keep bespoke per-state classes only for **non-member** states (CA, FL, IL, NY, TX, and partial states like WI) whose DOR page formats and statutes genuinely differ.
+3. **Hybrid (chosen).** One shared `SstSalesTaxScraper` for the 24 members; keep bespoke per-state classes only for **non-member** states (CA, FL, IL, NY, TX and the other non-SST states) whose DOR page formats and statutes genuinely differ.
 
 ## Decision
 Adopt **Option 3**. Build a single `SstSalesTaxScraper` (registered once) that resolves the target state from `Jurisdiction.StateCode`, fetches that state's SST rate/boundary feed, and emits `RawScrapeResult` rows through the same `Sanitizer` + `DiffEngine` path every other scraper uses. Non-member states keep their dedicated strategies.
@@ -30,7 +30,7 @@ Adopt **Option 3**. Build a single `SstSalesTaxScraper` (registered once) that r
 1. **Schema spike** — confirm the SST feed shape and per-state endpoint discovery. *Risk: SST endpoints vary subtly per state; mitigate with a per-state endpoint map (data, not code).*
 2. **Single-state vertical slice** — implement `SstSalesTaxScraper` for one member state (e.g. WI, which has an existing pilot to diff against) end-to-end with a fixture-backed unit test. *Risk: confidence scoring for SST rows; reuse the existing `RawScrapeResult.Confidence` convention.*
 3. **Fan-out** — enable the remaining 23 member states; add a fixture test per format variant (not per state).
-4. **Cutover** — retire any duplicate per-member-state classes; mark them 🗑️ in the bible and note the git tag.
+4. **Cutover** — delete any duplicate per-member-state classes and remove them from the bible's service table.
 
 ## Graduates into
 - Bible: a new key-service row under [§4.3](../BIBLE.md#TRC-§4) for `SstSalesTaxScraper`.

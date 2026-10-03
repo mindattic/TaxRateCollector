@@ -4,13 +4,13 @@ project: TaxRateCollector
 code: TRC
 layer: stories
 status: living
-updated: 2026-06-07
+updated: 2026-10-03
 ---
 
 # TaxRateCollector — User Stories
 
-> ✅ done (shipped & tested) · 🟡 partial · ⬜ planned · 🗑️ cut. Every ✅ cites its verifying test.
-> Status reflects the 2026-06-07 run: build clean; 736/744 unit tests passing (see [BIBLE §6](BIBLE.md#TRC-§6)).
+> ✅ done (shipped & tested) · 🟡 partial · ⬜ planned. Every ✅ cites its verifying test.
+> Status reflects the 2026-10-03 run: build clean; 748/748 unit tests passing (see [BIBLE §6](BIBLE.md#TRC-§6)).
 
 ## Epic A — Jurisdiction hierarchy & rate calculation
 
@@ -30,13 +30,13 @@ updated: 2026-06-07
 ## Epic C — Evidence & provenance
 
 - **TRC-US-C1 ✅** As an auditor, every rate's evidence is SHA-256 hashed and tamper-evident, with consistent MIME mapping and base64-PDF round-tripping. *(verified by `EvidenceValidationTests` — `Hash_SameContent_ProducesSameHash`, `SourceDocument_HashMatchesContent_PassesVerification`, `SourceDocument_TamperedContent_FailsVerification`, `SourceType_MimeMapping_IsConsistent`, `SourceDocument_Base64Pdf_RoundTrips`; enforces [TRC-LAW-1](BIBLE.md#TRC-LAW-1).)*
-- **TRC-US-C2 🟡** As an admin, when I drop or capture an HTML/CSV source, the evidence store classifies its type and bundles a self-contained zip with the original content. *Implemented but currently failing: `EvidenceFileStore` returns `txt` instead of `csv` and the HTML→zip bundling assertions fail.* (failing tests: `TextCsv_ReturnsEvidenceType_Csv`, `Html_ReturnsEvidenceType_Zip`, `SimpleHtmlZip_ContainsIndexHtml`, `SimpleHtmlZip_IndexHtml_ContainsOriginalContent`, `FullPageZip_BundlesLinkedAssets`, `FileName_MatchesExpectedPattern` — see [BIBLE §6](BIBLE.md#TRC-§6).)
+- **TRC-US-C2 ✅** As an admin, when I drop or capture an HTML/CSV source, the evidence store classifies its type and bundles a self-contained zip with the original content. *(verified by `EvidenceFileStoreTests` — `TextCsv_ReturnsEvidenceType_Csv`, `Html_ReturnsEvidenceType_Zip`, `SimpleHtmlZip_ContainsIndexHtml`, `SimpleHtmlZip_IndexHtml_ContainsOriginalContent`, `FullPageZip_BundlesLinkedAssets`, `FileName_MatchesExpectedPattern`.)*
 - **TRC-US-C3 ⬜** As an admin, if a live `.gov` URL 404s, evidence capture falls back to the Wayback Machine. *(setting `wayback_machine_fallback` exists; capture path not yet built.)*
 
 ## Epic D — Scraping & change detection
 
 - **TRC-US-D1 ✅** As the system, when I re-scrape I write a `ChangeLogEntry` only when a rate changed/was removed/changed structure, never for unchanged rates. *(verified by `DiffEngineTests` — `RateChanged_CreatesRateChangedEntry`, `UnchangedRate_CreatesNoEntry`, `AbsentJurisdiction_InCurrentRun_CreatesRemovedEntry`, `StructuralChange_RateBasisChanges_CreatesStructuralChangeEntry`; enforces [TRC-LAW-4](BIBLE.md#TRC-LAW-4).)*
-- **TRC-US-D2 🟡** As the system, I alert admins to scrape anomalies and can acknowledge all alerts. *`AlertService` exists and most paths pass, but the acknowledge-all flow is failing.* (failing tests: `AcknowledgeAllAsync_IsNoOp_WhenNoneExist`, `AcknowledgeAllAsync_MarksAllEntriesAcknowledged`.)
+- **TRC-US-D2 ✅** As the system, I alert admins to scrape anomalies and can acknowledge all alerts. *(verified by `AlertServiceTests` — `AcknowledgeAllAsync_IsNoOp_WhenNoneExist`, `AcknowledgeAllAsync_MarksAllEntriesAcknowledged`.)*
 - **TRC-US-D3 ✅** As the system, format-specific strategies parse CA CSV / IL HTML table / TX XLSX and skip invalid or out-of-range rows. *(verified by `StrategyScraperTests` — `ScrapeAsync_ParsesValidCsvRow`, `ScrapeAsync_SkipsRowWithInvalidRate`, `ScrapeAsync_SkipsRowAboveCeiling`, `ScrapeAsync_ParsesHtmlTableRow`, `CanHandle_ReturnsTrue_ForCA`.)*
 - **TRC-US-D4 ✅** As the system, the rate-string `Sanitizer` normalises `"6.25%"`, `"0.0625"`, `"$0.231/pack"` to a decimal. *(verified by `SanitizerTests`.)*
 - **TRC-US-D5 ✅** As the system, AI rate extraction routes through MindAttic.Legion and degrades safely without a key. *(verified by `ClaudeExtractionParserTests`; enforces [TRC-LAW-3](BIBLE.md#TRC-LAW-3).)*
@@ -45,7 +45,7 @@ updated: 2026-06-07
 
 ## Epic E — SSUTA member-state scraping (frontier)
 
-- **TRC-US-E1 ✅** As a maintainer, I have a Wisconsin pilot scraper for a non-SST state (statute-cited). *(verified by `BulkSalesTaxScraperTests`.)*
+- **TRC-US-E1 ✅** As a maintainer, I have a statute-cited Wisconsin general-sales-tax pilot scraper (`WisconsinSalesTaxScraper`), the reference the shared SST scraper will be diffed against. *(verified by `BulkSalesTaxScraperTests`.)*
 - **TRC-US-E2 ⬜** As a maintainer, one shared `SstSalesTaxScraper` covers all 24 SSUTA member states by fanning out over the uniform SST schema, instead of 24 near-identical classes. *(designed in [RFC 0001](rfc/0001-sst-bulk-scraper.md).)*
 
 ## Epic F — Subscriptions, roles & billing
@@ -62,13 +62,7 @@ updated: 2026-06-07
 
 ## Priority backlog
 
-1. Fix the 8 failing tests — [TRC-US-C2](#) evidence type/zip detection, [TRC-US-D2](#) alert acknowledge. *(unblocks a clean green suite — the headline quality gate, [BIBLE §8](BIBLE.md#TRC-§8).)*
-2. [TRC-US-B3] Full county/city corpus import (run + assert via `Category=Integration`).
-3. [TRC-US-C3] Wayback fallback on dead `.gov` URLs.
-4. [TRC-US-E2] Shared SST bulk scraper ([RFC 0001](rfc/0001-sst-bulk-scraper.md)).
-5. [TRC-US-G1] Public rate API.
-
-### Audit log
-
-No stories have been re-scoped from an original written specification yet. When a story's intent
-changes, preserve the original ask here verbatim, marked "(original spec — audit log)".
+1. [TRC-US-B3] Full county/city corpus import (run + assert via `Category=Integration`).
+2. [TRC-US-C3] Wayback fallback on dead `.gov` URLs.
+3. [TRC-US-E2] Shared SST bulk scraper ([RFC 0001](rfc/0001-sst-bulk-scraper.md)).
+4. [TRC-US-G1] Public rate API.

@@ -46,7 +46,7 @@ Mark items `[x]` when complete. Tackle in priority order within each section.
 - [ ] Wayback Machine fallback: if live .gov URL 404s, query archive.org for last cached version
   - Setting already in SettingsService (WaybackMachineFallback)
 - [ ] PDF OCR evidence extraction: parse PDF evidence blobs to extract rate value for cross-check
-- [ ] Rate change detection: compare new scraped rate to current; auto-create ChangeLogEntry
+- [x] Rate change detection: compare new scraped rate to current; auto-create ChangeLogEntry
 
 ### Sin / Excise Taxes
 - [x] Add `ProductCategory` enum: Alcohol, Tobacco, Sugar, Cannabis, Firearms, etc.
@@ -68,13 +68,13 @@ Mark items `[x]` when complete. Tackle in priority order within each section.
 ## 🟡 Medium Priority
 
 ### Authentication & Roles
-- [ ] Add ASP.NET Core Identity with two roles: `Administrator`, `Subscriber`
+- [x] Add ASP.NET Core Identity with two roles: `Administrator`, `Subscriber`
 - [ ] .env file (or secrets.json) for admin credentials so dev login is always available
 - [ ] Protect Jurisdictions write actions (rate edit, evidence save) behind `Administrator` role
 - [ ] Master Table (read-only view) accessible to `Subscriber` role
 
 ### Paid Subscriptions
-- [ ] PayPal subscription integration — monthly plan at $0.01 (dev test tier)
+- [x] PayPal subscription integration — monthly plan at $0.01 (dev test tier)
   - Use PayPal REST API / PayPal JS SDK
   - On successful payment webhook: grant `Subscriber` role to user
   - Reference StreetSamurai repo for existing PayPal/membership pattern
@@ -99,24 +99,24 @@ Mark items `[x]` when complete. Tackle in priority order within each section.
 - [ ] Screenshot capture: Playwright or similar to capture .gov page as PNG for evidence archive
 
 ### Database
-- [ ] SQLite backup on startup — timestamped file copy of `taxrates.db` → `backups/taxrates_<timestamp>.db`, keep last N (e.g. 10), delete older ones automatically
+- [ ] Automatic `.bacpac` backup on startup (the Setup page already exports one on demand via `sqlpackage`) — timestamped, keep last N (e.g. 10), delete older ones automatically
 
 ### Azure Deployment
-- [ ] Containerize with Dockerfile (ASP.NET Core + SQLite or migrate to Azure SQL)
+- [ ] Containerize with Dockerfile (ASP.NET Core + Azure SQL)
 - [ ] Azure App Service deployment
 - [ ] CI/CD pipeline (GitHub Actions) — reference StreetSamurai repo for pipeline template
 - [ ] Move settings.json to Azure Key Vault / App Configuration for production secrets
 - [ ] Azure Blob Storage for large evidence documents (PDFs, screenshots)
 
 ### Testing
-- [ ] NUnit test project for evidence validation workflows:
+- [x] NUnit test project for evidence validation workflows:
   - Parse rate from API JSON response
   - Parse rate from PDF OCR
   - Hash verification of stored SourceDocument
   - Combined rate calculation (State + County + City)
   - Rate change detection logic
   - USPS address validation response parsing
-- [ ] Integration tests: seed a fresh SQLite DB, run the full hierarchy seeder, assert row counts
+- [ ] Integration tests: seed a fresh SQL Server LocalDB database, run the full hierarchy seeder, assert row counts
 
 ### Export & Integration
 - [ ] PDF export of Master Table (e.g., using QuestPDF or Playwright print-to-PDF)
@@ -136,5 +136,5 @@ Mark items `[x]` when complete. Tackle in priority order within each section.
 
 - Target corpus: ~14,000 US jurisdictions (Country + 51 states + ~3,144 counties + ~10,000 cities)
 - Corporate consumers need FIPS-keyed, evidence-backed, auditable rate history
-- Architecture: Blazor Server + EF Core + SQLite (dev) / Azure SQL (prod) + ClosedXML exports
+- Architecture: Blazor Server + EF Core 10 + SQL Server LocalDB (dev) / Azure SQL (prod) + ClosedXML exports
 - Each tax rate row must have attached evidence to be considered "validated" for export

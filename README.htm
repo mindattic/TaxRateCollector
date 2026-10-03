@@ -195,7 +195,7 @@ dotnet run --project TaxRateCollector.Blazor</code></pre>
 </tr>
 <tr>
 <td>Backed by SQL Server (LocalDB in dev, Azure SQL in prod) via EF Core 10</td>
-<td>A SQLite app; <code>TODO.md</code> has stale SQLite-era prose, superseded by <a href="docs/AMENDMENTS.md#TRC-A1">TRC-A1</a> and <a href="docs/BIBLE.md#TRC-LAW-8">TRC-LAW-8</a></td>
+<td>A SQLite app; SQL Server is the only datastore (<a href="docs/BIBLE.md#TRC-LAW-8">TRC-LAW-8</a>)</td>
 </tr>
 <tr>
 <td>A soft-delete system: rates retire (<code>IsCurrent=false</code>), jurisdictions deactivate (<code>IsActive=false</code>)</td>
@@ -446,7 +446,7 @@ dotnet run --project TaxRateCollector.Blazor</code></pre>
 dotnet ef migrations add &lt;Name&gt; `
     --project TaxRateCollector.Infrastructure `
     --startup-project TaxRateCollector.Blazor</code></pre>
-<p>The on-disk migration history in <code>TaxRateCollector.Infrastructure/Migrations/</code> runs from <code>20260418044705_InitialCreate</code> through <code>20260529033323_FixBillingTaxRatePrecision</code> (16 migrations). Use <code>dotnet ef migrations list</code> for the authoritative history rather than any name in prose (<a href="docs/AMENDMENTS.md#TRC-A2">TRC-A2</a>).</p>
+<p>The on-disk migration history in <code>TaxRateCollector.Infrastructure/Migrations/</code> runs from <code>20260418044705_InitialCreate</code> through <code>20260529033323_FixBillingTaxRatePrecision</code> (16 migrations). Use <code>dotnet ef migrations list</code> for the authoritative history.</p>
 <h3 id="bacpac-backup">Bacpac backup</h3>
 <p><code>TaxRateCollector.bacpac</code> at the repo root is a SQL Server data-tier application package: a portable snapshot of schema and data. Restore it with <code>sqlpackage</code> (ships with SQL Server, SSMS or the <code>Microsoft.SqlPackage</code> dotnet tool):</p>
 <pre><code class="language-powershell">sqlpackage /Action:Import `
@@ -517,8 +517,8 @@ dotnet ef migrations add &lt;Name&gt; `
 │                                            TaxCalcTests, Helpers/
 ├── TaxRateCollector.Frontend/               Effectively empty — see Limitations
 ├── TaxRateCollector.slnx                    Solution (does NOT include .Frontend)
-├── docs/                                    Codex canon (BIBLE / AMENDMENTS / USER_STORIES / rfc)
-├── index.htm, package.json                  Retired mindattic.com landing-page renderer
+├── docs/                                    Codex canon (BIBLE / USER_STORIES / AMENDMENTS / rfc)
+├── index.htm, package.json                  Not part of the app (see Limitations)
 └── tools/                                   codex.ps1 (Codex digest/doctor), build-readme.ps1</code></pre>
 <h2 id="building-and-testing">Building and testing</h2>
 <pre><code class="language-powershell"># Build everything (TreatWarningsAsErrors is not set globally; check individual .csproj files)
@@ -535,7 +535,7 @@ dotnet test TaxRateCollector.UnitTests --filter "Category!=Integration"
 
 # Integration tests (requires LocalDB with migrations applied)
 dotnet test TaxRateCollector.UnitTests --filter Category=Integration</code></pre>
-<p>Last verified state, recorded on 2026-06-07 in <a href="docs/BIBLE.md#TRC-§6">docs/BIBLE.md</a> (the authoritative, dated snapshot): build clean, 736 of 744 unit tests passing. The 8 known failures are in <code>EvidenceFileStore</code> evidence-type detection and <code>AlertService</code> acknowledge-all, tracked as the top item in the <a href="docs/USER_STORIES.md#priority-backlog">priority backlog</a>.</p>
+<p>Last verified state, recorded on 2026-10-03 in <a href="docs/BIBLE.md#TRC-§6">docs/BIBLE.md</a> (the authoritative, dated snapshot): build clean, 748 of 748 unit tests passing (<code>Category!=Integration</code>).</p>
 <h2 id="deployment">Deployment</h2>
 <pre><code class="language-powershell">az group create --name rg-taxratecollector --location eastus
 az appservice plan create --name asp-taxratecollector `
@@ -548,10 +548,9 @@ az webapp create --name taxratecollector `
 <ul>
 <li>There is no public rate API yet: a <code>GET /api/rates</code> REST endpoint, webhooks on rate change and a GraphQL endpoint are backlog only.</li>
 <li>Full-corpus jurisdiction population is not proven by the default test run (see <a href="#data-import-pipeline">Data import pipeline</a>).</li>
-<li>8 unit tests fail as of the last recorded run (see <a href="#building-and-testing">Building and testing</a>).</li>
 <li><code>TaxRateCollector.Frontend/</code> is effectively empty: it holds only a stale <code>bin/Debug/net10.0/TaxRateCollector.Frontend.exe</code> build artifact, no source, and it is not referenced by <code>TaxRateCollector.slnx</code>.</li>
-<li><code>TODO.md</code> is stale in places. ASP.NET Core Identity and roles, PayPal subscription checkout and per-jurisdiction excise rates are marked incomplete there but are implemented and covered by tests per <a href="docs/USER_STORIES.md">the user stories</a>. Trust the Codex canon over <code>TODO.md</code> when they disagree (<a href="docs/AMENDMENTS.md#TRC-A1">TRC-A1</a>).</li>
-<li><code>package.json</code> at the repo root describes a README-to-<code>index.htm</code> landing-page renderer with <code>build</code> and <code>deploy</code> scripts, but the <code>scripts/cli/</code> directory they point at is gone and the landing page was retired on 2026-10-03; <code>npm run build</code> and <code>npm run deploy</code> do not work. <code>index.htm</code> is not part of the application.</li>
+<li><code>TODO.md</code> is a working backlog, not test-verified status. Where it disagrees with <a href="docs/USER_STORIES.md">the user stories</a> (which cite tests), the user stories are correct.</li>
+<li><code>package.json</code> at the repo root declares <code>build</code> and <code>deploy</code> scripts that point at a <code>scripts/cli/</code> directory that does not exist, so <code>npm run build</code> and <code>npm run deploy</code> do not work. The root <code>index.htm</code> is not part of the application and nothing serves it. The project page is this README on GitHub.</li>
 </ul>
 <h2 id="roadmap">Roadmap</h2>
 <p>The largest remaining items, in the project's stated priority order (full backlog in <a href="TODO.md">TODO.md</a> and <a href="docs/USER_STORIES.md">the user stories</a>). All are planned, not built:</p>
@@ -567,7 +566,7 @@ az webapp create --name taxratecollector `
 <p>This README covers building, running and operating the app. For architecture, invariants and verified state, the canonical source is the Codex canon in <code>docs/</code>:</p>
 <ul>
 <li><a href="docs/BIBLE.md">docs/BIBLE.md</a>: what the system is and is not, the laws (<code>TRC-LAW-n</code>), verified state and the active frontier. Read this first for how to think about the system.</li>
-<li><a href="docs/AMENDMENTS.md">docs/AMENDMENTS.md</a>: changes since the bible was written; an amendment wins where they disagree.</li>
+<li><a href="docs/AMENDMENTS.md">docs/AMENDMENTS.md</a>: pending decisions not yet folded into the bible (normally empty).</li>
 <li><a href="docs/USER_STORIES.md">User stories</a>: test-cited feature status and the priority backlog.</li>
 <li><a href="docs/rfc/">docs/rfc</a>: design notes not yet folded into canon.</li>
 <li><a href="docs/BIBLE.digest.md">docs/BIBLE.digest.md</a>: generated by <code>tools/codex.ps1 digest</code>; never hand-edit.</li>

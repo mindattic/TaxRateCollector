@@ -22,10 +22,10 @@ try {
 
   $preamble = @"
 [TaxRateCollector / Codex] The following is the AUTHORITATIVE project digest, generated from
-docs/BIBLE.md (the single source of truth) and docs/AMENDMENTS.md (amendment wins over the bible).
-Treat it as ground truth for what this project IS, is NOT, and its Laws. When it conflicts with
-older assumptions, the digest and the full docs/BIBLE.md win. Full detail lives in docs/BIBLE.md,
-docs/USER_STORIES.md, docs/AMENDMENTS.md, and docs/rfc/. Org-wide rules are inherited from
+docs/BIBLE.md (the single source of truth). Treat it as ground truth for what this project IS,
+is NOT, and its Laws. When it conflicts with older assumptions, the digest and the full
+docs/BIBLE.md win. Full detail lives in docs/BIBLE.md, docs/USER_STORIES.md, and docs/rfc/.
+Org-wide rules are inherited from
 MindAttic.HouseRules.md.
 
 "@

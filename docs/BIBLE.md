@@ -4,7 +4,7 @@ project: TaxRateCollector
 code: TRC
 layer: bible
 status: living
-updated: 2026-06-07
+updated: 2026-10-03
 ---
 
 # TaxRateCollector — Project Bible
@@ -29,7 +29,7 @@ TaxRateCollector is a Blazor Server application that maintains a provably accura
 
 - **NOT a live tax-calc API for third parties.** There is currently no public REST/GraphQL endpoint — consumers use the UI and file exports. A REST/GraphQL endpoint is a backlog item ([TRC-US-G1](docs/USER_STORIES.md)), not a shipped feature.
 - **NOT a "best guess" rate oracle.** A rate without attached, hash-verified evidence is not considered validated for export. "Our API said so" is explicitly rejected as a compliance answer. See [Law 1](#TRC-LAW-1).
-- **NOT a SQLite app.** Despite some stale prose in TODO.md, the system runs on SQL Server (LocalDB in dev, SQL Server / Azure SQL in prod) via EF Core 10. There is no SQLite path.
+- **NOT a SQLite app.** The system runs on SQL Server (LocalDB in dev, SQL Server / Azure SQL in prod) via EF Core 10. There is no SQLite path in the application (the unit-test project uses the SQLite in-memory provider only as a relational test double). See [Law 8](#TRC-LAW-8).
 - **NOT a hard-delete system.** Rate history is retired (`IsCurrent=false`), never destroyed; jurisdictions are deactivated (`IsActive=false`), not deleted. See [Law 2](#TRC-LAW-2) and [HOUSE-LAW-2].
 - **NOT vendor-locked to one LLM.** AI rate extraction routes through MindAttic.Legion, not a hard-coded vendor SDK. See [Law 3](#TRC-LAW-3).
 - **NOT a flat-percentage tax engine.** It models excise structures (per-unit, per-volume, per-proof-gallon, per-weight, percentage-of-wholesale), brackets, caps, compound tax-on-tax, ABV gating, and origin/destination sourcing. See [§4.2](#TRC-§4).
@@ -67,7 +67,7 @@ The Blazor host and the Worker are two **front doors over one engine** ([HOUSE-L
 | Project | Responsibility |
 |---|---|
 | [`TaxRateCollector.Core`](TaxRateCollector.Core/) | Domain entities, enums, interfaces, options. No EF, no I/O. |
-| [`TaxRateCollector.Infrastructure`](TaxRateCollector.Infrastructure/) | EF Core `AppDbContext`, migrations, seeders, importers, scrapers, services. |
+| [`TaxRateCollector.Infrastructure`](TaxRateCollector.Infrastructure/) | EF Core `AppDbContext`, migrations, seeders, importers, scrapers, services. The timestamped migrations in [`Migrations/`](TaxRateCollector.Infrastructure/Migrations/) are the authoritative schema history (`dotnet ef migrations list`). |
 | [`TaxRateCollector.Blazor`](TaxRateCollector.Blazor/) | Blazor Server UI, pages, exports, DI composition root, startup migrate→seed. |
 | [`TaxRateCollector.Worker`](TaxRateCollector.Worker/) | Background host (`MonthlySchedulerService`, `ScrapeJobWorker`) for unattended re-scrapes. |
 | [`TaxRateCollector.UnitTests`](TaxRateCollector.UnitTests/) | NUnit 4 — unit + LocalDB integration (`Category=Integration`). |
@@ -137,13 +137,13 @@ A point-of-sale rate is the sum of every applicable tier (State + County + City 
 Startup seeders and Setup-pipeline importers check before inserting and may be re-run without duplicating data. *(verified by `SeedAsync_IsIdempotent`, `Hierarchy_SeederDoesNotSeedIfCountryExists`.)*
 
 ### TRC-LAW-8 — SQL Server is the only datastore {#TRC-LAW-8}
-The system targets SQL Server (LocalDB dev / Azure SQL prod) via EF Core 10. There is no SQLite path; stale references to SQLite in `TODO.md` are superseded by this law and by [TRC-A1](docs/AMENDMENTS.md#TRC-A1).
+The system targets SQL Server (LocalDB dev / Azure SQL prod) via EF Core 10 (`UseSqlServer`, `AppDbContextFactory`). The hierarchy's filtered indexes and the `sqlpackage` `.bacpac` export on the Setup page assume SQL Server. There is no SQLite path in the application.
 
 ## 6. Verified state {#TRC-§6}
 
-**Build:** `dotnet build TaxRateCollector.slnx -c Debug` → **Build succeeded, 0 warnings, 0 errors** (verified 2026-06-07).
+**Build:** `dotnet build TaxRateCollector.slnx -c Debug` → **Build succeeded, 0 errors** (verified 2026-10-03).
 
-**Tests:** `dotnet test TaxRateCollector.UnitTests --filter "Category!=Integration"` → **736 passed / 8 failed / 744 total** (verified 2026-06-07). Integration tests (`Category=Integration`) were not run here — they require SQL Server LocalDB with migrations applied — so anything depending solely on them stays 🟡.
+**Tests:** `dotnet test TaxRateCollector.UnitTests --filter "Category!=Integration"` → **748 passed / 0 failed / 748 total** (verified 2026-10-03). Integration tests (`Category=Integration`) were not run here — they require SQL Server LocalDB with migrations applied — so anything depending solely on them stays 🟡.
 
 Proven working (✅, each cited in [USER_STORIES](docs/USER_STORIES.md)):
 - Cumulative rate calculation across tiers and all excise bases/brackets/caps/compound/sourcing — `TaxCalculatorTests` (both suites), `HierarchyTests`.
@@ -153,16 +153,13 @@ Proven working (✅, each cited in [USER_STORIES](docs/USER_STORIES.md)):
 - Scrape strategies CA/IL/TX parse + skip invalid rows — `StrategyScraperTests`.
 - Billing math (per-state pricing, tax-on-subscription, precision) — `BillingCalculationTests`.
 - Settings defaults + URL validity — `AppSettingsTests`.
-
-🟡 Known-failing as of 2026-06-07 (8 tests — see [TRC-US-C2](docs/USER_STORIES.md), [TRC-US-D2](docs/USER_STORIES.md)):
-- `EvidenceFileStore` evidence-type / HTML-zip / CSV-type detection: `TextCsv_ReturnsEvidenceType_Csv` (returns `txt` not `csv`), `Html_ReturnsEvidenceType_Zip`, `SimpleHtmlZip_ContainsIndexHtml`, `SimpleHtmlZip_IndexHtml_ContainsOriginalContent`, `FullPageZip_BundlesLinkedAssets`, `FileName_MatchesExpectedPattern`.
-- `AlertService` acknowledge flow: `AcknowledgeAllAsync_IsNoOp_WhenNoneExist`, `AcknowledgeAllAsync_MarksAllEntriesAcknowledged`.
+- Evidence-store type detection and HTML→zip bundling — `EvidenceFileStoreTests`.
+- Alert acknowledge-all flow — `AlertServiceTests`.
 
 ## 7. Active frontier {#TRC-§7}
 
 - **RFC:** [docs/rfc/0001-sst-bulk-scraper.md](docs/rfc/0001-sst-bulk-scraper.md) — one shared scraper for the 24 SSUTA member states instead of 24 near-identical classes.
 - **Epics / backlog:** see [docs/USER_STORIES.md](docs/USER_STORIES.md) — coverage expansion to all ~3,144 counties / ~10,000+ cities (Epic B), evidence capture + Wayback fallback (Epic C), shared SST scraper (Epic E), public rate API (Epic G).
-- **Immediate:** fix the 8 failing evidence/alert tests ([§6](#TRC-§6)).
 
 ## 8. Quality bar {#TRC-§8}
 
@@ -179,7 +176,7 @@ A feature is **done** ([HOUSE-LAW-8]) only when:
 - **SSUTA / SST** — Streamlined Sales & Use Tax Agreement; its Appendix C is the canonical product taxonomy; 24 member states apply it uniformly.
 - **Evidence / provenance** — the raw government artifact (`SourceDocument`) plus its SHA-256 hash, source URL, and fetch timestamp that proves a rate.
 - **RateBasis** — how a rate is applied: Percentage, FlatPerUnit, FlatPerVolume, FlatPerWeight, FlatPerProofGallon, PercentageOfWholesale.
-- **IsCurrent** — flags the single live rate row per jurisdiction+category; superseded rows are retained with `IsCurrent=false`.
+- **IsCurrent** — flags the single live rate row per jurisdiction+category; earlier rows are retained with `IsCurrent=false`.
 - **IsIncludedInPrice** — true when a tax is remitted upstream and already embedded in the retailer's cost (must not be re-added to the customer invoice).
 - **IsCompound** — true when a rate applies to (price + other taxes), i.e. tax-on-tax.
 - **Home rule** — a local jurisdiction that administers/collects its own sales tax independently of the state (CO, AL, LA).

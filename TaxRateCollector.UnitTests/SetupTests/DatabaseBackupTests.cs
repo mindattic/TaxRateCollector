@@ -11,7 +11,7 @@ namespace TaxRateCollector.UnitTests.SetupTests;
 [TestFixture]
 public class DatabaseBackupTests
 {
-    // Mirrors the inline parsing logic in Settings.razor CreateBackup().
+    // Mirrors the inline parsing logic in Setup.razor CreateBackup().
     private static (string Server, string Database) ParseConnectionString(string connStr)
     {
         string server = "", database = "";
