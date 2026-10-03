@@ -515,10 +515,8 @@ dotnet ef migrations add &lt;Name&gt; `
 │                                            LoggingTests, PayPalTests, ScraperTests, ServiceTests,
 │                                            SetupTests, StartupTests, SubscriptionTests,
 │                                            TaxCalcTests, Helpers/
-├── TaxRateCollector.Frontend/               Effectively empty — see Limitations
-├── TaxRateCollector.slnx                    Solution (does NOT include .Frontend)
+├── TaxRateCollector.slnx                    Solution
 ├── docs/                                    Codex canon (BIBLE / USER_STORIES / AMENDMENTS / rfc)
-├── index.htm, package.json                  Not part of the app (see Limitations)
 └── tools/                                   codex.ps1 (Codex digest/doctor), build-readme.ps1</code></pre>
 <h2 id="building-and-testing">Building and testing</h2>
 <pre><code class="language-powershell"># Build everything (TreatWarningsAsErrors is not set globally; check individual .csproj files)
@@ -548,9 +546,8 @@ az webapp create --name taxratecollector `
 <ul>
 <li>There is no public rate API yet: a <code>GET /api/rates</code> REST endpoint, webhooks on rate change and a GraphQL endpoint are backlog only.</li>
 <li>Full-corpus jurisdiction population is not proven by the default test run (see <a href="#data-import-pipeline">Data import pipeline</a>).</li>
-<li><code>TaxRateCollector.Frontend/</code> is effectively empty: it holds only a stale <code>bin/Debug/net10.0/TaxRateCollector.Frontend.exe</code> build artifact, no source, and it is not referenced by <code>TaxRateCollector.slnx</code>.</li>
 <li><code>TODO.md</code> is a working backlog, not test-verified status. Where it disagrees with <a href="docs/USER_STORIES.md">the user stories</a> (which cite tests), the user stories are correct.</li>
-<li><code>package.json</code> at the repo root declares <code>build</code> and <code>deploy</code> scripts that point at a <code>scripts/cli/</code> directory that does not exist, so <code>npm run build</code> and <code>npm run deploy</code> do not work. The root <code>index.htm</code> is not part of the application and nothing serves it. The project page is this README on GitHub.</li>
+<li>There is no landing page: the project page is this README on GitHub.</li>
 </ul>
 <h2 id="roadmap">Roadmap</h2>
 <p>The largest remaining items, in the project's stated priority order (full backlog in <a href="TODO.md">TODO.md</a> and <a href="docs/USER_STORIES.md">the user stories</a>). All are planned, not built:</p>

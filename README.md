@@ -332,10 +332,8 @@ TaxRateCollector/
 │                                            LoggingTests, PayPalTests, ScraperTests, ServiceTests,
 │                                            SetupTests, StartupTests, SubscriptionTests,
 │                                            TaxCalcTests, Helpers/
-├── TaxRateCollector.Frontend/               Effectively empty — see Limitations
-├── TaxRateCollector.slnx                    Solution (does NOT include .Frontend)
+├── TaxRateCollector.slnx                    Solution
 ├── docs/                                    Codex canon (BIBLE / USER_STORIES / AMENDMENTS / rfc)
-├── index.htm, package.json                  Not part of the app (see Limitations)
 └── tools/                                   codex.ps1 (Codex digest/doctor), build-readme.ps1
 ```
 
@@ -377,9 +375,8 @@ Store the SQL connection string in Azure Key Vault and reference it via `Connect
 
 - There is no public rate API yet: a `GET /api/rates` REST endpoint, webhooks on rate change and a GraphQL endpoint are backlog only.
 - Full-corpus jurisdiction population is not proven by the default test run (see [Data import pipeline](#data-import-pipeline)).
-- `TaxRateCollector.Frontend/` is effectively empty: it holds only a stale `bin/Debug/net10.0/TaxRateCollector.Frontend.exe` build artifact, no source, and it is not referenced by `TaxRateCollector.slnx`.
 - `TODO.md` is a working backlog, not test-verified status. Where it disagrees with [the user stories](docs/USER_STORIES.md) (which cite tests), the user stories are correct.
-- `package.json` at the repo root declares `build` and `deploy` scripts that point at a `scripts/cli/` directory that does not exist, so `npm run build` and `npm run deploy` do not work. The root `index.htm` is not part of the application and nothing serves it. The project page is this README on GitHub.
+- There is no landing page: the project page is this README on GitHub.
 
 ## Roadmap
 
