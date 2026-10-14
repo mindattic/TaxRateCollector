@@ -66,3 +66,12 @@ updated: 2026-10-03
 2. [TRC-US-C3] Wayback fallback on dead `.gov` URLs.
 3. [TRC-US-E2] Shared SST bulk scraper ([RFC 0001](rfc/0001-sst-bulk-scraper.md)).
 4. [TRC-US-G1] Public rate API.
+
+## Tickets
+> Permanent log of every change and fix — this repo's ticket system. Rows are append-only: never
+> delete or reword one; only move its Status (open → closed / wont-do) and fill in Ref. Status is
+> a word, not a glyph, so tickets don't count toward the story index. Keep this section last.
+
+| ID | Date | Type | Status | Summary | Ref |
+|---|---|---|---|---|---|
+| TRC-T1 | 2026-10-12 | docs | closed | Start the permanent ticket log in USER_STORIES.md | — |
