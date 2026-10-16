@@ -7,7 +7,7 @@ code: TRC
 layer: digest
 status: living
 generatedFrom: TRC-bible
-updated: 2026-10-15
+updated: 2026-10-16
 ---
 
 # TaxRateCollector - Bible Digest (generated; do not hand-edit)

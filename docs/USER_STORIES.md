@@ -87,3 +87,4 @@ updated: 2026-10-03
 | TRC-T10 | 2026-10-14 | chore | open | Decide and do: move the Blazor EfCoreSink (SQL LogEntries table behind the Logs page) and the console-only Worker to MindAttic.Log, or record them as deliberate in MindAttic.Log's MIGRATION.md | — |
 | TRC-T11 | 2026-10-15 | chore | closed | Remove duplicate command copies (/quickload, /quicksave) now centralized at the user level (~/.claude/commands) | M.FLOW-T14 |
 | TRC-T12 | 2026-10-16 | chore | closed | install.ps1 adds this repo's 8 .prose/commands stubs for the shared global commands, so any LLM client finds them | mindattic-agent-standard/install.ps1 run 2026-10-16 |
+| TRC-T13 | 2026-10-16 | docs | closed | Refresh the codex digest | — |
