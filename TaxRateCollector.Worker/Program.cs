@@ -20,13 +20,17 @@ var connStr = builder.Configuration.GetConnectionString("DefaultConnection")
 
 builder.Services.AddDbContextFactory<AppDbContext>(opts => opts.UseSqlServer(connStr));
 
-var settings = new SettingsService();
+// LAMP (TRC-T29): same Vault settings and named keys as the site.
+MindAttic.Vault.Credentials.KeyImporter.ImportAppScopedFor(AppSettings.AppId);
+var settings = new SettingsService(null, builder.Configuration,
+    MindAttic.Vault.Configuration.ConfigurationKeySelectorExtensions.CreateKeySelector(builder.Configuration, SettingsService.ClassifyLegionFailure));
 settings.Load();
 builder.Services.AddSingleton(settings);
 
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IDiscoveryService, DiscoveryService>();
-builder.Services.Configure<AnthropicOptions>(builder.Configuration.GetSection(AnthropicOptions.Section));
+builder.Services.AddTransient<Microsoft.Extensions.Options.IOptions<AnthropicOptions>>(sp =>
+    Microsoft.Extensions.Options.Options.Create(sp.GetRequiredService<SettingsService>().Current.ToAnthropicOptions()));
 builder.Services.AddLegionClient();
 builder.Services.AddScoped<IRateLawExtractor, ClaudeRateLawExtractor>();
 builder.Services.AddScoped<IRecursiveRateScraper, RecursiveRateScraper>();

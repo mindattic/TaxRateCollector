@@ -37,8 +37,7 @@ public class ClaudeExtractionParserTests
             MaxContentChars = maxContentChars,
         });
 
-        var settings = new SettingsService();
-        settings.Current.AnthropicApiKey = apiKey;
+        var settings = TaxRateCollector.UnitTests.Helpers.TestLamp.Service(claudeKey: apiKey); // key from Vault (LAMP)
 
         return new ClaudeRateLawExtractor(new MindAttic.Legion.LegionClient(http), opts, settings,
             NullLogger<ClaudeRateLawExtractor>.Instance);
@@ -250,8 +249,7 @@ public class ClaudeExtractionParserTests
         var handler = new CountingHttpHandler(ref callCount, "{}");
         var http = new HttpClient(handler);
         var opts = Options.Create(new AnthropicOptions());
-        var settings = new SettingsService();
-        settings.Current.AnthropicApiKey = "";   // blank key
+        var settings = TaxRateCollector.UnitTests.Helpers.TestLamp.Service(claudeKey: ""); // key from Vault (LAMP)
 
         var legion = new MindAttic.Legion.LegionClient(http);
         var extractor = new ClaudeRateLawExtractor(legion, opts, settings,
@@ -270,8 +268,7 @@ public class ClaudeExtractionParserTests
         var handler = new CountingHttpHandler(ref callCount, "{}");
         var http = new HttpClient(handler);
         var opts = Options.Create(new AnthropicOptions());
-        var settings = new SettingsService();
-        settings.Current.AnthropicApiKey = "sk-test";
+        var settings = TaxRateCollector.UnitTests.Helpers.TestLamp.Service(claudeKey: "sk-test"); // key from Vault (LAMP)
 
         var legion = new MindAttic.Legion.LegionClient(http);
         var extractor = new ClaudeRateLawExtractor(legion, opts, settings,
@@ -307,8 +304,7 @@ public class ClaudeExtractionParserTests
         var http = new HttpClient(captureHandler);
         var opts = Options.Create(new AnthropicOptions
             { Model = "test", MaxTokens = 100, MaxContentChars = 60_000 });
-        var settings = new SettingsService();
-        settings.Current.AnthropicApiKey = "sk-test";
+        var settings = TaxRateCollector.UnitTests.Helpers.TestLamp.Service(claudeKey: "sk-test"); // key from Vault (LAMP)
 
         var legion = new MindAttic.Legion.LegionClient(http);
         var extractor = new ClaudeRateLawExtractor(legion, opts, settings,
@@ -331,8 +327,7 @@ public class ClaudeExtractionParserTests
         var http = new HttpClient(captureHandler);
         var opts = Options.Create(new AnthropicOptions
             { Model = "test", MaxTokens = 100, MaxContentChars = maxChars });
-        var settings = new SettingsService();
-        settings.Current.AnthropicApiKey = "sk-test";
+        var settings = TaxRateCollector.UnitTests.Helpers.TestLamp.Service(claudeKey: "sk-test"); // key from Vault (LAMP)
 
         var legion = new MindAttic.Legion.LegionClient(http);
         var extractor = new ClaudeRateLawExtractor(legion, opts, settings,

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using MindAttic.Vault.Credentials;
 using TaxRateCollector.Infrastructure.Services;
 
 namespace TaxRateCollector.UnitTests.SetupTests;
@@ -44,8 +43,11 @@ public class AppSettingsTests
         => Assert.That(new AppSettings().WaybackMachineFallback, Is.True);
 
     [Test]
-    public void Default_UspsApiKey_IsEmpty()
-        => Assert.That(new AppSettings().UspsApiKey, Is.Empty);
+    public void Settings_class_holds_no_keys()
+    {
+        Assert.That(typeof(AppSettings).GetProperty("UspsApiKey"), Is.Null);
+        Assert.That(typeof(AppSettings).GetProperty("AnthropicApiKey"), Is.Null);
+    }
 
     // ── URL defaults ──────────────────────────────────────────────────────────
 
@@ -120,7 +122,6 @@ public class AppSettingsTests
             DefaultUpdateFrequencyDays = 30,
             EvidenceAutoFetch = true,
             WaybackMachineFallback = false,
-            UspsApiKey = "test-key-123"
         };
         var json   = JsonSerializer.Serialize(original, JsonOpts);
         var loaded = JsonSerializer.Deserialize<AppSettings>(json, JsonOpts)!;
@@ -133,7 +134,6 @@ public class AppSettingsTests
             Assert.That(loaded.DefaultUpdateFrequencyDays, Is.EqualTo(original.DefaultUpdateFrequencyDays));
             Assert.That(loaded.EvidenceAutoFetch,          Is.EqualTo(original.EvidenceAutoFetch));
             Assert.That(loaded.WaybackMachineFallback,     Is.EqualTo(original.WaybackMachineFallback));
-            Assert.That(loaded.UspsApiKey,                 Is.EqualTo(original.UspsApiKey));
         });
     }
 
@@ -158,132 +158,20 @@ public class AppSettingsTests
     [Test]
     public void SettingsService_DefaultCurrent_HasLightTheme()
     {
-        var svc = new SettingsService();
+        var svc = new SettingsService(TaxRateCollector.UnitTests.Helpers.TestLamp.Store());
         Assert.That(svc.Current.Theme, Is.EqualTo("light"));
     }
 
     [Test]
-    public void SettingsService_SetTheme_UpdatesCurrentTheme()
+    public void SettingsService_InMemoryChange_IsReflected_UntilTheFileChanges()
     {
-        var svc = new SettingsService();
-        // Load first so Save() during SetTheme operates on a known state
-        try { svc.Load(); } catch { /* ignore file I/O in CI */ }
-        var originalTheme = svc.Current.Theme;
-
+        var store = TaxRateCollector.UnitTests.Helpers.TestLamp.Store();
+        var svc = new SettingsService(store);
+        svc.Load();
         svc.Current.Theme = "dark";
-        Assert.That(svc.Current.Theme, Is.EqualTo("dark"),
-            "Setting Theme on Current should be immediately reflected");
-    }
+        Assert.That(svc.Current.Theme, Is.EqualTo("dark"), "Setting Theme on Current should be immediately reflected");
 
-    // ── Per-app (Vault-backed) Claude key resolution ──────────────────────────
-    // These redirect the shared %APPDATA%\MindAttic\LLM\ keyring via
-    // MINDATTIC_LLM_CREDENTIALS, and back up/restore the real per-app settings.json
-    // (SettingsService has no path override), so no real user profile is left changed.
-
-    private static readonly string RealSettingsPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "MindAttic", "TaxRateCollector", "settings.json");
-
-    private static IDisposable RedirectCredentials(out string directory)
-    {
-        directory = Path.Combine(Path.GetTempPath(), "trc-vault-tests-" + Guid.NewGuid());
-        Directory.CreateDirectory(directory);
-        Environment.SetEnvironmentVariable(LlmCredentialStore.DirectoryEnvVar, directory);
-        return new EnvironmentReset(directory);
-    }
-
-    private sealed class EnvironmentReset(string directory) : IDisposable
-    {
-        public void Dispose()
-        {
-            Environment.SetEnvironmentVariable(LlmCredentialStore.DirectoryEnvVar, null);
-            try { Directory.Delete(directory, recursive: true); } catch { /* best-effort cleanup */ }
-        }
-    }
-
-    private static IDisposable PreserveRealSettingsFile() =>
-        new SettingsFileReset(RealSettingsPath, File.Exists(RealSettingsPath) ? File.ReadAllBytes(RealSettingsPath) : null);
-
-    private sealed class SettingsFileReset(string path, byte[]? backup) : IDisposable
-    {
-        public void Dispose()
-        {
-            try
-            {
-                if (backup is null) { if (File.Exists(path)) File.Delete(path); }
-                else File.WriteAllBytes(path, backup);
-            }
-            catch { /* best-effort restore — never let test cleanup mask the real assertion */ }
-        }
-    }
-
-    [Test]
-    public void Load_PrefersOwnScopedKey_OverSharedKey()
-    {
-        using var _settingsGuard = PreserveRealSettingsFile();
-        using var _ = RedirectCredentials(out var dir);
-        var shared = new LlmCredentialStore(dir);
-        shared.SetKey("claude", "shared-key");
-        shared.SetKey("taxratecollector-claude", "own-key");
-
-        var svc = new SettingsService();
-        svc.Load();
-
-        Assert.That(svc.Current.AnthropicApiKey, Is.EqualTo("own-key"));
-    }
-
-    [Test]
-    public void Load_FallsBackToSharedKey_WhenNoOwnKey()
-    {
-        using var _settingsGuard = PreserveRealSettingsFile();
-        using var _ = RedirectCredentials(out var dir);
-        var shared = new LlmCredentialStore(dir);
-        shared.SetKey("claude", "shared-key");
-
-        var svc = new SettingsService();
-        svc.Load();
-
-        Assert.That(svc.Current.AnthropicApiKey, Is.EqualTo("shared-key"));
-    }
-
-    [Test]
-    public void Save_WritesKey_ToOwnScopedEntry_NeverShared()
-    {
-        using var _settingsGuard = PreserveRealSettingsFile();
-        using var _ = RedirectCredentials(out var dir);
-        var svc = new SettingsService();
-        svc.Load();
-        svc.Current.AnthropicApiKey = "typed-key";
-        svc.Save();
-
-        var shared = new LlmCredentialStore(dir);
-        Assert.That(shared.GetKey("taxratecollector-claude"), Is.EqualTo("typed-key"));
-        Assert.That(shared.GetKey("claude"), Is.Null);
-    }
-
-    [Test]
-    public void Load_MigratesLegacyPerAppKey_IntoOwnScopedId_NotShared()
-    {
-        using var _settingsGuard = PreserveRealSettingsFile();
-        using var _ = RedirectCredentials(out var dir);
-
-        // Simulate a pre-upgrade settings.json that already has a per-app key from
-        // before the Vault-backed store existed, with nothing in either the shared
-        // or own-scoped credential stores yet.
-        Directory.CreateDirectory(Path.GetDirectoryName(RealSettingsPath)!);
-        File.WriteAllText(RealSettingsPath, JsonSerializer.Serialize(
-            new { anthropic_api_key = "legacy-key" }, JsonOpts));
-
-        var svc = new SettingsService();
-        svc.Load();
-
-        Assert.That(svc.Current.AnthropicApiKey, Is.EqualTo("legacy-key"),
-            "The legacy per-app key should still resolve after migration");
-
-        var shared = new LlmCredentialStore(dir);
-        Assert.That(shared.GetKey("taxratecollector-claude"), Is.EqualTo("legacy-key"),
-            "Migration must land in this app's own scoped id");
-        Assert.That(shared.GetKey("claude"), Is.Null,
-            "Migration must never write into the shared cross-app id");
+        File.SetLastWriteTimeUtc(store.FilePath, DateTime.UtcNow.AddMinutes(1));   // a Vault.Desktop save
+        Assert.That(svc.Current.Theme, Is.EqualTo("light"), "a saved file is re-read");
     }
 }

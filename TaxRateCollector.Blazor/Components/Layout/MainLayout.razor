@@ -3,6 +3,8 @@
 @using TaxRateCollector.Infrastructure.Data
 @inject NavigationManager Nav
 @inject IDbContextFactory<AppDbContext> DbFactory
+@inject TaxRateCollector.Infrastructure.Services.SettingsService AppSettings
+@inject IJSRuntime JS
 @rendermode InteractiveServer
 
 <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -31,9 +33,18 @@
                         @if (dropdownOpen)
                         {
                             <div id="user-menu" class="user-dropdown-menu" role="menu" @onclick:stopPropagation="true">
-                                <a href="/settings" class="user-dropdown-item" role="menuitem" @onclick="CloseDropdown">
+                                @* LAMP (TRC-T29): settings are edited only in MindAttic Vault. The server opens it at
+                                   TaxRateCollector's tab; the link is the mindattic-vault:// fallback for a browser elsewhere. *@
+                                <button type="button" class="user-dropdown-item" role="menuitem" @onclick="OpenSettings">
                                     <span aria-hidden="true">⚙</span> Settings
+                                </button>
+                                <a href="@TaxRateCollector.Infrastructure.Services.SettingsCog.Link()" class="user-dropdown-item" role="menuitem">
+                                    <span aria-hidden="true">↗</span> Settings (Vault link)
                                 </a>
+                                @if (!string.IsNullOrEmpty(settingsMessage))
+                                {
+                                    <div class="user-dropdown-item" role="status">@settingsMessage</div>
+                                }
                                 <form method="post" action="/logout" style="margin:0">
                                     <AntiforgeryToken />
                                     <button type="submit" class="user-dropdown-item user-dropdown-item-danger" role="menuitem">
@@ -116,4 +127,23 @@
 
     private void ToggleDropdown() => dropdownOpen = !dropdownOpen;
     private void CloseDropdown() => dropdownOpen = false;
+
+    private string? settingsMessage;
+
+    /// <summary>The Settings cog: opens MindAttic Vault at TaxRateCollector's tab (no settings editor in the app).</summary>
+    private void OpenSettings()
+    {
+        var result = TaxRateCollector.Infrastructure.Services.SettingsCog.Open();
+        settingsMessage = result.Opened ? null : result.Message;
+        if (result.Opened) dropdownOpen = false;
+    }
+
+    // Apply the theme and font from TaxRateCollector's Vault settings (the old Settings page did this on change).
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        var s = AppSettings.Current;
+        await JS.InvokeVoidAsync("applyTheme", s.Theme);
+        await JS.InvokeVoidAsync("applyFont", s.Font, s.FontSize);
+    }
 }

@@ -30,14 +30,13 @@ namespace TaxRateCollector.Infrastructure.Services;
 /// </summary>
 public sealed class ZipImportService : IZipImportService
 {
-    // URLs come from AppSettings (admin-configurable in the Settings page)
+    // URLs come from AppSettings (edited in MindAttic Vault)
 
-    private static readonly string CacheDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "MindAttic", "TaxRateCollector", "cache");
+    // Through VaultPaths (SettingsService.CacheDirectory) so the test roots apply (LAMP, TRC-T29).
+    private static string CacheDir => SettingsService.CacheDirectory;
 
-    private static readonly string CountyCacheFile = Path.Combine(CacheDir, "census_zcta_county.txt");
-    private static readonly string PlaceCacheFile  = Path.Combine(CacheDir, "census_zcta_place.txt");
+    private static string CountyCacheFile => Path.Combine(CacheDir, "census_zcta_county.txt");
+    private static string PlaceCacheFile  => Path.Combine(CacheDir, "census_zcta_place.txt");
 
     // ── US State FIPS → 2-letter abbreviation ────────────────────────────────
     private static readonly Dictionary<string, string> FipsToStateCode = new(StringComparer.Ordinal)
@@ -135,10 +134,12 @@ public sealed class ZipImportService : IZipImportService
 
         // 6. Optional USPS enrichment for city names
         Dictionary<string, string>? uspsCities = null;
-        if (!string.IsNullOrWhiteSpace(settings.Current.UspsApiKey))
+        // The USPS key comes from Vault's shared named lists (LAMP, TRC-T29).
+        var uspsKey = settings.GetKey("usps");
+        if (!string.IsNullOrWhiteSpace(uspsKey))
         {
             progress?.Report(new ZipImportProgress(0, total, 0, 0, 0, "Fetching USPS city names…"));
-            uspsCities = await FetchUspsCitiesAsync(http, newZctas, settings.Current.UspsApiKey, ct);
+            uspsCities = await FetchUspsCitiesAsync(http, newZctas, uspsKey, ct);
         }
 
         // 7. Build records in batches of 500

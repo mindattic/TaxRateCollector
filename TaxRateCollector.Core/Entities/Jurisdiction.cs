@@ -55,7 +55,7 @@ public class Jurisdiction
     // ── USPS validation ───────────────────────────────────────────────────────
     /// <summary>
     /// True when this jurisdiction's name has been confirmed by the USPS CityStateLookup API.
-    /// Set during ZIP import when UspsApiKey is configured in settings.
+    /// Set during ZIP import when a USPS key is configured in MindAttic Vault.
     /// </summary>
     public bool UspsValidated { get; set; }
 

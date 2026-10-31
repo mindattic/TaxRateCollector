@@ -28,15 +28,14 @@ public sealed class CensusJurisdictionImportService : ICensusJurisdictionImportS
     // Note: the national place→county crosswalk no longer exists at the Census Bureau.
     // City→county mapping falls back to first-county-per-state (see ImportCitiesAsync).
 
-    private static readonly string CacheDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "MindAttic", "TaxRateCollector", "cache");
+    // Through VaultPaths (SettingsService.CacheDirectory) so the test roots apply (LAMP, TRC-T29).
+    private static string CacheDir => SettingsService.CacheDirectory;
 
-    private static readonly string CountyCache      = Path.Combine(CacheDir, "census_counties.txt");
-    private static readonly string PlaceCache       = Path.Combine(CacheDir, "census_places.txt");
+    private static string CountyCache      => Path.Combine(CacheDir, "census_counties.txt");
+    private static string PlaceCache       => Path.Combine(CacheDir, "census_places.txt");
     // Shared with ZipImportService — read from cache if ZIPs were already imported, or download fresh
-    private static readonly string ZctaCountyCache  = Path.Combine(CacheDir, "census_zcta_county.txt");
-    private static readonly string ZctaPlaceCache   = Path.Combine(CacheDir, "census_zcta_place.txt");
+    private static string ZctaCountyCache  => Path.Combine(CacheDir, "census_zcta_county.txt");
+    private static string ZctaPlaceCache   => Path.Combine(CacheDir, "census_zcta_place.txt");
 
     // ── State FIPS → 2-letter abbreviation ───────────────────────────────────
     private static readonly Dictionary<string, string> FipsToStateCode = new(StringComparer.Ordinal)

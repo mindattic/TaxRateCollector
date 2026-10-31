@@ -33,6 +33,15 @@ Log.Logger = new LoggerConfiguration()
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
 
+// LAMP (TRC-T29): `--write-settings-manifest` runs the one-time settings upgrade (keys out of settings.json into
+// Vault's named lists, Anthropic options imported), seeds defaults, writes the manifest MindAttic.Vault.Desktop
+// renders, then exits without starting the site.
+if (args.Any(a => string.Equals(a, MindAttic.Vault.Settings.Manifest.SettingsManifestCommand.Switch, StringComparison.OrdinalIgnoreCase)))
+{
+    new SettingsService(null, builder.Configuration).Load();
+    if (MindAttic.Vault.Settings.Manifest.SettingsManifestCommand.TryRun<AppSettings>(args)) return;
+}
+
 // Cloud-native configuration chain. Layered (later sources win):
 //   AddJsonFile (already added by WebApplicationBuilder for appsettings.json).
 //   AddMindAtticVaultFiles surfaces %APPDATA%\MindAttic\<bucket>\providers.json on dev.
@@ -45,10 +54,6 @@ builder.Configuration
 // BrokerCredentialResolver) registered alongside the legacy file-backed stores.
 builder.Services.AddMindAtticVault(builder.Configuration);
 
-// Hand IConfiguration to SettingsService BEFORE it loads so the very first
-// Anthropic key resolution sees the cloud-native value. Static-field injection
-// keeps SettingsService's parameterless constructor unchanged.
-SettingsService.VaultConfiguration = builder.Configuration;
 
 // ── Blazor ────────────────────────────────────────────────────────────────────
 builder.Services.AddRazorComponents()
@@ -123,7 +128,9 @@ builder.Services.AddScoped<ITaxCalculator, TaxCalculator>();
 builder.Services.AddScoped<AlertService>();
 builder.Services.AddScoped<IPayPalService, PayPalService>();
 builder.Services.AddScoped<IDiscoveryService, DiscoveryService>();
-builder.Services.Configure<AnthropicOptions>(builder.Configuration.GetSection(AnthropicOptions.Section));
+// LAMP (TRC-T29): the Claude extraction options are TaxRateCollector settings (MindAttic Vault), read per use.
+builder.Services.AddTransient<Microsoft.Extensions.Options.IOptions<AnthropicOptions>>(sp =>
+    Microsoft.Extensions.Options.Options.Create(sp.GetRequiredService<SettingsService>().Current.ToAnthropicOptions()));
 builder.Services.AddLegionClient();
 builder.Services.AddScoped<IRateLawExtractor, ClaudeRateLawExtractor>();
 builder.Services.AddScoped<IRecursiveRateScraper, RecursiveRateScraper>();
@@ -133,8 +140,13 @@ builder.Services.AddScoped<ICensusJurisdictionImportService, CensusJurisdictionI
 builder.Services.AddScoped<ISstTaxonomyImportService, SstTaxonomyImportService>();
 builder.Services.AddScoped<ViewAsService>();
 
-// ── App settings (singleton — %APPDATA%\MindAttic\TaxRateCollector\settings.json) ──
-var settings = new SettingsService();
+// ── App settings (LAMP, TRC-T29): %APPDATA%\MindAttic\TaxRateCollector\settings.json, edited only in
+//    MindAttic.Vault.Desktop; a deployed host reads MindAttic:Settings:TaxRateCollector from configuration.
+//    Keys come from Vault's shared named lists (configuration first, then %APPDATA%\MindAttic\LLM); a
+//    per-app "taxratecollector-*" key copy left from before moves into the shared list as this app's key. ──
+MindAttic.Vault.Credentials.KeyImporter.ImportAppScopedFor(AppSettings.AppId);
+var settings = new SettingsService(null, builder.Configuration,
+    builder.Configuration.CreateKeySelector(SettingsService.ClassifyLegionFailure));
 settings.Load();
 builder.Services.AddSingleton(settings);
 

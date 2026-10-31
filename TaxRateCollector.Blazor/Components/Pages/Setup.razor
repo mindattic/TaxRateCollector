@@ -61,8 +61,8 @@ else
             <h2 class="setup-card-title">Data Source URLs</h2>
             <p class="setup-card-desc">
                 These point to the files the import pipeline downloads at startup. They default to the current 2025 Census Bureau
-                files and the latest SSUTA Agreement PDF. Update them if the Census Bureau publishes a new year or
-                the SST Governing Board publishes a new amendment. Clear the cache after updating to force a fresh download.
+                files and the latest SSUTA Agreement PDF. They are settings, changed in MindAttic Vault ("Edit in Vault") when the
+                Census Bureau publishes a new year or the SST Governing Board a new amendment. Clear the cache after a change to force a fresh download.
             </p>
         </div>
     </div>
@@ -71,28 +71,32 @@ else
         <div class="setup-url-field">
             <label class="setting-label">County Gazetteer (ZIP) — ~3,200 US counties with FIPS codes</label>
             <div class="setup-url-input-row">
-                <input class="setting-input setup-url-input" @bind="settings.Current.CensusCountyGazUrl" />
+                <input class="setting-input setup-url-input" value="@settings.Current.CensusCountyGazUrl" readonly aria-readonly="true" />
+                <button type="button" class="btn-secondary" title="Change this URL in MindAttic Vault" @onclick='() => OpenVault("census_county_gaz_url")'>Edit in Vault</button>
                 @if (urlResults.TryGetValue("CensusCountyGaz", out var r1)) { <span class="@(r1 ? "ds-url-ok" : "ds-url-fail") url-check-badge">@(r1 ? "✓" : "✗")</span> }
             </div>
         </div>
         <div class="setup-url-field">
             <label class="setting-label">Place Gazetteer (ZIP) — ~30,000 incorporated cities and places</label>
             <div class="setup-url-input-row">
-                <input class="setting-input setup-url-input" @bind="settings.Current.CensusPlaceGazUrl" />
+                <input class="setting-input setup-url-input" value="@settings.Current.CensusPlaceGazUrl" readonly aria-readonly="true" />
+                <button type="button" class="btn-secondary" title="Change this URL in MindAttic Vault" @onclick='() => OpenVault("census_place_gaz_url")'>Edit in Vault</button>
                 @if (urlResults.TryGetValue("CensusPlaceGaz", out var r2)) { <span class="@(r2 ? "ds-url-ok" : "ds-url-fail") url-check-badge">@(r2 ? "✓" : "✗")</span> }
             </div>
         </div>
         <div class="setup-url-field">
             <label class="setting-label">ZCTA → County crosswalk (TXT) — maps ZIP codes to counties by land-area</label>
             <div class="setup-url-input-row">
-                <input class="setting-input setup-url-input" @bind="settings.Current.CensusZctaCountyUrl" />
+                <input class="setting-input setup-url-input" value="@settings.Current.CensusZctaCountyUrl" readonly aria-readonly="true" />
+                <button type="button" class="btn-secondary" title="Change this URL in MindAttic Vault" @onclick='() => OpenVault("census_zcta_county_url")'>Edit in Vault</button>
                 @if (urlResults.TryGetValue("CensusZctaCounty", out var r3)) { <span class="@(r3 ? "ds-url-ok" : "ds-url-fail") url-check-badge">@(r3 ? "✓" : "✗")</span> }
             </div>
         </div>
         <div class="setup-url-field">
             <label class="setting-label">ZCTA → Place crosswalk (TXT) — maps ZIP codes to cities by land-area</label>
             <div class="setup-url-input-row">
-                <input class="setting-input setup-url-input" @bind="settings.Current.CensusZctaPlaceUrl" />
+                <input class="setting-input setup-url-input" value="@settings.Current.CensusZctaPlaceUrl" readonly aria-readonly="true" />
+                <button type="button" class="btn-secondary" title="Change this URL in MindAttic Vault" @onclick='() => OpenVault("census_zcta_place_url")'>Edit in Vault</button>
                 @if (urlResults.TryGetValue("CensusZctaPlace", out var r4)) { <span class="@(r4 ? "ds-url-ok" : "ds-url-fail") url-check-badge">@(r4 ? "✓" : "✗")</span> }
             </div>
         </div>
@@ -100,21 +104,24 @@ else
         <div class="setup-url-field">
             <label class="setting-label">SSUTA Agreement PDF — Appendix C is the authoritative product/service taxonomy source</label>
             <div class="setup-url-input-row">
-                <input class="setting-input setup-url-input" @bind="settings.Current.SstAgreementUrl" />
+                <input class="setting-input setup-url-input" value="@settings.Current.SstAgreementUrl" readonly aria-readonly="true" />
+                <button type="button" class="btn-secondary" title="Change this URL in MindAttic Vault" @onclick='() => OpenVault("sst_agreement_url")'>Edit in Vault</button>
                 @if (urlResults.TryGetValue("SstAgreement", out var r5)) { <span class="@(r5 ? "ds-url-ok" : "ds-url-fail") url-check-badge">@(r5 ? "✓" : "✗")</span> }
             </div>
         </div>
         <div class="setup-url-field">
             <label class="setting-label">SST Taxability Matrix (web)</label>
             <div class="setup-url-input-row">
-                <input class="setting-input setup-url-input" @bind="settings.Current.SstTaxabilityMatrixUrl" />
+                <input class="setting-input setup-url-input" value="@settings.Current.SstTaxabilityMatrixUrl" readonly aria-readonly="true" />
+                <button type="button" class="btn-secondary" title="Change this URL in MindAttic Vault" @onclick='() => OpenVault("sst_taxability_matrix_url")'>Edit in Vault</button>
                 @if (urlResults.TryGetValue("SstTaxabilityMatrix", out var r6)) { <span class="@(r6 ? "ds-url-ok" : "ds-url-fail") url-check-badge">@(r6 ? "✓" : "✗")</span> }
             </div>
         </div>
         <div class="setup-url-field">
             <label class="setting-label">SST Member States &amp; News (web)</label>
             <div class="setup-url-input-row">
-                <input class="setting-input setup-url-input" @bind="settings.Current.SstMemberStatesUrl" />
+                <input class="setting-input setup-url-input" value="@settings.Current.SstMemberStatesUrl" readonly aria-readonly="true" />
+                <button type="button" class="btn-secondary" title="Change this URL in MindAttic Vault" @onclick='() => OpenVault("sst_member_states_url")'>Edit in Vault</button>
                 @if (urlResults.TryGetValue("SstMemberStates", out var r7)) { <span class="@(r7 ? "ds-url-ok" : "ds-url-fail") url-check-badge">@(r7 ? "✓" : "✗")</span> }
             </div>
         </div>
@@ -123,8 +130,7 @@ else
         <button class="btn-secondary" @onclick="() => CheckSources()" disabled="@checkingUrls">
             @(checkingUrls ? "Checking…" : "Check Sources")
         </button>
-        <button class="btn-primary" @onclick="SaveConfig" disabled="@configBusy">Save URLs</button>
-        @if (!string.IsNullOrEmpty(configMsg)) { <span class="save-confirm">@configMsg</span> }
+        @if (!string.IsNullOrEmpty(vaultMsg)) { <span class="save-confirm">@vaultMsg <a href="@SettingsCog.Link()">Open Vault</a></span> }
     </div>
     @if (checkingUrls || urlResults.Count > 0)
     {
@@ -150,57 +156,30 @@ else
     }
 </div>
 
-<!-- ── Scraping Preferences card ──────────────────────────────────────────────── -->
+<!-- ── Scraping Preferences card (LAMP, TRC-T29: edited in MindAttic Vault) ─────── -->
 <div class="setup-card">
     <div class="setup-card-header">
         <div>
             <h2 class="setup-card-title">Scraping Preferences</h2>
             <p class="setup-card-desc">
-                Controls how the scrape pipeline behaves. The USPS key is optional — it enriches ZIP code city names
-                via the USPS CityStateLookup API. Without it, city names come directly from the Census Bureau.
+                Re-scrape interval, evidence capture, Wayback fallback, auto-approve, the Claude extraction model and the
+                Claude/USPS keys are TaxRateCollector settings in MindAttic Vault.
             </p>
         </div>
     </div>
-    <div class="setting-row">
-        <label class="setting-label">USPS API Key <span class="muted">(optional)</span></label>
-        <input class="setting-input" type="password" placeholder="USPS Web Tools API key" @bind="settings.Current.UspsApiKey" />
-    </div>
-    <div class="setting-row" style="margin-top:.6rem">
-        <label class="setting-label">
-            Claude API Key <span class="muted">(optional)</span>
-            <span class="setting-hint">Powers AI extraction of tax rates from raw source pages. Leave blank to use a shared default key if one is configured elsewhere on this machine.</span>
-        </label>
-        <input class="setting-input" type="password" placeholder="sk-ant-..." @bind="settings.Current.AnthropicApiKey" />
-    </div>
-    <div class="setting-row" style="margin-top:.6rem">
-        <label class="setting-label">Re-scrape interval (days)</label>
-        <input class="setting-input setting-input-sm" type="number" min="1" max="365" @bind="settings.Current.DefaultUpdateFrequencyDays" />
-    </div>
-    <div class="setting-row" style="margin-top:.6rem">
-        <label class="setting-label">Auto-fetch evidence PDFs when scraping</label>
-        <input type="checkbox" @bind="settings.Current.EvidenceAutoFetch" />
-    </div>
-    <div class="setting-row" style="margin-top:.6rem">
-        <label class="setting-label">Use Wayback Machine if source URL returns 404</label>
-        <input type="checkbox" @bind="settings.Current.WaybackMachineFallback" />
-    </div>
-    <div class="setting-row" style="margin-top:.6rem">
-        <label class="setting-label">
-            Full-page capture for HTML evidence
-            <span class="setting-hint">Off: HTML only (fast). On: bundles CSS/images/scripts into a zip.</span>
-        </label>
-        <input type="checkbox" @bind="settings.Current.FullPageCapture" />
-    </div>
-    <div class="setting-row" style="margin-top:.6rem">
-        <label class="setting-label">
-            Auto-Approve scraped rates
-            <span class="setting-hint">On: rates go live immediately. Off: rates queue for an Administrator or Approver to review before going live.</span>
-        </label>
-        <input type="checkbox" @bind="settings.Current.AutoApprove" />
-    </div>
+    <dl class="setting-summary">
+        <dt>Re-scrape interval</dt><dd>@settings.Current.DefaultUpdateFrequencyDays days</dd>
+        <dt>Auto-fetch evidence PDFs</dt><dd>@(settings.Current.EvidenceAutoFetch ? "On" : "Off")</dd>
+        <dt>Wayback Machine fallback</dt><dd>@(settings.Current.WaybackMachineFallback ? "On" : "Off")</dd>
+        <dt>Full-page capture</dt><dd>@(settings.Current.FullPageCapture ? "On" : "Off")</dd>
+        <dt>Auto-approve scraped rates</dt><dd>@(settings.Current.AutoApprove ? "On" : "Off")</dd>
+        <dt>Claude key</dt><dd>@(string.IsNullOrWhiteSpace(settings.GetKey("claude")) ? "Not set" : "Set")</dd>
+        <dt>USPS key</dt><dd>@(string.IsNullOrWhiteSpace(settings.GetKey("usps")) ? "Not set (optional)" : "Set")</dd>
+    </dl>
     <div class="settings-actions" style="margin-top:.75rem;gap:.6rem">
-        <button class="btn-primary" @onclick="SaveConfig" disabled="@configBusy">Save Preferences</button>
-        @if (!string.IsNullOrEmpty(configMsg)) { <span class="save-confirm">@configMsg</span> }
+        <button type="button" class="btn-primary" @onclick="() => OpenVault(null)">Open settings in MindAttic Vault</button>
+        <a class="btn-secondary" href="@SettingsCog.Link()">Vault link</a>
+        @if (!string.IsNullOrEmpty(vaultMsg)) { <span class="save-confirm">@vaultMsg</span> }
     </div>
 </div>
 
@@ -468,8 +447,7 @@ else
     };
 
     // ── Config / admin state ──────────────────────────────────────────────────
-    private bool configBusy;
-    private string? configMsg;
+    private string? vaultMsg;
     private bool adminBusy;
     private string? adminStatus;
     private PricingConfig? pricing;
@@ -530,18 +508,13 @@ else
         StateHasChanged();
     }
 
-    // ── Config save ───────────────────────────────────────────────────────────
+    // ── Settings live in MindAttic Vault (LAMP, TRC-T29) ──────────────────────
 
-    private async Task SaveConfig()
+    /// <summary>Opens Vault at TaxRateCollector's tab (scrolled to <paramref name="jsonName"/>'s row when given).</summary>
+    private void OpenVault(string? jsonName)
     {
-        configBusy = true;
-        settings.Save();
-        configMsg = "✓ Saved";
-        StateHasChanged();
-        await Task.Delay(2000);
-        configMsg = null;
-        configBusy = false;
-        StateHasChanged();
+        var result = SettingsCog.Open(jsonName is null ? null : SettingsCog.FullName(jsonName));
+        vaultMsg = result.Opened ? "Opened in MindAttic Vault." : result.Message;
     }
 
     // ── Pricing ───────────────────────────────────────────────────────────────

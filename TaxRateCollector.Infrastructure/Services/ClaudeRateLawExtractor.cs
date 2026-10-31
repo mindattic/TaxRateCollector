@@ -40,13 +40,11 @@ public sealed class ClaudeRateLawExtractor(
     {
         var opts = options.Value;
 
-        // Key is loaded by SettingsService: cloud config, then this app's own Vault-backed
-        // key, then the shared %APPDATA%\MindAttic\LLM\providers.json entry, then this
-        // app's settings.json — see SettingsService.Load().
-        var apiKey = settings.Current.AnthropicApiKey;
-        if (string.IsNullOrWhiteSpace(apiKey))
+        // LAMP (TRC-T29): keys come from Vault's shared named lists (configuration first on a
+        // deployed host); the call below fails over to the next key when one is refused.
+        if (string.IsNullOrWhiteSpace(settings.GetKey("claude")))
         {
-            logger.LogWarning("Anthropic API key not set in AppData settings — skipping extraction for {Name}",
+            logger.LogWarning("No Claude key in MindAttic Vault — skipping extraction for {Name}",
                 jurisdiction.JurisdictionName);
             return [];
         }
@@ -59,7 +57,8 @@ public sealed class ClaudeRateLawExtractor(
 
         try
         {
-            var responseText = await CallClaudeAsync(prompt, apiKey, opts, ct);
+            var responseText = await settings.Keys.ExecuteAsync("claude", AppSettings.AppId,
+                (apiKey, callCt) => CallClaudeAsync(prompt, apiKey, opts, callCt), ct);
             return ParseResponse(responseText, jurisdiction.JurisdictionName);
         }
         catch (OperationCanceledException) { throw; }
