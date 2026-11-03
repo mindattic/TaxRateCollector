@@ -154,7 +154,7 @@ public sealed class MinnesotaAlcoholScraper : IStateBulkScraper
         if (!beer32Match.Success)
             throw new InvalidOperationException(
                 $"Could not parse ≤3.2% malt beverage rate from {BeerUrl}. The page structure may have changed.");
-        var beer32 = decimal.Parse(beer32Match.Groups[1].Value) / 31m;
+        var beer32 = decimal.Parse(beer32Match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) / 31m;
 
         // DOR page table: "More than 3.2% | $4.60"
         var beerMatch = Regex.Match(text,
@@ -163,7 +163,7 @@ public sealed class MinnesotaAlcoholScraper : IStateBulkScraper
         if (!beerMatch.Success)
             throw new InvalidOperationException(
                 $"Could not parse >3.2% malt beverage rate from {BeerUrl}. The page structure may have changed.");
-        var beer = decimal.Parse(beerMatch.Groups[1].Value) / 31m;
+        var beer = decimal.Parse(beerMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) / 31m;
 
         if (beer <= beer32)
             throw new InvalidOperationException(
@@ -185,7 +185,7 @@ public sealed class MinnesotaAlcoholScraper : IStateBulkScraper
         var ciderMatch = Regex.Match(text,
             @"\bcider\b(?!\s*\)).{0,100}?\$\s*(\d+\.\d+)",
             RegexOptions.IgnoreCase);
-        var cider = ciderMatch.Success ? decimal.Parse(ciderMatch.Groups[1].Value) : 0.15m;
+        var cider = ciderMatch.Success ? decimal.Parse(ciderMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) : 0.15m;
 
         // DOR table: ">14% to <21% ABV | $0.95" (old) or "more than 14% but less than 21%" (new)
         var wine21 = RequireDollarRate(text,
@@ -218,14 +218,14 @@ public sealed class MinnesotaAlcoholScraper : IStateBulkScraper
             @"distilled\s*spirits.{0,500}?\$\s*(\d+\.\d+)\s*per\s*gallon",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
         if (gallonMatch.Success)
-            return decimal.Parse(gallonMatch.Groups[1].Value);
+            return decimal.Parse(gallonMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // Fallback: per-liter rate × 3.78541
         var literMatch = Regex.Match(text,
             @"distilled\s*spirits.{0,500}?\$\s*(\d+\.\d+)\s*per\s*liter",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
         if (literMatch.Success)
-            return decimal.Parse(literMatch.Groups[1].Value) * 3.78541m;
+            return decimal.Parse(literMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) * 3.78541m;
 
         throw new InvalidOperationException(
             $"Could not parse distilled spirits rate from {SpiritsUrl}. The page structure may have changed.");
@@ -243,7 +243,7 @@ public sealed class MinnesotaAlcoholScraper : IStateBulkScraper
                 @"(\d+(?:\.\d+)?)\s*percent\s*(?:on|of)\s*(?:alcoholic|liquor)",
                 RegexOptions.IgnoreCase);
 
-        if (m.Success && decimal.TryParse(m.Groups[1].Value, out var pct) && pct > 0)
+        if (m.Success && decimal.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var pct) && pct > 0)
             return pct / 100m;
 
         return 0.03m; // 3% fallback — confirmed from Minneapolis City Ordinance § 22.1401
@@ -262,7 +262,7 @@ public sealed class MinnesotaAlcoholScraper : IStateBulkScraper
         if (!m.Success)
             throw new InvalidOperationException(
                 $"Could not parse {label} rate from {url}. The page structure may have changed.");
-        return decimal.Parse(m.Groups[1].Value);
+        return decimal.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static string StripAndNormalize(string html)

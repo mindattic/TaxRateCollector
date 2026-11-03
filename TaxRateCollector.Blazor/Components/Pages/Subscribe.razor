@@ -323,6 +323,11 @@ else
             }
         }
 
+        // A returning subscriber's billing state is pre-filled above; the @bind:after hook
+        // only fires on a user change, so load its tax rate now or checkout bills 0% tax.
+        if (!string.IsNullOrEmpty(billingState))
+            await OnBillingStateChange();
+
         isMock = !await PayPal.IsConfiguredAsync();
         loading = false;
     }
@@ -354,7 +359,13 @@ else
         if (jurisdiction is null) return;
 
         var rate = await db.TaxRates
-            .Where(r => r.JurisdictionId == jurisdiction.Id && r.IsCurrent)
+            // Only the general sales-tax percentage — the state node also carries excise
+            // rows (per-gallon beer, per-pack cigarettes) that must not be billed as a %.
+            .Where(r => r.JurisdictionId == jurisdiction.Id && r.IsCurrent
+                     && r.RateBasis == RateBasis.Percentage
+                     && r.TaxType == TaxType.SalesTax
+                     && r.ProductCategory == null)
+            .OrderBy(r => r.Id)
             .Select(r => r.Rate)
             .FirstOrDefaultAsync();
 

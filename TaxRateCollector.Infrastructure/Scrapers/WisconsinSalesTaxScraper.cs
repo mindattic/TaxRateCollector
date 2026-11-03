@@ -146,7 +146,7 @@ public sealed class WisconsinSalesTaxScraper : IStateBulkScraper
         if (!stateMatch.Success)
             throw new InvalidOperationException(
                 $"Could not parse state sales tax rate from {sourceUrl}. The page structure may have changed.");
-        var stateRate = decimal.Parse(stateMatch.Groups[1].Value) / 100m;
+        var stateRate = decimal.Parse(stateMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) / 100m;
 
         var countyMatch = Regex.Match(text,
             @"\bcounty\s+sales\s+(?:and\s+use\s+)?tax\b[^%]{0,30}?(\d+(?:\.\d+)?)\s*%",
@@ -154,7 +154,7 @@ public sealed class WisconsinSalesTaxScraper : IStateBulkScraper
         if (!countyMatch.Success)
             throw new InvalidOperationException(
                 $"Could not parse default county sales tax rate from {sourceUrl}.");
-        var defaultCountyRate = decimal.Parse(countyMatch.Groups[1].Value) / 100m;
+        var defaultCountyRate = decimal.Parse(countyMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) / 100m;
 
         var milwaukeeMatch = Regex.Match(text,
             @"\bMilwaukee\s+County[^%]{0,120}?(\d+(?:\.\d+)?)\s*%",
@@ -162,7 +162,7 @@ public sealed class WisconsinSalesTaxScraper : IStateBulkScraper
         if (!milwaukeeMatch.Success)
             throw new InvalidOperationException(
                 $"Could not parse Milwaukee County sales tax rate from {sourceUrl}.");
-        var milwaukeeRate = decimal.Parse(milwaukeeMatch.Groups[1].Value) / 100m;
+        var milwaukeeRate = decimal.Parse(milwaukeeMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) / 100m;
 
         if (milwaukeeRate <= defaultCountyRate)
             throw new InvalidOperationException(
@@ -192,7 +192,7 @@ public sealed class WisconsinSalesTaxScraper : IStateBulkScraper
             var name = m.Groups[1].Value.Trim().TrimEnd(',', '.', ';');
             if (!seen.Add(name)) continue;
 
-            var rate    = decimal.Parse(m.Groups[2].Value) / 100m;
+            var rate    = decimal.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture) / 100m;
             var effDate = m.Groups[3].Success ? NormalizeEffectiveDate(m.Groups[3].Value) : null;
 
             if (rate <= 0 || rate > 0.05m)

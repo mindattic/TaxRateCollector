@@ -43,9 +43,12 @@ public sealed class MonthlySchedulerService(
         var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc).ToString("o");
         // Only real scrape runs count toward "already queued this month". Manual rows
         // (the seeder's bootstrap run, UI-entered rates) must not suppress the scheduled job.
+        // Two-argument string.Compare: EF Core cannot translate the StringComparison overload
+        // (the query threw every tick, so no monthly run was ever queued). StartedAt is an
+        // ISO-8601 "o" string, which sorts the same under any SQL collation.
         var alreadyQueued = await db.ScrapeRuns
             .AnyAsync(r => r.Status != ScrapeStatus.Manual
-                        && string.Compare(r.StartedAt, monthStart, StringComparison.Ordinal) >= 0, ct);
+                        && string.Compare(r.StartedAt, monthStart) >= 0, ct);
 
         if (alreadyQueued)
             return;

@@ -54,7 +54,7 @@ public class PayPalService(IDbContextFactory<AppDbContext> dbFactory, IHttpClien
                 {
                     new
                     {
-                        amount = new { currency_code = currency, value = amount.ToString("F2") },
+                        amount = new { currency_code = currency, value = amount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) },
                         description
                     }
                 }

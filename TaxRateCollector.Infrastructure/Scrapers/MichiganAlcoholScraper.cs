@@ -115,7 +115,7 @@ public sealed class MichiganAlcoholScraper : IStateBulkScraper
             throw new InvalidOperationException(
                 $"Could not parse beer barrel tax rate from {urlUsed}. The page structure may have changed.");
 
-        var barrel = decimal.Parse(m.Groups[1].Value);
+        var barrel = decimal.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
         return barrel / GallonsPerBarrel;
     }
 
@@ -133,8 +133,8 @@ public sealed class MichiganAlcoholScraper : IStateBulkScraper
                 $"Could not parse Michigan wine tier rates from {urlUsed}. " +
                 $"Expected ≥2 'cents per liter' values; found {allMatches.Count}. The page structure may have changed.");
 
-        var wine16    = decimal.Parse(allMatches[0].Groups[1].Value) / 100m * LitersPerGallon;
-        var wine16Plus = decimal.Parse(allMatches[1].Groups[1].Value) / 100m * LitersPerGallon;
+        var wine16    = decimal.Parse(allMatches[0].Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) / 100m * LitersPerGallon;
+        var wine16Plus = decimal.Parse(allMatches[1].Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) / 100m * LitersPerGallon;
 
         if (wine16Plus <= wine16)
             throw new InvalidOperationException(

@@ -1000,7 +1000,7 @@ else if (!isAdmin && HasUnsubscribedContent)
                             @if (!string.IsNullOrEmpty(row.Conditions))
                             { <div class="rate-row-conditions muted small">@row.Conditions</div> }
                             @if (row.MinAbv.HasValue || row.MaxAbv.HasValue)
-                            { <div class="rate-row-abv muted small">ABV: @(row.MinAbv?.ToString("F1") ?? "0")% – @(row.MaxAbv?.ToString("F1") ?? "∞")%</div> }
+                            { <div class="rate-row-abv muted small">ABV: @((row.MinAbv * 100)?.ToString("F1") ?? "0")% – @((row.MaxAbv * 100)?.ToString("F1") ?? "∞")%</div> }
                             @if (evExpanded)
                             {
                                 <div class="rate-row-evidence-panel">
@@ -1073,7 +1073,7 @@ else if (!isAdmin && HasUnsubscribedContent)
                                             @if (row.SaleContext != SaleContext.Any)
                                             { <span class="rate-row-badge">@row.SaleContext</span> }
                                             @if (row.MinAbv.HasValue || row.MaxAbv.HasValue)
-                                            { <span class="rate-row-badge badge-remit">ABV @(row.MinAbv?.ToString("F1") ?? "0")%–@(row.MaxAbv?.ToString("F1") ?? "∞")%</span> }
+                                            { <span class="rate-row-badge badge-remit">ABV @((row.MinAbv * 100)?.ToString("F1") ?? "0")%–@((row.MaxAbv * 100)?.ToString("F1") ?? "∞")%</span> }
                                             @if (row.RemittancePoint != RemittancePoint.Retailer)
                                             { <span class="rate-row-badge badge-remit">@row.RemittancePoint</span> }
                                             @if (row.SourceConfidence != SourceConfidence.Official)
@@ -1224,13 +1224,14 @@ else if (!isAdmin && HasUnsubscribedContent)
         rateFormNodeId = node.Id;
         rateFormRowId = row.Id;
         rateFormName = row.Name;
-        rateFormRate = row.Basis == RateBasis.Percentage ? $"{row.Rate * 100:F4}" : row.Rate.ToString("F4");
+        rateFormRate = (row.Basis == RateBasis.Percentage ? row.Rate * 100 : row.Rate).ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
         rateFormBasis = row.Basis;
         rateFormUnit = row.Unit;
         rateFormSaleContext = row.SaleContext;
         rateFormRemittance = row.RemittancePoint;
-        rateFormMinAbv = row.MinAbv?.ToString() ?? "";
-        rateFormMaxAbv = row.MaxAbv?.ToString() ?? "";
+        // MinAbv/MaxAbv are stored as fractions (0.14); the form edits them as percents (14).
+        rateFormMinAbv = (row.MinAbv * 100)?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
+        rateFormMaxAbv = (row.MaxAbv * 100)?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
         rateFormStatutory = row.StatutoryReference;
         rateFormEffective = row.EffectiveDate;
         rateFormExpires = row.ExpirationDate;
@@ -1248,7 +1249,7 @@ else if (!isAdmin && HasUnsubscribedContent)
         if (!isAdmin) { SetStatus("✗ Sign in to edit rates"); return; }
         if (rateFormNodeId is null) return;
         if (string.IsNullOrWhiteSpace(rateFormName)) { SetStatus("✗ Rate name is required"); return; }
-        if (!decimal.TryParse(rateFormRate, out var rateVal)) { SetStatus("✗ Invalid rate value"); return; }
+        if (!decimal.TryParse(rateFormRate, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var rateVal)) { SetStatus("✗ Invalid rate value"); return; }
         if (rateFormBasis == RateBasis.Percentage) rateVal /= 100m;
 
         savingRateForm = true;
@@ -1276,8 +1277,8 @@ else if (!isAdmin && HasUnsubscribedContent)
                     existing.Unit = rateFormUnit.Trim();
                     existing.SaleContext = rateFormSaleContext;
                     existing.RemittancePoint = rateFormRemittance;
-                    existing.MinAbv = decimal.TryParse(rateFormMinAbv, out var minA) ? minA : null;
-                    existing.MaxAbv = decimal.TryParse(rateFormMaxAbv, out var maxA) ? maxA : null;
+                    existing.MinAbv = ParseAbvPercent(rateFormMinAbv);
+                    existing.MaxAbv = ParseAbvPercent(rateFormMaxAbv);
                     existing.StatutoryReference = rateFormStatutory.Trim();
                     existing.EffectiveDate = string.IsNullOrWhiteSpace(rateFormEffective) ? null : DateOnly.Parse(rateFormEffective.Trim());
                     existing.ExpirationDate = string.IsNullOrWhiteSpace(rateFormExpires) ? null : DateOnly.Parse(rateFormExpires.Trim());
@@ -1296,8 +1297,8 @@ else if (!isAdmin && HasUnsubscribedContent)
                     Unit = rateFormUnit.Trim(),
                     SaleContext = rateFormSaleContext,
                     RemittancePoint = rateFormRemittance,
-                    MinAbv = decimal.TryParse(rateFormMinAbv, out var minAbv) ? minAbv : null,
-                    MaxAbv = decimal.TryParse(rateFormMaxAbv, out var maxAbv) ? maxAbv : null,
+                    MinAbv = ParseAbvPercent(rateFormMinAbv),
+                    MaxAbv = ParseAbvPercent(rateFormMaxAbv),
                     StatutoryReference = rateFormStatutory.Trim(),
                     EffectiveDate = string.IsNullOrWhiteSpace(rateFormEffective) ? null : DateOnly.Parse(rateFormEffective.Trim()),
                     ExpirationDate = string.IsNullOrWhiteSpace(rateFormExpires) ? null : DateOnly.Parse(rateFormExpires.Trim()),
@@ -1318,6 +1319,12 @@ else if (!isAdmin && HasUnsubscribedContent)
         catch (Exception ex) { SetStatus($"✗ {ex.Message}"); }
         finally { savingRateForm = false; StateHasChanged(); }
     }
+
+    // Form value is a percent typed into an <input type="number"> (always invariant "14.5");
+    // TaxRate.MinAbv/MaxAbv and the calculator's ABV filter use fractions (0.145).
+    private static decimal? ParseAbvPercent(string value) =>
+        decimal.TryParse(value, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var pct)
+            ? pct / 100m : null;
 
     private async Task DeleteRateRow(int nodeId, int rateRowId)
     {
@@ -1761,7 +1768,9 @@ else if (!isAdmin && HasUnsubscribedContent)
                 j.StateCode,
                 j.JurisdictionName,
                 j.FipsCode,
-                Rate = (decimal?)db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent && r.RateBasis == RateBasis.Percentage).Sum(r => (decimal?)r.Rate),
+                // Same rows the calculator applies: approved sales-tax percentages only. Pending-review
+                // rows and excise percentages (ProductCategory set) are not part of the master rate.
+                Rate = (decimal?)db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent && r.AutoApprove && r.ProductCategory == null && r.RateBasis == RateBasis.Percentage).Sum(r => (decimal?)r.Rate),
                 EffectiveDate = db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent).Select(r => r.EffectiveDate != null ? r.EffectiveDate.Value.ToString() : "").FirstOrDefault() ?? "",
                 AnyRateId = (int?)db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent).Select(r => r.Id).FirstOrDefault()
             })
@@ -1827,9 +1836,9 @@ else if (!isAdmin && HasUnsubscribedContent)
             var sb = new StringBuilder();
             sb.AppendLine("Tier,State,Name,FIPS,Rate(%),Combined(%),EffectiveDate,Validated");
             foreach (var r in rows)
-                sb.AppendLine($"{r.Tier},{r.StateCode},\"{r.Name}\",{r.FipsCode}," +
-                    $"{(r.Rate.HasValue ? (r.Rate.Value * 100).ToString("F3") : "")}," +
-                    $"{(r.CombinedRate.HasValue ? (r.CombinedRate.Value * 100).ToString("F3") : "")}," +
+                sb.AppendLine($"{r.Tier},{r.StateCode},\"{r.Name.Replace("\"", "\"\"")}\",{r.FipsCode}," +
+                    $"{(r.Rate.HasValue ? (r.Rate.Value * 100).ToString("F3", System.Globalization.CultureInfo.InvariantCulture) : "")}," +
+                    $"{(r.CombinedRate.HasValue ? (r.CombinedRate.Value * 100).ToString("F3", System.Globalization.CultureInfo.InvariantCulture) : "")}," +
                     $"{r.EffectiveDate},{r.HasEvidence}");
             await DownloadFile($"TaxRates_{DateTime.UtcNow:yyyyMMdd}.csv", "text/csv", Encoding.UTF8.GetBytes(sb.ToString()));
             SetStatus("✓ CSV downloaded");
@@ -1900,8 +1909,8 @@ else if (!isAdmin && HasUnsubscribedContent)
             for (int i = 0; i < rows.Count; i++)
             {
                 var r = rows[i];
-                var rate = r.Rate.HasValue ? (r.Rate.Value * 100).ToString("F3") : "NULL";
-                var combined = r.CombinedRate.HasValue ? (r.CombinedRate.Value * 100).ToString("F3") : "NULL";
+                var rate = r.Rate.HasValue ? (r.Rate.Value * 100).ToString("F3", System.Globalization.CultureInfo.InvariantCulture) : "NULL";
+                var combined = r.CombinedRate.HasValue ? (r.CombinedRate.Value * 100).ToString("F3", System.Globalization.CultureInfo.InvariantCulture) : "NULL";
                 var comma = i < rows.Count - 1 ? "," : ";";
                 sb.AppendLine($"  ('{r.Tier}','{r.StateCode}','{r.Name.Replace("'", "''")}','{r.FipsCode}'," +
                     $"{rate},{combined},'{r.EffectiveDate}',{(r.HasEvidence ? 1 : 0)}){comma}");

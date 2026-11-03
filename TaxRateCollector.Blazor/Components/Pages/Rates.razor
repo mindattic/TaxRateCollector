@@ -60,7 +60,7 @@ else
                     <th scope="row">@r.JurisdictionName</th>
                     <td>@r.StateCode</td>
                     <td>@r.JurisdictionType</td>
-                    <td class="rate-cell">@r.Rate.ToString("P4")</td>
+                    <td class="rate-cell">@(r.Basis is TaxRateCollector.Core.Enums.RateBasis.Percentage or TaxRateCollector.Core.Enums.RateBasis.PercentageOfWholesale ? r.Rate.ToString("P4") : $"{r.Rate:F4} {r.Unit}".Trim())</td>
                     <td>@r.Name</td>
                     <td>@r.EffectiveDate</td>
                     <td>@(r.ScrapedAt.Length >= 10 ? r.ScrapedAt[..10] : r.ScrapedAt)</td>
@@ -80,7 +80,8 @@ else
     private bool sortAsc = true;
 
     private record RateRow(string JurisdictionName, string StateCode, string JurisdictionType,
-        decimal Rate, string Name, string EffectiveDate, string ScrapedAt, string Conditions);
+        decimal Rate, string Name, string EffectiveDate, string ScrapedAt, string Conditions,
+        TaxRateCollector.Core.Enums.RateBasis Basis = TaxRateCollector.Core.Enums.RateBasis.Percentage, string Unit = "");
 
     protected override async Task OnInitializedAsync()
     {
@@ -96,7 +97,9 @@ else
                 t.Name,
                 t.EffectiveDate != null ? t.EffectiveDate.Value.ToString() : "",
                 t.ScrapedAt,
-                t.Conditions ?? ""))
+                t.Conditions ?? "",
+                t.RateBasis,
+                t.Unit ?? ""))
             .ToListAsync();
     }
 
@@ -149,7 +152,7 @@ else
             sb.Append(Csv(r.JurisdictionName)).Append(',')
               .Append(Csv(r.StateCode)).Append(',')
               .Append(Csv(r.JurisdictionType)).Append(',')
-              .Append(r.Rate.ToString("0.######")).Append(',')
+              .Append(r.Rate.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)).Append(',')
               .Append(Csv(r.Name)).Append(',')
               .Append(Csv(r.EffectiveDate)).Append(',')
               .Append(Csv(r.ScrapedAt.Length >= 10 ? r.ScrapedAt[..10] : r.ScrapedAt)).Append(',')

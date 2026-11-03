@@ -408,7 +408,8 @@ public sealed class RecursiveRateScraper(
     private static DateOnly? ParseDate(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
-        return DateOnly.TryParse(value, out var d) ? d : null;
+        return DateOnly.TryParse(value, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var d) ? d : null;
     }
 
     /// <summary>

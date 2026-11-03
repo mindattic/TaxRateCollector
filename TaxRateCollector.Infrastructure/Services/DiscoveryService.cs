@@ -37,7 +37,9 @@ public class DiscoveryService : IDiscoveryService
             return result;
         }
 
-        var url = jurisdiction.SourceUrl;
+        // SourceUrl may hold several newline-separated URLs (primary first, then
+        // supplementary evidence — see Jurisdiction.SourceUrls()); probe the primary one.
+        var url = jurisdiction.SourceUrls()[0];
 
         if (await IsReachableAsync(url, ct))
         {
@@ -72,7 +74,7 @@ public class DiscoveryService : IDiscoveryService
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(10));
-            var response = await http.SendAsync(
+            using var response = await http.SendAsync(
                 new HttpRequestMessage(HttpMethod.Head, url), cts.Token);
             var code = (int)response.StatusCode;
             return code >= 200 && code < 400;

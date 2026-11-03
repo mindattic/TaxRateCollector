@@ -100,7 +100,7 @@ public sealed class NorthDakotaAlcoholScraper : IStateBulkScraper
         if (!beerM.Success)
             throw new InvalidOperationException(
                 $"Could not parse beer excise rate from {urlUsed}. The page structure may have changed.");
-        var beer = decimal.Parse(beerM.Groups[1].Value);
+        var beer = decimal.Parse(beerM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // "North Dakota Wine Tax - $0.50 / gallon"
         var wineM = Regex.Match(text,
@@ -109,7 +109,7 @@ public sealed class NorthDakotaAlcoholScraper : IStateBulkScraper
         if (!wineM.Success)
             throw new InvalidOperationException(
                 $"Could not parse wine excise rate from {urlUsed}. The page structure may have changed.");
-        var wine17 = decimal.Parse(wineM.Groups[1].Value);
+        var wine17 = decimal.Parse(wineM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // "Over 17% – $0.60/gallon" (en-dash or regular dash)
         var wine17PlusM = Regex.Match(text,
@@ -118,7 +118,7 @@ public sealed class NorthDakotaAlcoholScraper : IStateBulkScraper
         if (!wine17PlusM.Success)
             throw new InvalidOperationException(
                 $"Could not parse wine >17% excise rate from {urlUsed}. The page structure may have changed.");
-        var wine17Plus = decimal.Parse(wine17PlusM.Groups[1].Value);
+        var wine17Plus = decimal.Parse(wine17PlusM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // "North Dakota Liquor Tax - $2.50 / gallon"
         var spiritsM = Regex.Match(text,
@@ -127,7 +127,7 @@ public sealed class NorthDakotaAlcoholScraper : IStateBulkScraper
         if (!spiritsM.Success)
             throw new InvalidOperationException(
                 $"Could not parse spirits excise rate from {urlUsed}. The page structure may have changed.");
-        var spirits = decimal.Parse(spiritsM.Groups[1].Value);
+        var spirits = decimal.Parse(spiritsM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         if (beer <= 0 || wine17 <= 0 || wine17Plus <= wine17 || spirits <= 0)
             throw new InvalidOperationException(

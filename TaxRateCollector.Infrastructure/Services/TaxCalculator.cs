@@ -145,7 +145,8 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
         decimal raw = r.RateBasis switch
         {
             RateBasis.Percentage            => taxable * r.Rate,
-            RateBasis.PercentageOfWholesale => (options.WholesalePrice ?? subtotal) * r.Rate,
+            // WholesalePrice is per unit (see TaxCalcOptions); scale it by quantity like the retail subtotal.
+            RateBasis.PercentageOfWholesale => (options.WholesalePrice.HasValue ? options.WholesalePrice.Value * quantity : subtotal) * r.Rate,
             RateBasis.FlatPerUnit           => r.Rate * quantity,
             RateBasis.FlatPerVolume         => r.Rate * ((options.Volume ?? 1m) * quantity),
             RateBasis.FlatPerWeight         => r.Rate * ((options.Weight ?? 1m) * quantity),

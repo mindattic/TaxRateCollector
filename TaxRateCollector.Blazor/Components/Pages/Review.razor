@@ -213,6 +213,15 @@ else
             .ThenBy(t => t.Name)
             .ToListAsync();
 
+        // A re-scrape retires the previous unapproved row and inserts a fresh one under the
+        // same name. Only the newest pending row per (jurisdiction, name) is reviewable —
+        // approving a superseded one would make the stale rate current again.
+        var latestIds = rates
+            .GroupBy(r => (r.JurisdictionId, r.Name))
+            .Select(g => g.Max(r => r.Id))
+            .ToHashSet();
+        rates = rates.Where(r => latestIds.Contains(r.Id)).ToList();
+
         // Load source docs for evidence URLs
         var rateIds = rates.Select(r => r.Id).ToList();
         var docs = await db.SourceDocuments

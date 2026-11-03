@@ -92,7 +92,7 @@ public sealed class MontanaAlcoholScraper : IStateBulkScraper
         if (!beerM.Success)
             throw new InvalidOperationException(
                 $"Could not parse beer excise rate from {urlUsed}. The page structure may have changed.");
-        var beer = decimal.Parse(beerM.Groups[1].Value);
+        var beer = decimal.Parse(beerM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // "Montana Wine Tax - $1.06 / gallon"
         var wineM = Regex.Match(text,
@@ -101,7 +101,7 @@ public sealed class MontanaAlcoholScraper : IStateBulkScraper
         if (!wineM.Success)
             throw new InvalidOperationException(
                 $"Could not parse wine excise rate from {urlUsed}. The page structure may have changed.");
-        var wine = decimal.Parse(wineM.Groups[1].Value);
+        var wine = decimal.Parse(wineM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         if (beer <= 0 || wine <= 0)
             throw new InvalidOperationException(

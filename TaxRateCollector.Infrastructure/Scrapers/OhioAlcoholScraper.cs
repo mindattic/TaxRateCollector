@@ -124,7 +124,7 @@ public sealed class OhioAlcoholScraper : IStateBulkScraper
         if (!beerM.Success)
             throw new InvalidOperationException(
                 $"Could not parse beer excise rate from {urlUsed}. The page structure may have changed.");
-        var beer = decimal.Parse(beerM.Groups[1].Value);
+        var beer = decimal.Parse(beerM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // "Ohio Wine Tax - $0.32 / gallon" — base tier (≤14% ABV)
         var wineM = Regex.Match(text,
@@ -133,7 +133,7 @@ public sealed class OhioAlcoholScraper : IStateBulkScraper
         if (!wineM.Success)
             throw new InvalidOperationException(
                 $"Could not parse wine excise rate from {urlUsed}. The page structure may have changed.");
-        var wineBase = decimal.Parse(wineM.Groups[1].Value);
+        var wineBase = decimal.Parse(wineM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // Fortified wine — "14% to 21%" or "14-21%" variants followed by a per-gallon $ value.
         var fortifiedM = Regex.Match(text,
@@ -142,7 +142,7 @@ public sealed class OhioAlcoholScraper : IStateBulkScraper
         if (!fortifiedM.Success)
             throw new InvalidOperationException(
                 $"Could not parse fortified wine (14–21%) rate from {urlUsed}. The page structure may have changed.");
-        var wineFortified = decimal.Parse(fortifiedM.Groups[1].Value);
+        var wineFortified = decimal.Parse(fortifiedM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // Vermouth — "vermouth ... $1.10/gallon" (may appear before or after the $ amount)
         var vermouthM = Regex.Match(text,
@@ -155,7 +155,7 @@ public sealed class OhioAlcoholScraper : IStateBulkScraper
         if (!vermouthM.Success)
             throw new InvalidOperationException(
                 $"Could not parse vermouth rate from {urlUsed}. The page structure may have changed.");
-        var vermouth = decimal.Parse(vermouthM.Groups[1].Value);
+        var vermouth = decimal.Parse(vermouthM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // Sparkling — "sparkling ... $1.50/gallon" (either order)
         var sparklingM = Regex.Match(text,
@@ -168,7 +168,7 @@ public sealed class OhioAlcoholScraper : IStateBulkScraper
         if (!sparklingM.Success)
             throw new InvalidOperationException(
                 $"Could not parse sparkling wine rate from {urlUsed}. The page structure may have changed.");
-        var sparkling = decimal.Parse(sparklingM.Groups[1].Value);
+        var sparkling = decimal.Parse(sparklingM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // Tier sanity: every tier must be positive, and the three escalating wine tiers
         // must strictly ascend: base < fortified < sparkling. Vermouth sits between

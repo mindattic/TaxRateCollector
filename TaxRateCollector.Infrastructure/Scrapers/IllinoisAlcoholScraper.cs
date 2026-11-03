@@ -175,9 +175,9 @@ public sealed class IllinoisAlcoholScraper : IStateBulkScraper
             @"(?:beer|cider).{0,300}?(\d+(?:\.\d+)?)\s*¢",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
         if (beerCents.Success)
-            beer = decimal.Parse(beerCents.Groups[1].Value) / 100m;
+            beer = decimal.Parse(beerCents.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) / 100m;
         else if (beerDollar.Success)
-            beer = decimal.Parse(beerDollar.Groups[1].Value);
+            beer = decimal.Parse(beerDollar.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
         else
             throw new InvalidOperationException(
                 $"Could not parse beer excise rate from {ExciseUrl}. The page structure may have changed.");
@@ -192,7 +192,7 @@ public sealed class IllinoisAlcoholScraper : IStateBulkScraper
         var wine20Match = Regex.Match(text,
             @"(?:more\s*than|over|greater\s*than)\s*14[^$]{0,250}?(?:less\s*than|under)\s*20[^$]{0,200}?\$\s*(\d+\.\d+)",
             RegexOptions.IgnoreCase);
-        wine20 = wine20Match.Success ? decimal.Parse(wine20Match.Groups[1].Value) : wine14;
+        wine20 = wine20Match.Success ? decimal.Parse(wine20Match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) : wine14;
 
         // ≥20% tier: "$8.55 per gallon" (old: description before $; new: $ before description)
         var spiritsOld = Regex.Match(text,
@@ -205,7 +205,7 @@ public sealed class IllinoisAlcoholScraper : IStateBulkScraper
         if (!spiritsM.Success)
             throw new InvalidOperationException(
                 $"Could not parse spirits ≥20% ABV rate from {ExciseUrl}. The page structure may have changed.");
-        var spirits = decimal.Parse(spiritsM.Groups[1].Value);
+        var spirits = decimal.Parse(spiritsM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         if (spirits <= wine14)
             throw new InvalidOperationException(
@@ -233,7 +233,7 @@ public sealed class IllinoisAlcoholScraper : IStateBulkScraper
         var spiritsMatch = Regex.Match(text,
             @"(?:liquor|spirit|distilled)[^$]{0,300}?\$\s*(\d+\.\d+)",
             RegexOptions.IgnoreCase);
-        spirits = spiritsMatch.Success ? decimal.Parse(spiritsMatch.Groups[1].Value) : beer;
+        spirits = spiritsMatch.Success ? decimal.Parse(spiritsMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) : beer;
 
         if (wine14 >= beer)
             throw new InvalidOperationException(
@@ -251,25 +251,25 @@ public sealed class IllinoisAlcoholScraper : IStateBulkScraper
         var beerM = Regex.Match(text, @"\$\s*(\d+\.\d+)\s*per\s*gallon\s*of\s*beer", RegexOptions.IgnoreCase);
         if (!beerM.Success) beerM = Regex.Match(text, @"(?:beer)[^$]{0,300}?\$\s*(\d+\.\d+)", RegexOptions.IgnoreCase);
         if (!beerM.Success) throw new InvalidOperationException($"Could not parse beer on-premises rate from {ChicagoUrl}. The page structure may have changed.");
-        var beer = decimal.Parse(beerM.Groups[1].Value);
+        var beer = decimal.Parse(beerM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // Wine ≤14%: $0.36/gal — "$X per gallon ... 14% or less" (new) or "14% or less ... $X" (old)
         var wine14M = Regex.Match(text, @"\$\s*(\d+\.\d+)\s*per\s*gallon[^.]{0,120}?14[^.]{0,30}?or\s*less", RegexOptions.IgnoreCase | RegexOptions.Singleline);
         if (!wine14M.Success) wine14M = Regex.Match(text, @"(?:wine|14\s*(?:percent|%)\s*or\s*less)[^$]{0,200}?\$\s*(\d+\.\d+)", RegexOptions.IgnoreCase);
         if (!wine14M.Success) throw new InvalidOperationException($"Could not parse wine ≤14% ABV on-premises rate from {ChicagoUrl}. The page structure may have changed.");
-        var wine14 = decimal.Parse(wine14M.Groups[1].Value);
+        var wine14 = decimal.Parse(wine14M.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // Wine >14%–<20%: $0.89/gal — "$X per gallon ... more than 14 ... less than 20" or reverse
         var wine20M = Regex.Match(text, @"\$\s*(\d+\.\d+)\s*per\s*gallon[^.]{0,200}?(?:more\s*than\s*14)[^.]{0,100}?(?:less\s*than|under)\s*20", RegexOptions.IgnoreCase | RegexOptions.Singleline);
         if (!wine20M.Success) wine20M = Regex.Match(text, @"(?:(?:more|greater)\s*than\s*14)[^$]{0,300}?(?:less\s*than|under)\s*20[^$]{0,200}?\$\s*(\d+\.\d+)", RegexOptions.IgnoreCase);
         if (!wine20M.Success) throw new InvalidOperationException($"Could not parse wine >14%–<20% ABV on-premises rate from {ChicagoUrl}. The page structure may have changed.");
-        var wine20 = decimal.Parse(wine20M.Groups[1].Value);
+        var wine20 = decimal.Parse(wine20M.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // Spirits ≥20%: $2.68/gal — "$X per gallon ... 20% or more" (new) or "20% or more ... $X" (old)
         var spiritsM = Regex.Match(text, @"\$\s*(\d+\.\d+)\s*per\s*gallon[^.]{0,100}?(?:20\s*(?:percent|%)\s*or\s*more)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
         if (!spiritsM.Success) spiritsM = Regex.Match(text, @"(?:20\s*(?:percent|%)\s*or\s*(?:more|over)|spirits)[^$]{0,200}?\$\s*(\d+\.\d+)", RegexOptions.IgnoreCase);
         if (!spiritsM.Success) throw new InvalidOperationException($"Could not parse spirits ≥20% ABV on-premises rate from {ChicagoUrl}. The page structure may have changed.");
-        var spirits = decimal.Parse(spiritsM.Groups[1].Value);
+        var spirits = decimal.Parse(spiritsM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         if (spirits <= wine20 || wine20 <= wine14 || wine14 <= beer)
             throw new InvalidOperationException(
@@ -280,7 +280,7 @@ public sealed class IllinoisAlcoholScraper : IStateBulkScraper
         var offMatch = Regex.Match(text,
             @"(?:off[- ]?premise|retail\s+purchas)[^%]{0,300}?(\d+(?:\.\d+)?)\s*%",
             RegexOptions.IgnoreCase);
-        if (offMatch.Success && decimal.TryParse(offMatch.Groups[1].Value, out var pct))
+        if (offMatch.Success && decimal.TryParse(offMatch.Groups[1].Value, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var pct))
             offPremisePct = pct / 100m;
         else if (!string.IsNullOrEmpty(newsHtml))
             offPremisePct = 0.015m; // 1.5% confirmed from MC Ch. 3-44 eff. 2026-03-01
@@ -301,7 +301,7 @@ public sealed class IllinoisAlcoholScraper : IStateBulkScraper
         if (!m.Success)
             throw new InvalidOperationException(
                 $"Could not parse {label} rate from {url}. The page structure may have changed.");
-        return decimal.Parse(m.Groups[1].Value);
+        return decimal.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static string StripAndNormalize(string html)

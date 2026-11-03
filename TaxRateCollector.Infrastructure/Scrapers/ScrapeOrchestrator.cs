@@ -192,9 +192,13 @@ public class ScrapeOrchestrator(
                 taxCategoryId: taxCategoryId, needsReview: needsReview, overwriteExisting: true);
         }
 
+        // TRC-LAW-4: rates retired and replaced by this run must be diffed and logged.
+        var diff = await diffEngine.DetectChangesAsync(run.Id, ct);
+
         run.Status       = ScrapeStatus.Completed;
         run.CompletedAt  = DateTime.UtcNow.ToString("o");
         run.TotalScraped = run.ProcessedCount;
+        run.ChangesDetected += diff.Changes.Count;
         await db.SaveChangesAsync(ct);
 
         logger.LogInformation("RunBulkForStateAsync {State}: {Count} rates saved across {Scrapers} scraper(s)",
@@ -348,19 +352,41 @@ public class ScrapeOrchestrator(
     {
         var rawResults = await strategy.ScrapeAsync(jurisdiction, ct);
 
+        // Statewide strategies (CA CSV, IL table, TX workbook) return one row per locality
+        // in the whole state, tagged with a JurisdictionHint. Keep only the rows for THIS
+        // jurisdiction — otherwise every locality's rate lands on every jurisdiction.
+        var usable = rawResults
+            .Where(r => r.ParsedRate is not null)
+            .Where(r => string.IsNullOrWhiteSpace(r.JurisdictionHint)
+                        || HintMatches(r.JurisdictionHint, jurisdiction.JurisdictionName))
+            .ToList();
+
+        // Strategies swallow fetch/parse failures and return an empty list. Retiring the
+        // current rates in that case would wipe live data on a transient outage, so leave
+        // the existing rows untouched when there is nothing to replace them with.
+        if (usable.Count == 0)
+        {
+            if (rawResults.Any(r => r.ParsedRate is not null))
+                logger.LogDebug("Strategy {Key} has no row for {Name}; existing rates kept",
+                    strategy.StrategyKey, jurisdiction.JurisdictionName);
+            else
+                logger.LogWarning("Strategy {Key} returned no usable rate for {Name}; existing rates kept",
+                    strategy.StrategyKey, jurisdiction.JurisdictionName);
+            return;
+        }
+
         var existing = await db.TaxRates
             .Where(t => t.JurisdictionId == jurisdiction.Id && t.IsCurrent)
             .ToListAsync(ct);
         foreach (var r in existing) r.IsCurrent = false;
 
-        foreach (var raw in rawResults)
+        foreach (var raw in usable)
         {
-            if (raw.ParsedRate is null) continue;
             db.TaxRates.Add(new TaxRate
             {
                 JurisdictionId  = jurisdiction.Id,
                 Name            = string.IsNullOrEmpty(raw.RateType) ? "General Sales Tax" : raw.RateType,
-                Rate            = raw.ParsedRate.Value,
+                Rate            = raw.ParsedRate!.Value,
                 RateBasis       = RateBasis.Percentage,
                 SaleContext     = SaleContext.Any,
                 RemittancePoint = RemittancePoint.Retailer,
@@ -379,6 +405,22 @@ public class ScrapeOrchestrator(
     private static DateOnly? ParseDate(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
-        return DateOnly.TryParse(value, out var d) ? d : null;
+        return DateOnly.TryParse(value, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var d) ? d : null;
+    }
+
+    // "Los Angeles" matches "Los Angeles", "Los Angeles city", "Cook" matches "Cook County".
+    private static bool HintMatches(string hint, string jurisdictionName)
+    {
+        static string Norm(string n)
+        {
+            n = n.Trim();
+            foreach (var prefix in new[] { "City of ", "Town of ", "Village of " })
+                if (n.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) n = n[prefix.Length..];
+            foreach (var suffix in new[] { " County", " Parish", " Borough", " city", " town", " village", " CDP" })
+                if (n.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) n = n[..^suffix.Length];
+            return n.Trim();
+        }
+        return string.Equals(Norm(hint), Norm(jurisdictionName), StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -102,7 +102,7 @@ public sealed class IdahoAlcoholScraper : IStateBulkScraper
         if (!beerM.Success)
             throw new InvalidOperationException(
                 $"Could not parse beer excise rate from {urlUsed}. The page structure may have changed.");
-        var beer = decimal.Parse(beerM.Groups[1].Value);
+        var beer = decimal.Parse(beerM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // "Over 4% – $0.45/gallon" (en-dash or regular dash)
         var strongM = Regex.Match(text,
@@ -111,7 +111,7 @@ public sealed class IdahoAlcoholScraper : IStateBulkScraper
         if (!strongM.Success)
             throw new InvalidOperationException(
                 $"Could not parse strong-beer (>4%) rate from {urlUsed}. The page structure may have changed.");
-        var strongBeer = decimal.Parse(strongM.Groups[1].Value);
+        var strongBeer = decimal.Parse(strongM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // "Idaho Wine Tax - $0.45 / gallon"
         var wineM = Regex.Match(text,
@@ -120,7 +120,7 @@ public sealed class IdahoAlcoholScraper : IStateBulkScraper
         if (!wineM.Success)
             throw new InvalidOperationException(
                 $"Could not parse wine excise rate from {urlUsed}. The page structure may have changed.");
-        var wine = decimal.Parse(wineM.Groups[1].Value);
+        var wine = decimal.Parse(wineM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         if (beer <= 0 || strongBeer <= beer || wine <= 0)
             throw new InvalidOperationException(

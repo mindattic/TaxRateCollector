@@ -107,7 +107,7 @@ public sealed class IowaAlcoholScraper : IStateBulkScraper
         if (!beerM.Success)
             throw new InvalidOperationException(
                 $"Could not parse beer excise barrel rate from {urlUsed}. The page structure may have changed.");
-        var beerBarrel = decimal.Parse(beerM.Groups[1].Value);
+        var beerBarrel = decimal.Parse(beerM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
         var beer = beerBarrel / 31m;
 
         // Wine: "$1.75 per gallon" — appears in the wine gallonage section
@@ -117,7 +117,7 @@ public sealed class IowaAlcoholScraper : IStateBulkScraper
         if (!wineM.Success)
             throw new InvalidOperationException(
                 $"Could not parse wine gallonage rate from {urlUsed}. The page structure may have changed.");
-        var wine = decimal.Parse(wineM.Groups[1].Value);
+        var wine = decimal.Parse(wineM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         if (beer <= 0 || wine <= 0)
             throw new InvalidOperationException(

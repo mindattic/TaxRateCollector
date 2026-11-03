@@ -366,7 +366,9 @@ if (scrapeMode)
     var registeredScrapers = scrapeScope.ServiceProvider.GetServices<IStateBulkScraper>().ToArray();
     var statesToRun = stateArgList.Length == 1
                       && stateArgList[0].Equals("all", StringComparison.OrdinalIgnoreCase)
-        ? registeredScrapers.Select(s => s.StateCode.ToUpperInvariant()).ToArray()
+        // Distinct: a state can register several scrapers (WI has alcohol + sales tax), and
+        // RunBulkForStateAsync already runs every scraper for the state it is given.
+        ? registeredScrapers.Select(s => s.StateCode.ToUpperInvariant()).Distinct().ToArray()
         : stateArgList.Select(s => s.ToUpperInvariant()).ToArray();
 
     await using var scrapeDb = await scrapeScope.ServiceProvider
@@ -509,6 +511,10 @@ app.MapGet("/evidence/{filename}", async (string filename, HttpContext ctx) =>
         ".xlsx"           => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         _                 => "application/octet-stream"
     };
+    // Scraped HTML is third-party content served from this origin: sandbox it so any
+    // script in it cannot run with the signed-in user's session.
+    if (mime == "text/html")
+        ctx.Response.Headers.ContentSecurityPolicy = "sandbox";
     // Only force download for binary spreadsheets; everything else renders inline
     return ext == ".xlsx"
         ? Results.File(path, mime, filename)
@@ -544,7 +550,10 @@ app.MapPost("/login-submit", async (HttpContext ctx, SignInManager<IdentityUser>
 
     if (result.Succeeded)
     {
-        var target = !string.IsNullOrWhiteSpace(returnUrl) ? returnUrl : "/";
+        // Only same-site paths: an absolute or protocol-relative returnUrl ("https://evil",
+        // "//evil", "/\evil") would turn the login form into an open redirect.
+        var isLocal = returnUrl.StartsWith('/') && !returnUrl.StartsWith("//") && !returnUrl.StartsWith("/\\");
+        var target = isLocal ? returnUrl : "/";
         ctx.Response.Redirect(target);
     }
     else if (result.IsLockedOut)

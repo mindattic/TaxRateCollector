@@ -94,7 +94,7 @@ public sealed class IndianaAlcoholScraper : IStateBulkScraper
         if (!beerM.Success)
             throw new InvalidOperationException(
                 $"Could not parse beer excise rate from {urlUsed}. The page structure may have changed.");
-        var beer = decimal.Parse(beerM.Groups[1].Value);
+        var beer = decimal.Parse(beerM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // Wine: "Wine (less than 21%)" → "$0.47"
         var wineM = Regex.Match(text,
@@ -107,7 +107,7 @@ public sealed class IndianaAlcoholScraper : IStateBulkScraper
         if (!wineM.Success)
             throw new InvalidOperationException(
                 $"Could not parse wine excise rate from {urlUsed}. The page structure may have changed.");
-        var wine = decimal.Parse(wineM.Groups[1].Value);
+        var wine = decimal.Parse(wineM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // Liquor: "Liquor (21% or more)" or "21% or more" → "$2.68"
         var liquorM = Regex.Match(text,
@@ -124,7 +124,7 @@ public sealed class IndianaAlcoholScraper : IStateBulkScraper
         if (!liquorM.Success)
             throw new InvalidOperationException(
                 $"Could not parse liquor excise rate from {urlUsed}. The page structure may have changed.");
-        var liquor = decimal.Parse(liquorM.Groups[1].Value);
+        var liquor = decimal.Parse(liquorM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         if (beer >= wine || wine >= liquor)
             throw new InvalidOperationException(

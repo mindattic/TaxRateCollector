@@ -82,7 +82,7 @@ public sealed class WisconsinAlcoholScraper : IStateBulkScraper
             throw new InvalidOperationException(
                 $"Could not parse state sales tax rate from {SourceUrl}. " +
                 "The page structure may have changed.");
-        var stateRate = decimal.Parse(stateMatch.Groups[1].Value) / 100m;
+        var stateRate = decimal.Parse(stateMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) / 100m;
 
         // Default county rate: "County sales and use tax: 0.5% or 0.9%"
         // Non-greedy match stops at the first (smaller) percentage
@@ -92,7 +92,7 @@ public sealed class WisconsinAlcoholScraper : IStateBulkScraper
         if (!countyMatch.Success)
             throw new InvalidOperationException(
                 $"Could not parse default county sales tax rate from {SourceUrl}.");
-        var defaultCountyRate = decimal.Parse(countyMatch.Groups[1].Value) / 100m;
+        var defaultCountyRate = decimal.Parse(countyMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) / 100m;
 
         // Milwaukee county rate: "Milwaukee County imposes a 0.9%"
         var milwaukeeMatch = Regex.Match(text,
@@ -101,7 +101,7 @@ public sealed class WisconsinAlcoholScraper : IStateBulkScraper
         if (!milwaukeeMatch.Success)
             throw new InvalidOperationException(
                 $"Could not parse Milwaukee County sales tax rate from {SourceUrl}.");
-        var milwaukeeRate = decimal.Parse(milwaukeeMatch.Groups[1].Value) / 100m;
+        var milwaukeeRate = decimal.Parse(milwaukeeMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) / 100m;
 
         if (milwaukeeRate <= defaultCountyRate)
             throw new InvalidOperationException(

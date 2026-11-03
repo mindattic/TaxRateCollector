@@ -85,14 +85,29 @@ public class DiffEngine(IDbContextFactory<AppDbContext> dbFactory) : IDiffEngine
         // NO current-run rate is considered removed.  DistinctBy(JurisdictionId)
         // ensures exactly one Removed entry regardless of how many historical
         // scrape runs included the jurisdiction.
+        // A jurisdiction whose rates are still current was simply not part of this run's
+        // scope (another state, no strategy, manual rows) — it was not removed. And a
+        // jurisdiction whose latest row already has a Removed entry was reported by an
+        // earlier run, so it must not be logged again on every subsequent run.
         var scrapeJurisdictionIds = newRates.Select(r => r.JurisdictionId).ToHashSet();
+        var stillCurrentIds = await db.TaxRates
+            .Where(t => t.IsCurrent)
+            .Select(t => t.JurisdictionId)
+            .Distinct()
+            .ToListAsync(ct);
+        var alreadyReportedRateIds = (await db.ChangeLog
+            .Where(c => c.ChangeType == ChangeType.Removed && c.TaxRateId != null)
+            .Select(c => c.TaxRateId)
+            .ToListAsync(ct)).ToHashSet();
         var previouslyActive = (await db.TaxRates
             .Where(t => t.ScrapeRunId != scrapeRunId
-                     && !scrapeJurisdictionIds.Contains(t.JurisdictionId))
+                     && !scrapeJurisdictionIds.Contains(t.JurisdictionId)
+                     && !stillCurrentIds.Contains(t.JurisdictionId))
             .OrderByDescending(t => t.ScrapedAt)
             .Select(t => new { t.JurisdictionId, t.Id, t.Name, t.Rate })
             .ToListAsync(ct))
             .DistinctBy(t => t.JurisdictionId)
+            .Where(t => !alreadyReportedRateIds.Contains(t.Id))
             .ToList();
 
         foreach (var prev in previouslyActive)

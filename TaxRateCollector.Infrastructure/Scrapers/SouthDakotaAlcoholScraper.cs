@@ -110,7 +110,7 @@ public sealed class SouthDakotaAlcoholScraper : IStateBulkScraper
         if (!beerM.Success)
             throw new InvalidOperationException(
                 $"Could not parse beer excise rate from {urlUsed}. The page structure may have changed.");
-        var beer = decimal.Parse(beerM.Groups[1].Value);
+        var beer = decimal.Parse(beerM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // "South Dakota Wine Tax - $0.93 / gallon"
         var wineM = Regex.Match(text,
@@ -119,7 +119,7 @@ public sealed class SouthDakotaAlcoholScraper : IStateBulkScraper
         if (!wineM.Success)
             throw new InvalidOperationException(
                 $"Could not parse wine excise rate from {urlUsed}. The page structure may have changed.");
-        var wine14 = decimal.Parse(wineM.Groups[1].Value);
+        var wine14 = decimal.Parse(wineM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // "14% to 20% – $1.45/gallon"
         var wine14To20M = Regex.Match(text,
@@ -128,7 +128,7 @@ public sealed class SouthDakotaAlcoholScraper : IStateBulkScraper
         if (!wine14To20M.Success)
             throw new InvalidOperationException(
                 $"Could not parse wine 14-20% excise rate from {urlUsed}. The page structure may have changed.");
-        var wine14To20 = decimal.Parse(wine14To20M.Groups[1].Value);
+        var wine14To20 = decimal.Parse(wine14To20M.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // "over 21% and sparkling wine – $2.07/gallon"
         var wine21PlusM = Regex.Match(text,
@@ -137,7 +137,7 @@ public sealed class SouthDakotaAlcoholScraper : IStateBulkScraper
         if (!wine21PlusM.Success)
             throw new InvalidOperationException(
                 $"Could not parse wine >21%/sparkling excise rate from {urlUsed}. The page structure may have changed.");
-        var wine21Plus = decimal.Parse(wine21PlusM.Groups[1].Value);
+        var wine21Plus = decimal.Parse(wine21PlusM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         // "South Dakota Liquor Tax - $3.93 / gallon"
         var spiritsM = Regex.Match(text,
@@ -146,7 +146,7 @@ public sealed class SouthDakotaAlcoholScraper : IStateBulkScraper
         if (!spiritsM.Success)
             throw new InvalidOperationException(
                 $"Could not parse spirits excise rate from {urlUsed}. The page structure may have changed.");
-        var spirits = decimal.Parse(spiritsM.Groups[1].Value);
+        var spirits = decimal.Parse(spiritsM.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
 
         if (beer <= 0 || wine14 <= 0 || wine14To20 <= wine14 || wine21Plus <= wine14To20 || spirits <= 0)
             throw new InvalidOperationException(

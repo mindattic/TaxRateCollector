@@ -111,6 +111,7 @@ public sealed class ClaudeRateLawExtractor(
 """);
         sb.AppendLine("Rules:");
         sb.AppendLine("- Rate: decimal fraction for percentages (6.5% → 0.065); dollar amount for flat rates ($0.231/pack → 0.231)");
+        sb.AppendLine("- MinAbv/MaxAbv: decimal fraction, like Rate (14% ABV → 0.14); MinAbv is inclusive, MaxAbv exclusive. Null when unbounded.");
         sb.AppendLine("- TaxType: SalesTax for general sales tax; ExciseTax for alcohol/tobacco/fuel/cannabis/firearms; OccupancyTax for hotel/lodging; RentalSurcharge for rental cars");
         sb.AppendLine("- ProductCategory: set for excise taxes — one of: Alcohol, Beer, Wine, Spirits, Tobacco, Cigarettes, Cannabis, Sugar, SoftDrinks, Firearms, Ammunition, Fuel, Hotel, RentalCar, Lottery, Gaming. Null for sales/use tax.");
         sb.AppendLine("- RemittancePoint: Distributor or Manufacturer for state alcohol/tobacco excise; Retailer for sales tax and restaurant-level taxes");
@@ -170,21 +171,21 @@ public sealed class ClaudeRateLawExtractor(
             return dtos
                 .Where(d => d.Confidence >= 0.5f)
                 .Select(d => new ExtractedRateLaw(
-                    Name:               d.Name,
+                    Name:               d.Name ?? "",
                     Rate:               d.Rate,
                     Basis:              ParseEnum(d.Basis, RateBasis.Percentage),
-                    Unit:               d.Unit,
+                    Unit:               d.Unit ?? "",
                     SaleContext:        ParseEnum(d.SaleContext, SaleContext.Any),
                     RemittancePoint:    ParseEnum(d.RemittancePoint, RemittancePoint.Retailer),
                     MinAbv:             d.MinAbv,
                     MaxAbv:             d.MaxAbv,
-                    Conditions:         d.Conditions,
-                    StatutoryReference: d.StatutoryReference,
-                    EffectiveDate:      d.EffectiveDate,
-                    ExpirationDate:     d.ExpirationDate,
+                    Conditions:         d.Conditions ?? "",
+                    StatutoryReference: d.StatutoryReference ?? "",
+                    EffectiveDate:      d.EffectiveDate ?? "",
+                    ExpirationDate:     d.ExpirationDate ?? "",
                     TaxCategoryId:      null,
                     Confidence:         d.Confidence,
-                    RawEvidence:        d.RawEvidence,
+                    RawEvidence:        d.RawEvidence ?? "",
                     TaxType:              ParseEnum(d.TaxType, TaxType.SalesTax),
                     ProductCategory:      ParseNullableEnum<ProductCategory>(d.ProductCategory),
                     IsCompound:           d.IsCompound,
