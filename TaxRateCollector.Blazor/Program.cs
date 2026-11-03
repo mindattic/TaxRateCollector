@@ -232,22 +232,10 @@ await using (var db = await dbFactory.CreateDbContextAsync())
         {
             if (countyCount < 3000)
             {
-                Console.WriteLine($"[startup] {countyCount} counties found — wiping and re-importing Census data…");
-                await db.ZipCodes
-                    .Where(z => z.CountyJurisdictionId != null || z.CityJurisdictionId != null)
-                    .ExecuteUpdateAsync(s => s
-                        .SetProperty(z => z.CountyJurisdictionId, (int?)null)
-                        .SetProperty(z => z.CityJurisdictionId,   (int?)null));
-                var cityIds = await db.Jurisdictions
-                    .Where(j => j.JurisdictionType == JurisdictionType.City)
-                    .Select(j => j.Id).ToListAsync();
-                if (cityIds.Count > 0)
-                    await db.Jurisdictions.Where(j => cityIds.Contains(j.Id)).ExecuteDeleteAsync();
-                var countyIds = await db.Jurisdictions
-                    .Where(j => j.JurisdictionType == JurisdictionType.County)
-                    .Select(j => j.Id).ToListAsync();
-                if (countyIds.Count > 0)
-                    await db.Jurisdictions.Where(j => countyIds.Contains(j.Id)).ExecuteDeleteAsync();
+                // Never delete jurisdictions here (TRC-LAW-2 / HOUSE-LAW-2): their rates, evidence
+                // and change log hang off them. The Census import skips FIPS codes already
+                // present, so it only adds the missing counties and cities.
+                Console.WriteLine($"[startup] WARNING: only {countyCount} counties found (expected 3,000+) — importing the missing Census counties and cities (existing rows kept)…");
             }
             else
             {

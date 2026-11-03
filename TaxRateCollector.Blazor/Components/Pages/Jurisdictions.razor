@@ -1270,20 +1270,7 @@ else if (!isAdmin && HasUnsubscribedContent)
             {
                 var existing = await db.TaxRates.FindAsync(rateFormRowId.Value);
                 if (existing is not null)
-                {
-                    existing.Name = rateFormName.Trim();
-                    existing.Rate = rateVal;
-                    existing.RateBasis = rateFormBasis;
-                    existing.Unit = rateFormUnit.Trim();
-                    existing.SaleContext = rateFormSaleContext;
-                    existing.RemittancePoint = rateFormRemittance;
-                    existing.MinAbv = ParseAbvPercent(rateFormMinAbv);
-                    existing.MaxAbv = ParseAbvPercent(rateFormMaxAbv);
-                    existing.StatutoryReference = rateFormStatutory.Trim();
-                    existing.EffectiveDate = string.IsNullOrWhiteSpace(rateFormEffective) ? null : DateOnly.Parse(rateFormEffective.Trim());
-                    existing.ExpirationDate = string.IsNullOrWhiteSpace(rateFormExpires) ? null : DateOnly.Parse(rateFormExpires.Trim());
-                    existing.Conditions = rateFormConditions.Trim();
-                }
+                    await ReplaceRateWithManualEditAsync(db, existing, rateVal);
             }
             else
             {
@@ -1318,6 +1305,95 @@ else if (!isAdmin && HasUnsubscribedContent)
         }
         catch (Exception ex) { SetStatus($"✗ {ex.Message}"); }
         finally { savingRateForm = false; StateHasChanged(); }
+    }
+
+    /// <summary>
+    /// TRC-LAW-2: a manual edit never overwrites a rate in place. The edited row is retired
+    /// (IsCurrent = false) and a new current row is inserted carrying the form values plus
+    /// every field the form does not edit. The new row keeps the old row's evidence
+    /// (TRC-LAW-1: its SourceDocuments are linked again to the new row, same files and
+    /// hashes) and notes who made the edit; the change is logged (TRC-LAW-4).
+    /// </summary>
+    private async Task ReplaceRateWithManualEditAsync(AppDbContext db, TaxRate old, decimal rateVal)
+    {
+        var auth = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = auth.User.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(user)) user = "unknown user";
+        var now = DateTime.UtcNow.ToString("o");
+        var note = $"Manual edit by {user} at {now} (supersedes rate #{old.Id}).";
+
+        var edited = new TaxRate
+        {
+            JurisdictionId       = old.JurisdictionId,
+            TaxCategoryId        = old.TaxCategoryId,
+            ProductCategory      = old.ProductCategory,
+            TaxType              = old.TaxType,
+            IsIncludedInPrice    = old.IsIncludedInPrice,
+            IsCompound           = old.IsCompound,
+            MinTaxableAmount     = old.MinTaxableAmount,
+            MaxTaxableAmount     = old.MaxTaxableAmount,
+            FlatCapPerUnit       = old.FlatCapPerUnit,
+            CountsTowardLocalCap = old.CountsTowardLocalCap,
+            AdjustmentFrequency  = old.AdjustmentFrequency,
+            AdjustmentMechanism  = old.AdjustmentMechanism,
+            IsRecurring          = old.IsRecurring,
+            IsTemporary          = old.IsTemporary,
+            SourceConfidence     = old.SourceConfidence,
+            AutoApprove          = true,
+            IsCurrent            = true,
+            ScrapeRunId          = manualRunId!.Value,
+            ScrapedAt            = now,
+
+            Name                 = rateFormName.Trim(),
+            Rate                 = rateVal,
+            RateBasis            = rateFormBasis,
+            Unit                 = rateFormUnit.Trim(),
+            SaleContext          = rateFormSaleContext,
+            RemittancePoint      = rateFormRemittance,
+            MinAbv               = ParseAbvPercent(rateFormMinAbv),
+            MaxAbv               = ParseAbvPercent(rateFormMaxAbv),
+            StatutoryReference   = rateFormStatutory.Trim(),
+            EffectiveDate        = string.IsNullOrWhiteSpace(rateFormEffective) ? null : DateOnly.Parse(rateFormEffective.Trim()),
+            ExpirationDate       = string.IsNullOrWhiteSpace(rateFormExpires) ? null : DateOnly.Parse(rateFormExpires.Trim()),
+            Conditions           = rateFormConditions.Trim(),
+            RawEvidence          = string.IsNullOrWhiteSpace(old.RawEvidence) ? note : $"{old.RawEvidence}\n{note}",
+        };
+
+        old.IsCurrent = false;
+        db.TaxRates.Add(edited);
+
+        // Same evidence, referenced from the new row (the files on disk are shared, not copied).
+        var docs = await db.SourceDocuments
+            .Where(d => d.TaxRateId == old.Id && d.IsActive)
+            .AsNoTracking()
+            .ToListAsync();
+        foreach (var d in docs)
+            db.SourceDocuments.Add(new SourceDocument
+            {
+                TaxRate          = edited,
+                SourceType       = d.SourceType,
+                SourceUrl        = d.SourceUrl,
+                MimeType         = d.MimeType,
+                FetchedAt        = d.FetchedAt,
+                ContentHash      = d.ContentHash,
+                FileName         = d.FileName,
+                OriginalFileName = d.OriginalFileName,
+                EvidenceType     = d.EvidenceType,
+                RawContent       = d.RawContent,
+                IsActive         = true,
+            });
+
+        db.ChangeLog.Add(new ChangeLogEntry
+        {
+            JurisdictionId    = old.JurisdictionId,
+            TaxRate           = edited,
+            RateName          = edited.Name,
+            ChangeType        = old.Rate != edited.Rate ? ChangeType.RateChanged : ChangeType.StructuralChange,
+            OldRate           = old.Rate,
+            NewRate           = edited.Rate,
+            ChangeDescription = note,
+            DetectedAt        = now,
+        });
     }
 
     // Form value is a percent typed into an <input type="number"> (always invariant "14.5");

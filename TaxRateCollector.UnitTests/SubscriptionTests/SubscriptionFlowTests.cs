@@ -240,8 +240,8 @@ public class SubscriptionFlowTests
             Subtotal = 0.03m,
             BillingStateCode = "IL",
             TaxRate = 0.0625m,
-            TaxAmount = 0.001875m,
-            Total = 0.031875m,
+            TaxAmount = 0.00m,   // 0.001875 rounded to cents
+            Total = 0.03m,
             Currency = "USD",
             Status = BillingStatus.Pending,
             CreatedAt = DateTime.UtcNow.ToString("o")

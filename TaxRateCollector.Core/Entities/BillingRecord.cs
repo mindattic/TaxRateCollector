@@ -22,5 +22,11 @@ public class BillingRecord
     public BillingStatus Status { get; set; } = BillingStatus.Pending;
     public string CreatedAt { get; set; } = "";
 
+    /// <summary>Comma-separated state codes this payment buys; applied once the PayPal order is captured.</summary>
+    public string SelectedStateCodes { get; set; } = "";
+
+    /// <summary>Comma-separated TaxCategory ids this payment buys; applied once the PayPal order is captured.</summary>
+    public string SelectedCategoryIds { get; set; } = "";
+
     public Subscriber Subscriber { get; set; } = null!;
 }

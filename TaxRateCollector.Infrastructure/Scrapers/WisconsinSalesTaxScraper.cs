@@ -67,7 +67,7 @@ public sealed class WisconsinSalesTaxScraper : IStateBulkScraper
 
         var results = new List<BulkRateResult>
         {
-            new("55", "Wisconsin", "Wisconsin State Sales &amp; Use Tax",
+            new("55", "Wisconsin", "Wisconsin State Sales & Use Tax",
                 stateRate, countyUrlUsed, countyBytes, "text/html", "", "",
                 Core.Enums.RateBasis.Percentage, Core.Enums.TaxType.SalesTax, Core.Enums.RemittancePoint.Retailer,
                 IsIncludedInPrice: false, Core.Enums.SaleContext.Any, null, null, countyConf,
@@ -86,7 +86,7 @@ public sealed class WisconsinSalesTaxScraper : IStateBulkScraper
             results.Add(new BulkRateResult(
                 FipsCode: fips,
                 JurisdictionName: name,
-                RateName: $"{name} County Sales &amp; Use Tax",
+                RateName: $"{name} County Sales & Use Tax",
                 Rate: rate,
                 SourceUrl: countyUrlUsed,
                 EvidenceBytes: countyBytes,

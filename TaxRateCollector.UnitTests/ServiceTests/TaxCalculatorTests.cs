@@ -742,4 +742,76 @@ public class TaxCalculatorTests
         Assert.That(result!.RateLines, Has.Count.EqualTo(1));
         Assert.That(result.RateLines[0].RateName, Is.EqualTo("Food Rate"));
     }
+
+    // ── Tests: cumulative jurisdiction chain (TRC-LAW-6) ─────────────────────
+
+    private static async Task<(Jurisdiction state, Jurisdiction county, Jurisdiction city)> SeedChainAsync(
+        AppDbContext db, string stateCode = "IL")
+    {
+        var country = new Jurisdiction { JurisdictionName = "United States of America", StateCode = "US", FipsCode = "US", JurisdictionType = JurisdictionType.Country, IsActive = true };
+        db.Jurisdictions.Add(country);
+        await db.SaveChangesAsync();
+        var state = new Jurisdiction { JurisdictionName = "State", StateCode = stateCode, FipsCode = "17", JurisdictionType = JurisdictionType.State, ParentId = country.Id, IsActive = true };
+        db.Jurisdictions.Add(state);
+        await db.SaveChangesAsync();
+        var county = new Jurisdiction { JurisdictionName = "County", StateCode = stateCode, FipsCode = "17031", JurisdictionType = JurisdictionType.County, ParentId = state.Id, IsActive = true };
+        db.Jurisdictions.Add(county);
+        await db.SaveChangesAsync();
+        var city = new Jurisdiction { JurisdictionName = "City", StateCode = stateCode, FipsCode = "1714000", JurisdictionType = JurisdictionType.City, ParentId = county.Id, IsActive = true };
+        db.Jurisdictions.Add(city);
+        await db.SaveChangesAsync();
+        return (state, county, city);
+    }
+
+    [Test]
+    public async Task Chain_City_SumsStatePlusCountyPlusCity()
+    {
+        var factory = CreateFactory();
+        await using var db = factory.CreateDbContext();
+        var (state, county, city) = await SeedChainAsync(db);
+        db.TaxRates.Add(MakeRate(state.Id,  "State Tax",  rate: 0.0625m));
+        db.TaxRates.Add(MakeRate(county.Id, "County Tax", rate: 0.0175m));
+        db.TaxRates.Add(MakeRate(city.Id,   "City Tax",   rate: 0.0225m));
+        await db.SaveChangesAsync();
+
+        var result = await new TaxCalculator(factory).CalculateAsync(city.Id, 100m, 1);
+
+        Assert.That(result!.TotalPercentageRate, Is.EqualTo(0.1025m));
+        Assert.That(result.TotalTaxAmount, Is.EqualTo(10.25m));
+        Assert.That(result.RateLines.Select(l => l.RateName), Is.EqualTo(new[] { "State Tax", "County Tax", "City Tax" }));
+        Assert.That(result.JurisdictionName, Is.EqualTo("City"));
+    }
+
+    [Test]
+    public async Task Chain_LocalRateCap_CapsOnlyLocalTiers()
+    {
+        var factory = CreateFactory();
+        await using var db = factory.CreateDbContext();
+        var (state, county, city) = await SeedChainAsync(db, "TX");
+        db.StateTaxProfiles.Add(new StateTaxProfile { StateCode = "TX", StateName = "Texas", HasLocalRateCap = true, LocalRateCap = 0.02m, UpdatedAt = DateTime.UtcNow.ToString("o") });
+        db.TaxRates.Add(MakeRate(state.Id,  "State Tax",  rate: 0.0625m));
+        db.TaxRates.Add(MakeRate(county.Id, "County Tax", rate: 0.01m));
+        db.TaxRates.Add(MakeRate(city.Id,   "City Tax",   rate: 0.015m));
+        await db.SaveChangesAsync();
+
+        var result = await new TaxCalculator(factory).CalculateAsync(city.Id, 100m, 1);
+
+        // Local 2.5% capped at 2%; the 6.25% state rate is not subject to the cap.
+        Assert.That(result!.TotalPercentageRate, Is.EqualTo(0.0825m));
+        Assert.That(result.TotalTaxAmount, Is.EqualTo(8.25m));
+    }
+
+    [Test]
+    public async Task AbvFilter_BoundaryValue_BelongsToLowerTierOnly()
+    {
+        var factory = CreateFactory();
+        var (db, jur) = await SeedJurisdictionAsync(factory);
+        db.TaxRates.Add(MakeRate(jur.Id, "Wine <=14%", rate: 0.30m, basis: RateBasis.FlatPerVolume, maxAbv: 0.14m));
+        db.TaxRates.Add(MakeRate(jur.Id, "Wine >14%",  rate: 0.95m, basis: RateBasis.FlatPerVolume, minAbv: 0.14m, maxAbv: 0.21m));
+        await db.SaveChangesAsync();
+
+        var result = await new TaxCalculator(factory).CalculateAsync(jur.Id, 10m, 1, new TaxCalcOptions(Abv: 0.14m));
+
+        Assert.That(result!.RateLines.Select(l => l.RateName), Is.EqualTo(new[] { "Wine <=14%" }));
+    }
 }

@@ -122,7 +122,7 @@
     protected override async Task OnInitializedAsync()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
-        reviewCount = await db.TaxRates.CountAsync(t => !t.AutoApprove);
+        reviewCount = await db.TaxRates.CountAsync(t => !t.AutoApprove && !t.IsRejected);
     }
 
     private void ToggleDropdown() => dropdownOpen = !dropdownOpen;

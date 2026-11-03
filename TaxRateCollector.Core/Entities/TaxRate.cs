@@ -218,6 +218,13 @@ public class TaxRate
     /// </summary>
     public SourceConfidence SourceConfidence { get; set; } = SourceConfidence.Official;
 
+    /// <summary>
+    /// True when a reviewer rejected this pending rate. The row and its evidence are kept
+    /// (soft reject, TRC-LAW-2 / HOUSE-LAW-2); a rejected row is never current and never
+    /// shown for review again.
+    /// </summary>
+    public bool IsRejected { get; set; }
+
     // ── Navigation ────────────────────────────────────────────────────────────
     public Jurisdiction Jurisdiction { get; set; } = null!;
     public ScrapeRun ScrapeRun { get; set; } = null!;

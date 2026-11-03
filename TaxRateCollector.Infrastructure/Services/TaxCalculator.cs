@@ -8,6 +8,9 @@ namespace TaxRateCollector.Infrastructure.Services;
 
 public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalculator
 {
+    /// <summary>Guards the parent walk against a corrupt (cyclic) hierarchy.</summary>
+    private const int MaxChainDepth = 16;
+
     public async Task<TaxCalcResult?> CalculateAsync(
         int jurisdictionId, decimal price, int quantity, TaxCalcOptions? options = null)
     {
@@ -20,12 +23,11 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
 
         var subtotal = price * quantity;
 
-        // ── Origin-based sourcing rule ────────────────────────────────────────
+        // ── Origin-based sourcing rule ──────────────────────────────────────
         // For intrastate sales in origin-based states (IL, TX, TN, PA, etc.) the
         // applicable rates are those at the SELLER's location, not the buyer's.
         // When SellerJurisdictionId is supplied and the state uses OriginBased
         // sourcing, swap the effective jurisdiction used for rate lookup.
-        var effectiveJurisdictionId = jurisdictionId;
         if (options.SellerJurisdictionId.HasValue)
         {
             var sellerJur = await db.Jurisdictions.FindAsync(options.SellerJurisdictionId.Value);
@@ -34,35 +36,42 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
                 var profile = await db.StateTaxProfiles
                     .FirstOrDefaultAsync(p => p.StateCode == jur.StateCode);
                 if (profile?.IntrastateSourcingRule == SourcingRule.OriginBased)
-                {
-                    effectiveJurisdictionId = options.SellerJurisdictionId.Value;
                     jur = sellerJur;
-                }
                 // Modified (CA): state/county = origin, city = destination.
                 // Full Mixed-tier support requires splitting the query by tier — deferred.
             }
         }
 
-        // ── Load rates ────────────────────────────────────────────────────────
+        // ── Jurisdiction chain (TRC-LAW-6) ──────────────────────────────────
+        // A point-of-sale rate is cumulative up the hierarchy: the effective jurisdiction
+        // plus every State / County / City / District ancestor. The Country node is not a
+        // tier of the sales-tax chain (the law lists State + County + City + districts), so
+        // it only contributes when it is itself the jurisdiction being calculated.
+        var chain = await LoadChainAsync(db, jur);
+        var tierById = chain.ToDictionary(j => j.Id, j => j.JurisdictionType);
+        var chainIds = tierById.Keys.ToList();
+
+        // ── Load rates ──────────────────────────────────────────────────────
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         // Exclude unpopulated placeholder rows (Rate == 0 with no source document).
         // True 0% laws (e.g. grocery exemptions) live in StateCategoryRule, not TaxRates,
         // so any Rate==0 row in this table is a skeleton waiting for a real scrape.
-        var ratesQuery = db.TaxRates
-            .Where(t => t.JurisdictionId == effectiveJurisdictionId
+        var candidates = await db.TaxRates
+            .Where(t => chainIds.Contains(t.JurisdictionId)
                      && t.IsCurrent
                      && t.AutoApprove
                      && t.Rate > 0
                      && (t.EffectiveDate == null || t.EffectiveDate <= today)
-                     && (t.ExpirationDate == null || t.ExpirationDate > today));
+                     && (t.ExpirationDate == null || t.ExpirationDate > today))
+            .ToListAsync();
 
-        if (options.TaxCategoryId.HasValue)
-            ratesQuery = ratesQuery.Where(t => t.TaxCategoryId == options.TaxCategoryId);
-
-        var rates = await ratesQuery.OrderBy(t => t.Name).ToListAsync();
+        var rates = SelectApplicableRates(candidates, options.TaxCategoryId)
+            .OrderBy(r => (int)tierById[r.JurisdictionId])
+            .ThenBy(r => r.Name)
+            .ToList();
         if (rates.Count == 0) return null;
 
-        // ── Filter by SaleContext and ABV ─────────────────────────────────────
+        // ── Filter by SaleContext and ABV ───────────────────────────────────
         if (options.SaleContext != SaleContext.Any)
             rates = rates
                 .Where(r => r.SaleContext == SaleContext.Any || r.SaleContext == options.SaleContext)
@@ -71,26 +80,33 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
         if (options.Abv.HasValue)
         {
             var abv = options.Abv.Value;
-            rates = rates
-                .Where(r => (r.MinAbv == null || abv >= r.MinAbv) &&
-                            (r.MaxAbv == null || abv < r.MaxAbv))
-                .ToList();
+            var all = rates;
+            rates = rates.Where(r => AbvMatches(r, abv, all)).ToList();
         }
 
         if (rates.Count == 0) return null;
 
-        // ── Two-pass: non-compound first, then compound ───────────────────────
+        // ── Two-pass: non-compound first, then compound ─────────────────────
         // Compound rates (e.g. Chicago Matching Tax) apply to price + all retail taxes.
         var lines = new List<TaxRateLine>();
+        var localLines = new List<(TaxRateLine Line, decimal Rate)>();
         decimal retailSubtotal = 0m;   // running sum of non-included-in-price, non-compound taxes
 
         foreach (var r in rates.Where(r => !r.IsCompound))
         {
             var tax = ComputeTax(r, subtotal, quantity, options);
-            lines.Add(new TaxRateLine(r.Name, r.Rate, r.RateBasis, r.Unit, r.SaleContext,
-                r.RemittancePoint, tax, r.EffectiveDate, r.IsIncludedInPrice, IsCompound: false));
+            var line = new TaxRateLine(r.Name, r.Rate, r.RateBasis, r.Unit, r.SaleContext,
+                r.RemittancePoint, tax, r.EffectiveDate, r.IsIncludedInPrice, IsCompound: false);
+            lines.Add(line);
             if (!r.IsIncludedInPrice)
                 retailSubtotal += tax;
+
+            // Local tier (County / City / District) percentage taxes count toward a state's
+            // combined local-rate cap unless the row says it is statutorily excluded.
+            if (IsLocalTier(tierById[r.JurisdictionId]) &&
+                r.RateBasis == RateBasis.Percentage && !r.IsIncludedInPrice &&
+                r.CountsTowardLocalCap != false)
+                localLines.Add((line, r.Rate));
         }
 
         // Compound base = pre-tax price + all non-compound retailer taxes
@@ -113,30 +129,100 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
             .Where(r => r.RateBasis == RateBasis.Percentage && !r.IsIncludedInPrice && !r.IsCompound)
             .Sum(r => r.Rate);
 
-        // ── Local rate cap (e.g. Texas caps combined local tax at 2%) ──────────
-        // For county/city tier jurisdictions, the entire rate set is "local".
-        // Cap is enforced at both the dollar amount and combined rate fields.
-        // Flat-rate excise taxes and compound taxes are not subject to the cap.
-        if (jur.JurisdictionType != JurisdictionType.Country &&
-            jur.JurisdictionType != JurisdictionType.State)
+        // ── Local rate cap (e.g. Texas caps combined local tax at 2%) ───────
+        // Only the local tiers' cap-eligible percentage taxes are capped; the state rate,
+        // flat-rate excise taxes, compound taxes and cap-exempt districts are not.
+        var localRate = localLines.Sum(l => l.Rate);
+        if (localRate > 0)
         {
             var profile = await db.StateTaxProfiles
                 .FirstOrDefaultAsync(p => p.StateCode == jur.StateCode);
             if (profile?.HasLocalRateCap == true && profile.LocalRateCap.HasValue &&
-                combinedRate > profile.LocalRateCap.Value)
+                localRate > profile.LocalRateCap.Value)
             {
-                var exemptFromCap = lines
-                    .Where(l => !l.IsIncludedInPrice && (l.IsCompound || l.Basis != RateBasis.Percentage))
-                    .Sum(l => l.TaxAmount);
-                customerTax  = exemptFromCap + subtotal * profile.LocalRateCap.Value;
-                combinedRate = profile.LocalRateCap.Value;
+                var cap = profile.LocalRateCap.Value;
+                var localTax = localLines.Sum(l => l.Line.TaxAmount);
+                // Scale the local taxes down to the cap (equals subtotal × cap when no
+                // transaction bracket narrows any of them).
+                customerTax  = customerTax - localTax + localTax * cap / localRate;
+                combinedRate = combinedRate - localRate + cap;
             }
         }
 
         return new TaxCalcResult(customerTax, embeddedTax, combinedRate, lines, jur.JurisdictionName);
     }
 
-    // ── Per-rate calculation ──────────────────────────────────────────────────
+    // ── Chain resolution ────────────────────────────────────────────────────
+
+    private static async Task<List<Jurisdiction>> LoadChainAsync(AppDbContext db, Jurisdiction start)
+    {
+        var chain = new List<Jurisdiction> { start };
+        var seen = new HashSet<int> { start.Id };
+        var parentId = start.ParentId;
+
+        while (parentId.HasValue && chain.Count < MaxChainDepth && seen.Add(parentId.Value))
+        {
+            var parent = await db.Jurisdictions.FindAsync(parentId.Value);
+            if (parent is null || parent.JurisdictionType == JurisdictionType.Country) break;
+            chain.Add(parent);
+            parentId = parent.ParentId;
+        }
+
+        return chain;
+    }
+
+    private static bool IsLocalTier(JurisdictionType t) =>
+        t is JurisdictionType.County or JurisdictionType.City or JurisdictionType.District;
+
+    /// <summary>
+    /// Picks each jurisdiction's applicable rows. With a category, a jurisdiction's rows for
+    /// that category win; a tier with none falls back to its general (uncategorised) rows, so
+    /// a county's general add-on still stacks on a state's category rate. Rows that differ
+    /// only by category (the per-leaf-category seed copies of one general rate) count once.
+    /// </summary>
+    private static IEnumerable<TaxRate> SelectApplicableRates(List<TaxRate> candidates, int? taxCategoryId)
+    {
+        foreach (var perJurisdiction in candidates.GroupBy(r => r.JurisdictionId))
+        {
+            IEnumerable<TaxRate> rows = perJurisdiction;
+            if (taxCategoryId.HasValue)
+            {
+                var forCategory = perJurisdiction.Where(r => r.TaxCategoryId == taxCategoryId).ToList();
+                rows = forCategory.Count > 0
+                    ? forCategory
+                    : perJurisdiction.Where(r => r.TaxCategoryId == null);
+            }
+
+            foreach (var r in rows
+                .GroupBy(r => (r.Name, r.Rate, r.RateBasis, r.TaxType, r.ProductCategory, r.SaleContext,
+                               r.MinAbv, r.MaxAbv, r.MinTaxableAmount, r.MaxTaxableAmount,
+                               r.IsCompound, r.IsIncludedInPrice))
+                .Select(g => g.OrderBy(r => r.Id).First()))
+                yield return r;
+        }
+    }
+
+    /// <summary>
+    /// ABV tiers: the upper bound is inclusive ("X% or less"). A value exactly on a tier
+    /// boundary belongs to the lower tier, so the lower bound is exclusive only when another
+    /// candidate rate of the same product ends at that boundary; a stand-alone lower bound
+    /// ("0.5% or more") stays inclusive.
+    /// </summary>
+    private static bool AbvMatches(TaxRate r, decimal abv, IReadOnlyList<TaxRate> all)
+    {
+        if (r.MaxAbv.HasValue && abv > r.MaxAbv.Value) return false;
+        if (!r.MinAbv.HasValue || abv > r.MinAbv.Value) return true;
+        if (abv < r.MinAbv.Value) return false;
+
+        // abv == MinAbv: exclusive when an adjacent lower tier claims the boundary.
+        var min = r.MinAbv.Value;
+        return !all.Any(o => !ReferenceEquals(o, r)
+                             && o.ProductCategory == r.ProductCategory
+                             && o.JurisdictionId == r.JurisdictionId
+                             && o.MaxAbv == min);
+    }
+
+    // ── Per-rate calculation ────────────────────────────────────────────────
 
     private static decimal ComputeTax(TaxRate r, decimal subtotal, int quantity, TaxCalcOptions options)
     {
@@ -161,7 +247,7 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
         return raw;
     }
 
-    // ── Bracket helper ────────────────────────────────────────────────────────
+    // ── Bracket helper ──────────────────────────────────────────────────────
 
     private static decimal ApplyBracket(TaxRate r, decimal subtotal, int quantity)
     {

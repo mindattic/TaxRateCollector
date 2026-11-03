@@ -15,7 +15,7 @@
             <h1 id="review-title" class="page-title">Rate Law Review Queue</h1>
             <p class="page-sub">
                 AI-extracted rates awaiting human approval.
-                Approve to make a rate live; reject to discard it.
+                Approve to make a rate live; reject to set it aside (the row and its evidence are kept for the audit trail).
                 The source evidence is shown for every rate.
             </p>
         </div>
@@ -220,7 +220,9 @@ else
             .GroupBy(r => (r.JurisdictionId, r.Name))
             .Select(g => g.Max(r => r.Id))
             .ToHashSet();
-        rates = rates.Where(r => latestIds.Contains(r.Id)).ToList();
+        // Rejected rows take part in the "newest" pick (so rejecting the newest one does not
+        // resurface an older superseded row) but are never reviewable themselves.
+        rates = rates.Where(r => latestIds.Contains(r.Id) && !r.IsRejected).ToList();
 
         // Load source docs for evidence URLs
         var rateIds = rates.Select(r => r.Id).ToList();
@@ -321,9 +323,15 @@ else
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
+            // Soft reject (TRC-LAW-2 / HOUSE-LAW-2): keep the row and its evidence for the
+            // audit trail; it is never current and drops out of the review queue.
             var rate = await db.TaxRates.FindAsync(row.Id);
             if (rate is not null)
-                db.TaxRates.Remove(rate);
+            {
+                rate.IsRejected  = true;
+                rate.IsCurrent   = false;
+                rate.AutoApprove = false;
+            }
             await db.SaveChangesAsync();
 
             row.Dismissed = true;

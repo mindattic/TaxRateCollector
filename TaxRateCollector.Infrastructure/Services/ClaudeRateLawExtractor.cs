@@ -111,7 +111,7 @@ public sealed class ClaudeRateLawExtractor(
 """);
         sb.AppendLine("Rules:");
         sb.AppendLine("- Rate: decimal fraction for percentages (6.5% → 0.065); dollar amount for flat rates ($0.231/pack → 0.231)");
-        sb.AppendLine("- MinAbv/MaxAbv: decimal fraction, like Rate (14% ABV → 0.14); MinAbv is inclusive, MaxAbv exclusive. Null when unbounded.");
+        sb.AppendLine("- MinAbv/MaxAbv: decimal fraction, like Rate (14% ABV → 0.14); MaxAbv is inclusive ('X% or less'); a tier above it starts at that same value as its MinAbv ('over X%'), so a value exactly on the boundary belongs to the lower tier. Null when unbounded.");
         sb.AppendLine("- TaxType: SalesTax for general sales tax; ExciseTax for alcohol/tobacco/fuel/cannabis/firearms; OccupancyTax for hotel/lodging; RentalSurcharge for rental cars");
         sb.AppendLine("- ProductCategory: set for excise taxes — one of: Alcohol, Beer, Wine, Spirits, Tobacco, Cigarettes, Cannabis, Sugar, SoftDrinks, Firearms, Ammunition, Fuel, Hotel, RentalCar, Lottery, Gaming. Null for sales/use tax.");
         sb.AppendLine("- RemittancePoint: Distributor or Manufacturer for state alcohol/tobacco excise; Retailer for sales tax and restaurant-level taxes");

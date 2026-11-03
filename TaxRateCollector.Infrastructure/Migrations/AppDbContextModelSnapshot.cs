@@ -248,6 +248,14 @@ namespace TaxRateCollector.Infrastructure.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("SelectedCategoryIds")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SelectedStateCodes")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("StateCount")
                         .HasColumnType("int");
 
@@ -939,6 +947,9 @@ namespace TaxRateCollector.Infrastructure.Migrations
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsRecurring")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsRejected")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsTemporary")

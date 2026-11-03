@@ -38,18 +38,14 @@ public static class JurisdictionSeeder
                 .Select(j => j.Id)
                 .ToListAsync();
 
-            // Cities (and any deeper levels)
+            // Jurisdictions deactivate, never delete (TRC-LAW-2): a hard delete would cascade
+            // away their rates and evidence. Deactivate the whole subtree instead.
+            var subtreeIds = nonUsCountryIds.Concat(stateIds).Concat(countyIds).ToList();
             await db.Jurisdictions
-                .Where(j => j.ParentId != null && countyIds.Contains(j.ParentId.Value))
-                .ExecuteDeleteAsync();
-
-            if (countyIds.Count > 0)
-                await db.Jurisdictions.Where(j => countyIds.Contains(j.Id)).ExecuteDeleteAsync();
-
-            if (stateIds.Count > 0)
-                await db.Jurisdictions.Where(j => stateIds.Contains(j.Id)).ExecuteDeleteAsync();
-
-            await db.Jurisdictions.Where(j => nonUsCountryIds.Contains(j.Id)).ExecuteDeleteAsync();
+                .Where(j => j.IsActive &&
+                            (subtreeIds.Contains(j.Id) ||
+                             (j.ParentId != null && countyIds.Contains(j.ParentId.Value))))
+                .ExecuteUpdateAsync(s => s.SetProperty(j => j.IsActive, false));
         }
 
         // ── One-time rename for databases seeded before the full name was added ──

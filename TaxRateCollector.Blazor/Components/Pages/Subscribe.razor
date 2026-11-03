@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Identity
+@using TaxRateCollector.Core.Billing
 @using TaxRateCollector.Core.Entities
 @using TaxRateCollector.Core.Enums
 @using TaxRateCollector.Core.Interfaces
@@ -250,8 +251,14 @@ else
     private decimal StateSubtotal => selectedStates.Count * pricing.PricePerState;
     private decimal CatSubtotal => selectedCategories.Count * pricing.PricePerCategory;
     private decimal PricePerMonth => StateSubtotal + CatSubtotal;
-    private decimal TaxAmount => PricePerMonth * billingTaxRate;
-    private decimal Total => PricePerMonth + TaxAmount;
+    // Charged money is whole cents: tax rounds at the final amount (BillingMath).
+    private decimal TaxAmount => BillingMath.TaxAmount(PricePerMonth, billingTaxRate);
+    private decimal Total => BillingMath.Total(PricePerMonth, billingTaxRate);
+
+    // PayPal sends the buyer back here after approving (or cancelling) the order.
+    [SupplyParameterFromQuery(Name = "billing")] private int? ReturnBillingId { get; set; }
+    [SupplyParameterFromQuery(Name = "token")]   private string? ReturnOrderToken { get; set; }
+    [SupplyParameterFromQuery(Name = "cancel")]  private string? ReturnCancelled { get; set; }
 
     private bool CanCheckout =>
         (selectedStates.Count > 0 || selectedCategories.Count > 0) &&
@@ -261,7 +268,11 @@ else
         !string.IsNullOrWhiteSpace(zip) &&
         !string.IsNullOrWhiteSpace(billingState);
 
-    protected override async Task OnInitializedAsync()
+    private Task? initTask;
+
+    protected override Task OnInitializedAsync() => initTask = LoadAsync();
+
+    private async Task LoadAsync()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
 
@@ -404,7 +415,8 @@ else
             if (subscriber.Id == 0) db.Subscribers.Add(subscriber);
             await db.SaveChangesAsync();
 
-            // Create billing record
+            // Create billing record. The selection is stored on it so it survives the
+            // round trip to PayPal and is applied only once the payment is captured.
             var billing = new BillingRecord
             {
                 SubscriberId = subscriber.Id,
@@ -417,14 +429,18 @@ else
                 Total = Total,
                 Currency = pricing.Currency,
                 Status = BillingStatus.Pending,
-                CreatedAt = DateTime.UtcNow.ToString("o")
+                CreatedAt = DateTime.UtcNow.ToString("o"),
+                SelectedStateCodes = string.Join(",", selectedStates.OrderBy(s => s, StringComparer.OrdinalIgnoreCase)),
+                SelectedCategoryIds = string.Join(",", selectedCategories.OrderBy(c => c)),
             };
             db.BillingRecords.Add(billing);
             await db.SaveChangesAsync();
 
-            // PayPal order
+            // PayPal order: the buyer approves it on PayPal, which then returns them here.
             var description = $"TaxRateCollector — {selectedStates.Count} state(s), {selectedCategories.Count} category/categories/month";
-            var orderResult = await PayPal.CreateOrderAsync(Total, pricing.Currency, description);
+            var returnUrl = Nav.ToAbsoluteUri($"subscribe?billing={billing.Id}").ToString();
+            var cancelUrl = Nav.ToAbsoluteUri($"subscribe?billing={billing.Id}&cancel=1").ToString();
+            var orderResult = await PayPal.CreateOrderAsync(Total, pricing.Currency, description, returnUrl, cancelUrl);
 
             if (!orderResult.Success)
             {
@@ -437,67 +453,170 @@ else
             billing.PayPalOrderId = orderResult.OrderId;
             await db.SaveChangesAsync();
 
-            // Capture
-            var captured = await PayPal.CaptureOrderAsync(orderResult.OrderId);
-            billing.Status = captured ? BillingStatus.Completed : BillingStatus.Failed;
-            await db.SaveChangesAsync();
-
-            if (!captured) { error = "Payment capture failed. Please try again."; return; }
-
-            // Activate subscribed states (soft-add — deactivate states no longer subscribed)
-            var existing = await db.SubscribedStates
-                .Where(ss => ss.SubscriberId == subscriber.Id)
-                .ToListAsync();
-
-            foreach (var ss in existing) ss.IsActive = false;
-
-            foreach (var code in selectedStates)
+            if (!orderResult.IsMock)
             {
-                var name = availableStates.FirstOrDefault(s => s.StateCode == code).Name ?? code;
-                var existing2 = existing.FirstOrDefault(ss => ss.StateCode == code);
-                if (existing2 is not null)
-                    existing2.IsActive = true;
-                else
-                    db.SubscribedStates.Add(new SubscribedState
-                    {
-                        SubscriberId = subscriber.Id,
-                        StateCode = code,
-                        StateName = name,
-                        IsActive = true,
-                        StartDate = DateTime.UtcNow.ToString("o")
-                    });
+                // Never capture an order the buyer has not approved: send them to PayPal.
+                // CompletePayPalReturnAsync captures it when PayPal sends them back.
+                navigatingToPayPal = true;
+                Nav.NavigateTo(orderResult.ApprovalUrl!, forceLoad: true);
+                return;
             }
 
-            // Activate subscribed categories
-            var existingCats = await db.SubscribedCategories
-                .Where(sc => sc.SubscriberId == subscriber.Id)
-                .ToListAsync();
+            // Mock mode has no approval step (no money moves).
+            await CaptureAndActivateAsync(db, billing);
+        }
+        catch (Exception ex) { error = $"Unexpected error: {ex.Message}"; }
+        finally
+        {
+            if (!navigatingToPayPal) processing = false;
+            StateHasChanged();
+        }
+    }
 
-            foreach (var sc in existingCats) sc.IsActive = false;
+    private bool navigatingToPayPal;
 
-            var allLeaves = availableCategoryGroups.SelectMany(g => g.Leaves).ToList();
-            foreach (var catId in selectedCategories)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Runs only on the interactive render, so a prerender cannot capture the order twice.
+        if (!firstRender || ReturnBillingId is null) return;
+        if (initTask is not null) await initTask;
+        await CompletePayPalReturnAsync(ReturnBillingId.Value);
+    }
+
+    /// <summary>
+    /// Handles PayPal's redirect back after the buyer approved (or cancelled) the order:
+    /// verifies the order belongs to this user's pending billing record, then captures it.
+    /// </summary>
+    private async Task CompletePayPalReturnAsync(int billingId)
+    {
+        error = null;
+        processing = true;
+        StateHasChanged();
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (userId is null) { error = "Session expired. Please log in again."; return; }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var billing = await db.BillingRecords
+                .Include(b => b.Subscriber)
+                .FirstOrDefaultAsync(b => b.Id == billingId && b.Subscriber.UserId == userId);
+            if (billing is null) { error = "That payment could not be found."; return; }
+
+            if (billing.Status == BillingStatus.Completed)
             {
-                var catName = allLeaves.FirstOrDefault(c => c.Id == catId)?.Name ?? "";
-                var existing2 = existingCats.FirstOrDefault(sc => sc.CategoryId == catId);
-                if (existing2 is not null)
-                    existing2.IsActive = true;
-                else
-                    db.SubscribedCategories.Add(new SubscribedCategory
-                    {
-                        SubscriberId = subscriber.Id,
-                        CategoryId = catId,
-                        CategoryName = catName,
-                        IsActive = true,
-                        StartDate = DateTime.UtcNow.ToString("o")
-                    });
+                ShowCompleted(billing);
+                return;
             }
-            await db.SaveChangesAsync();
+            if (billing.Status != BillingStatus.Pending)
+            {
+                error = "That payment did not complete. Please try again.";
+                return;
+            }
 
-            lastBillingRecord = billing;
-            step = 3;
+            if (!string.IsNullOrEmpty(ReturnCancelled))
+            {
+                billing.Status = BillingStatus.Failed;
+                await db.SaveChangesAsync();
+                error = "Payment was cancelled on PayPal. Nothing was charged.";
+                return;
+            }
+
+            // PayPal appends token=<orderId>; it must be the order created for this record.
+            if (string.IsNullOrEmpty(ReturnOrderToken) ||
+                !string.Equals(ReturnOrderToken, billing.PayPalOrderId, StringComparison.Ordinal))
+            {
+                error = "The PayPal return did not match this payment. Nothing was activated.";
+                return;
+            }
+
+            await CaptureAndActivateAsync(db, billing);
         }
         catch (Exception ex) { error = $"Unexpected error: {ex.Message}"; }
         finally { processing = false; StateHasChanged(); }
+    }
+
+    private static HashSet<string> ParseStates(string csv) =>
+        csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+           .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private static HashSet<int> ParseCategories(string csv) =>
+        csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+           .Select(s => int.TryParse(s, out var id) ? id : -1)
+           .Where(id => id >= 0)
+           .ToHashSet();
+
+    private async Task CaptureAndActivateAsync(AppDbContext db, BillingRecord billing)
+    {
+        var captured = await PayPal.CaptureOrderAsync(billing.PayPalOrderId);
+        billing.Status = captured ? BillingStatus.Completed : BillingStatus.Failed;
+        await db.SaveChangesAsync();
+
+        if (!captured) { error = "Payment capture failed. Please try again."; return; }
+
+        // Activate exactly what this payment bought (stored on the billing record).
+        var paidStates = ParseStates(billing.SelectedStateCodes);
+        var paidCategories = ParseCategories(billing.SelectedCategoryIds);
+
+        // Activate subscribed states (soft-add — deactivate states no longer subscribed)
+        var existing = await db.SubscribedStates
+            .Where(ss => ss.SubscriberId == billing.SubscriberId)
+            .ToListAsync();
+
+        foreach (var ss in existing) ss.IsActive = false;
+
+        foreach (var code in paidStates)
+        {
+            var name = availableStates.FirstOrDefault(s => s.StateCode == code).Name ?? code;
+            var existing2 = existing.FirstOrDefault(ss => ss.StateCode == code);
+            if (existing2 is not null)
+                existing2.IsActive = true;
+            else
+                db.SubscribedStates.Add(new SubscribedState
+                {
+                    SubscriberId = billing.SubscriberId,
+                    StateCode = code,
+                    StateName = name,
+                    IsActive = true,
+                    StartDate = DateTime.UtcNow.ToString("o")
+                });
+        }
+
+        // Activate subscribed categories
+        var existingCats = await db.SubscribedCategories
+            .Where(sc => sc.SubscriberId == billing.SubscriberId)
+            .ToListAsync();
+
+        foreach (var sc in existingCats) sc.IsActive = false;
+
+        var allLeaves = availableCategoryGroups.SelectMany(g => g.Leaves).ToList();
+        foreach (var catId in paidCategories)
+        {
+            var catName = allLeaves.FirstOrDefault(c => c.Id == catId)?.Name ?? "";
+            var existing2 = existingCats.FirstOrDefault(sc => sc.CategoryId == catId);
+            if (existing2 is not null)
+                existing2.IsActive = true;
+            else
+                db.SubscribedCategories.Add(new SubscribedCategory
+                {
+                    SubscriberId = billing.SubscriberId,
+                    CategoryId = catId,
+                    CategoryName = catName,
+                    IsActive = true,
+                    StartDate = DateTime.UtcNow.ToString("o")
+                });
+        }
+        await db.SaveChangesAsync();
+
+        ShowCompleted(billing);
+    }
+
+    private void ShowCompleted(BillingRecord billing)
+    {
+        selectedStates = ParseStates(billing.SelectedStateCodes);
+        selectedCategories = ParseCategories(billing.SelectedCategoryIds);
+        lastBillingRecord = billing;
+        step = 3;
     }
 }

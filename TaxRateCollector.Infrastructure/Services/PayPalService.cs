@@ -24,7 +24,8 @@ public class PayPalService(IDbContextFactory<AppDbContext> dbFactory, IHttpClien
         return cfg is { } c && !string.IsNullOrWhiteSpace(c.ClientId) && !string.IsNullOrWhiteSpace(c.ClientSecret);
     }
 
-    public async Task<PayPalOrderResult> CreateOrderAsync(decimal amount, string currency, string description)
+    public async Task<PayPalOrderResult> CreateOrderAsync(decimal amount, string currency, string description,
+        string? returnUrl = null, string? cancelUrl = null)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var cfg = await db.PayPalConfigs.OrderBy(x => x.Id).FirstOrDefaultAsync();
@@ -47,18 +48,29 @@ public class PayPalService(IDbContextFactory<AppDbContext> dbFactory, IHttpClien
             var http = httpFactory.CreateClient();
             http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-            var payload = new
+            var purchaseUnits = new[]
             {
-                intent = "CAPTURE",
-                purchase_units = new[]
+                new
                 {
-                    new
-                    {
-                        amount = new { currency_code = currency, value = amount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) },
-                        description
-                    }
+                    amount = new { currency_code = currency, value = amount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) },
+                    description
                 }
             };
+            // Without a return URL PayPal has nowhere to send the buyer after approval.
+            object payload = string.IsNullOrWhiteSpace(returnUrl)
+                ? new { intent = "CAPTURE", purchase_units = purchaseUnits }
+                : new
+                {
+                    intent = "CAPTURE",
+                    purchase_units = purchaseUnits,
+                    application_context = new
+                    {
+                        return_url  = returnUrl,
+                        cancel_url  = string.IsNullOrWhiteSpace(cancelUrl) ? returnUrl : cancelUrl,
+                        user_action = "PAY_NOW",
+                        shipping_preference = "NO_SHIPPING",
+                    }
+                };
 
             var resp = await http.PostAsJsonAsync($"{baseUrl}/v2/checkout/orders", payload);
             resp.EnsureSuccessStatusCode();
@@ -66,9 +78,20 @@ public class PayPalService(IDbContextFactory<AppDbContext> dbFactory, IHttpClien
             var doc = await resp.Content.ReadFromJsonAsync<JsonDocument>();
             var root = doc!.RootElement;
             var orderId = root.GetProperty("id").GetString()!;
-            var approvalUrl = root.GetProperty("links").EnumerateArray()
-                .FirstOrDefault(l => l.GetProperty("rel").GetString() == "approve")
-                .GetProperty("href").GetString();
+            string? approvalUrl = null;
+            if (root.TryGetProperty("links", out var links))
+                foreach (var l in links.EnumerateArray())
+                {
+                    var rel = l.TryGetProperty("rel", out var r) ? r.GetString() : null;
+                    if (rel is "approve" or "payer-action" && l.TryGetProperty("href", out var href))
+                    {
+                        approvalUrl = href.GetString();
+                        break;
+                    }
+                }
+
+            if (string.IsNullOrWhiteSpace(approvalUrl))
+                return new PayPalOrderResult(false, orderId, false, null, "PayPal returned no approval link for the order.");
 
             return new PayPalOrderResult(true, orderId, false, approvalUrl, null);
         }
@@ -105,7 +128,21 @@ public class PayPalService(IDbContextFactory<AppDbContext> dbFactory, IHttpClien
             var resp = await http.PostAsync($"{baseUrl}/v2/checkout/orders/{orderId}/capture",
                 new StringContent("{}", Encoding.UTF8, "application/json"));
 
-            return resp.IsSuccessStatusCode;
+            if (!resp.IsSuccessStatusCode)
+            {
+                log.LogWarning("PayPal capture of {OrderId} returned {Status}", orderId, (int)resp.StatusCode);
+                return false;
+            }
+
+            // A 2xx alone is not payment: only a COMPLETED order has moved the money.
+            using var doc = await resp.Content.ReadFromJsonAsync<JsonDocument>();
+            var status = doc?.RootElement.TryGetProperty("status", out var s) == true ? s.GetString() : null;
+            if (!string.Equals(status, "COMPLETED", StringComparison.OrdinalIgnoreCase))
+            {
+                log.LogWarning("PayPal capture of {OrderId} ended in status {Status}", orderId, status);
+                return false;
+            }
+            return true;
         }
         catch (Exception ex)
         {

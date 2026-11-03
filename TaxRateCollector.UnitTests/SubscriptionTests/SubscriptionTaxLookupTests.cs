@@ -214,8 +214,8 @@ public class SubscriptionTaxLookupTests
         // Selected states: CA, TX (2 states)
         var selectedStates = new[] { "CA", "TX" };
         var subtotal = selectedStates.Length * pricing.PricePerState; // 0.02
-        var taxAmount = subtotal * billingTaxRate;                     // 0.02 × 0.0625 = 0.00125
-        var total = subtotal + taxAmount;                              // 0.02125
+        var taxAmount = TaxRateCollector.Core.Billing.BillingMath.TaxAmount(subtotal, billingTaxRate); // 0.00125 -> 0.00
+        var total = TaxRateCollector.Core.Billing.BillingMath.Total(subtotal, billingTaxRate);         // 0.02
 
         var billing = new BillingRecord
         {
@@ -252,8 +252,8 @@ public class SubscriptionTaxLookupTests
         // Assertions
         Assert.That(billing.Subtotal, Is.EqualTo(0.02m));
         Assert.That(billing.TaxRate, Is.EqualTo(0.0625m));
-        Assert.That(billing.TaxAmount, Is.EqualTo(0.00125m));
-        Assert.That(billing.Total, Is.EqualTo(0.02125m));
+        Assert.That(billing.TaxAmount, Is.EqualTo(0.00m));
+        Assert.That(billing.Total, Is.EqualTo(0.02m));
         Assert.That(billing.Status, Is.EqualTo(Core.Enums.BillingStatus.Completed));
 
         var activeStates = await db.SubscribedStates

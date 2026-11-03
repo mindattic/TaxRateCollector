@@ -1,3 +1,5 @@
+using TaxRateCollector.Core.Billing;
+
 namespace TaxRateCollector.UnitTests.SubscriptionTests;
 
 /// <summary>
@@ -7,19 +9,19 @@ namespace TaxRateCollector.UnitTests.SubscriptionTests;
 [TestFixture]
 public class BillingCalculationTests
 {
-    // These mirror the computed properties in Subscribe.razor @code:
+    // Subscribe.razor @code uses these (tax rounded to cents at the final amount):
     //   PricePerMonth = selectedStates.Count * pricing.PricePerState
-    //   TaxAmount     = PricePerMonth * billingTaxRate
-    //   Total         = PricePerMonth + TaxAmount
+    //   TaxAmount     = BillingMath.TaxAmount(PricePerMonth, billingTaxRate)
+    //   Total         = BillingMath.Total(PricePerMonth, billingTaxRate)
 
     private static decimal PricePerMonth(int stateCount, decimal pricePerState)
         => stateCount * pricePerState;
 
     private static decimal TaxAmount(decimal pricePerMonth, decimal taxRate)
-        => pricePerMonth * taxRate;
+        => BillingMath.TaxAmount(pricePerMonth, taxRate);
 
     private static decimal Total(decimal pricePerMonth, decimal taxAmount)
-        => pricePerMonth + taxAmount;
+        => BillingMath.RoundToCents(pricePerMonth + taxAmount);
 
     // ── Subtotal ──────────────────────────────────────────────────────────────
 
@@ -44,8 +46,9 @@ public class BillingCalculationTests
     // ── Tax calculation ───────────────────────────────────────────────────────
 
     [Test]
-    [TestCase(0.03,  0.0625,  0.001875)]
-    [TestCase(0.50,  0.065,   0.0325)]
+    [TestCase(0.03,  0.0625,  0.00)]    // 0.001875 rounds to whole cents
+    [TestCase(0.50,  0.065,   0.03)]    // 0.0325
+    [TestCase(0.10,  0.05,    0.01)]    // 0.005 midpoint rounds away from zero
     [TestCase(0.10,  0.10,    0.01)]
     [TestCase(0.50,  0.0,     0.0)]     // no-tax state (e.g. Oregon)
     public void TaxAmount_MatchesSubtotalTimesRate(double subtotal, double rate, double expected)
@@ -66,10 +69,11 @@ public class BillingCalculationTests
     public void Total_IsSubtotalPlusTax()
     {
         var subtotal = PricePerMonth(3, 0.01m);   // $0.03
-        var tax      = TaxAmount(subtotal, 0.0625m); // $0.001875
+        var tax      = TaxAmount(subtotal, 0.0625m); // $0.001875 -> $0.00
         var total    = Total(subtotal, tax);
 
-        Assert.That(total, Is.EqualTo(0.031875m).Within(0.000001m));
+        Assert.That(total, Is.EqualTo(0.03m));
+        Assert.That(total, Is.EqualTo(BillingMath.Total(subtotal, 0.0625m)));
     }
 
     [Test]
@@ -93,8 +97,8 @@ public class BillingCalculationTests
         var tax   = TaxAmount(subtotal, 0.0625m);
         var total = Total(subtotal, tax);
 
-        Assert.That(tax,   Is.EqualTo(0.03125m).Within(0.000001m));
-        Assert.That(total, Is.EqualTo(0.53125m).Within(0.000001m));
+        Assert.That(tax,   Is.EqualTo(0.03m));   // 0.03125 rounded to cents
+        Assert.That(total, Is.EqualTo(0.53m));
     }
 
     [Test]
@@ -116,12 +120,13 @@ public class BillingCalculationTests
     // ── Decimal precision ─────────────────────────────────────────────────────
 
     [Test]
-    public void TaxAmount_DecimalPrecision_NotTruncated()
+    public void TaxAmount_RoundsToCents_MidpointAwayFromZero()
     {
-        // 0.03 × 0.0625 = 0.001875 — must not be truncated to 0.00
-        var result = TaxAmount(0.03m, 0.0625m);
-        Assert.That(result, Is.GreaterThan(0m));
-        Assert.That(result, Is.EqualTo(0.001875m));
+        // What is charged (PayPal, BillingRecord decimal(18,2)) is whole cents.
+        Assert.That(TaxAmount(0.03m, 0.0625m), Is.EqualTo(0.00m)); // 0.001875
+        Assert.That(TaxAmount(0.10m, 0.05m),   Is.EqualTo(0.01m)); // 0.005 -> away from zero
+        Assert.That(TaxAmount(1.00m, 0.0625m), Is.EqualTo(0.06m)); // 0.0625
+        Assert.That(TaxAmount(9.99m, 0.0825m), Is.EqualTo(0.82m)); // 0.824175
     }
 
     [Test]
@@ -149,8 +154,8 @@ public class BillingCalculationTests
         var total = Total(subtotal, tax);
 
         // Tax is on the service fee, not on the jurisdictions themselves
-        Assert.That(tax,   Is.EqualTo(0.001875m).Within(0.000001m));
-        Assert.That(total, Is.EqualTo(0.031875m).Within(0.000001m));
+        Assert.That(tax,   Is.EqualTo(0.00m));   // 0.001875 rounded to cents
+        Assert.That(total, Is.EqualTo(0.03m));
     }
 
     [Test]
