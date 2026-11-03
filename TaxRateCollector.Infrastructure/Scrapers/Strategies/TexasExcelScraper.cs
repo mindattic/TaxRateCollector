@@ -30,8 +30,10 @@ public class TexasExcelScraper(HttpClient httpClient, ILogger<TexasExcelScraper>
                 var rawRate = row.Cell(2).GetValue<string>().Trim();
                 var parsed = RateSanitizer.Parse(rawRate);
 
+                // The Comptroller's per-city workbook lists the total rate (state 6.25% + local),
+                // so the row is marked combined (TRC-LAW-6).
                 if (parsed.HasValue)
-                    results.Add(new RawScrapeResult(rawRate, parsed, "General", cityName, 0.8f));
+                    results.Add(new RawScrapeResult(rawRate, parsed, "General", cityName, 0.8f, IsCombined: true));
             }
         }
         catch (Exception ex)

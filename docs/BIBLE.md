@@ -131,7 +131,7 @@ Whenever the `DiffEngine` detects a changed, removed, or structurally-altered ra
 API keys (Anthropic, USPS, PayPal) resolve through `SettingsService` from `%APPDATA%\MindAttic\...` (the shared MindAttic credential store) or `IConfiguration` — never hard-coded or committed. (Specialises [HOUSE-LAW-3].) *(URL/settings defaults verified by `AppSettingsTests`.)*
 
 ### TRC-LAW-6 — Taxes are cumulative up the chain {#TRC-LAW-6}
-A point-of-sale rate is the sum of every applicable tier (State + County + City + districts), filtered by category taxability and sourcing rule. ZIP codes carry no rate themselves — they are a lookup index into the jurisdiction hierarchy. *(verified by `CombinedRate_City_SumsStatePlusCountyPlusCity`, `CombinedRate_StateOnly_ReturnsSingleRate`.)*
+A point-of-sale rate is the sum of every applicable tier (State + County + City + districts), filtered by category taxability and sourcing rule. ZIP codes carry no rate themselves — they are a lookup index into the jurisdiction hierarchy. A row whose source publishes a *combined* point-of-sale rate (state + local in one figure: the CA/IL/TX statewide strategies) is stored with `IsCombinedRate`; it stands in for itself and its ancestors' sales-tax percentages, so the chain never adds the state/county rates on top of it again (tiers below it and non-sales-tax rows still stack). *(verified by `CombinedRate_City_SumsStatePlusCountyPlusCity`, `CombinedRate_StateOnly_ReturnsSingleRate`.)*
 
 ### TRC-LAW-7 — Idempotent seeders and importers {#TRC-LAW-7}
 Startup seeders and Setup-pipeline importers check before inserting and may be re-run without duplicating data. *(verified by `SeedAsync_IsIdempotent`, `Hierarchy_SeederDoesNotSeedIfCountryExists`.)*

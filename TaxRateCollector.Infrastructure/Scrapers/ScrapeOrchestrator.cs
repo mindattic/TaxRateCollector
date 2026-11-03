@@ -394,6 +394,7 @@ public class ScrapeOrchestrator(
                 ScrapedAt       = DateTime.UtcNow.ToString("o"),
                 ScrapeRunId     = run.Id,
                 RawEvidence     = raw.RawValue,
+                IsCombinedRate  = raw.IsCombined,
                 IsCurrent       = true,
                 AutoApprove     = true,
             });

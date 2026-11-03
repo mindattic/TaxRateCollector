@@ -71,6 +71,26 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
             .ToList();
         if (rates.Count == 0) return null;
 
+        // ── Combined rows (TRC-LAW-6) ───────────────────────────────────────
+        // Some sources (CA/IL/TX statewide lists) publish one combined point-of-sale rate per
+        // locality. Such a row already contains every ancestor tier's sales tax, so the
+        // deepest combined row stands in for itself AND its ancestors' sales-tax percentages;
+        // rows below it (districts) and non-sales-tax rows (excise etc.) still stack.
+        var depthById = chain.Select((j, i) => (j.Id, i)).ToDictionary(p => p.Id, p => p.i);
+        var combined = rates
+            .Where(r => r.IsCombinedRate && IsChainSalesPercentage(r))
+            .OrderBy(r => depthById[r.JurisdictionId])
+            .FirstOrDefault();
+        if (combined is not null)
+        {
+            var combinedDepth = depthById[combined.JurisdictionId];
+            rates = rates
+                .Where(r => ReferenceEquals(r, combined)
+                            || !IsChainSalesPercentage(r)
+                            || (!r.IsCombinedRate && depthById[r.JurisdictionId] < combinedDepth))
+                .ToList();
+        }
+
         // ── Filter by SaleContext and ABV ───────────────────────────────────
         if (options.SaleContext != SaleContext.Any)
             rates = rates
@@ -102,8 +122,9 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
                 retailSubtotal += tax;
 
             // Local tier (County / City / District) percentage taxes count toward a state's
-            // combined local-rate cap unless the row says it is statutorily excluded.
-            if (IsLocalTier(tierById[r.JurisdictionId]) &&
+            // combined local-rate cap unless the row says it is statutorily excluded. A combined
+            // row includes the state rate, so it is not a local portion and is never capped.
+            if (!r.IsCombinedRate && IsLocalTier(tierById[r.JurisdictionId]) &&
                 r.RateBasis == RateBasis.Percentage && !r.IsIncludedInPrice &&
                 r.CountsTowardLocalCap != false)
                 localLines.Add((line, r.Rate));
@@ -170,6 +191,11 @@ public class TaxCalculator(IDbContextFactory<AppDbContext> dbFactory) : ITaxCalc
 
         return chain;
     }
+
+    /// <summary>A retail sales-tax percentage: the kind of row a combined rate already includes.</summary>
+    private static bool IsChainSalesPercentage(TaxRate r) =>
+        r.TaxType == TaxType.SalesTax && r.RateBasis == RateBasis.Percentage
+        && !r.IsIncludedInPrice && !r.IsCompound;
 
     private static bool IsLocalTier(JurisdictionType t) =>
         t is JurisdictionType.County or JurisdictionType.City or JurisdictionType.District;

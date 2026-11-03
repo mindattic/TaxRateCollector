@@ -33,8 +33,10 @@ public class CaliforniaCsvScraper(HttpClient httpClient, ILogger<CaliforniaCsvSc
                 var rawRate = csv.GetField("Rate") ?? string.Empty;
                 var parsed = RateSanitizer.Parse(rawRate);
 
+                // CDTFA's per-city list publishes the total rate (state 7.25% + local), not the
+                // city's own portion, so the row is marked combined (TRC-LAW-6).
                 if (parsed.HasValue)
-                    results.Add(new RawScrapeResult(rawRate, parsed, "General", cityName, 0.85f));
+                    results.Add(new RawScrapeResult(rawRate, parsed, "General", cityName, 0.85f, IsCombined: true));
             }
         }
         catch (Exception ex)

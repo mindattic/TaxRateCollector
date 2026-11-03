@@ -225,6 +225,14 @@ public class TaxRate
     /// </summary>
     public bool IsRejected { get; set; }
 
+    /// <summary>
+    /// True when <see cref="Rate"/> is a published COMBINED point-of-sale rate (state + county +
+    /// city + districts in one figure, e.g. CDTFA's per-city list) rather than this tier's own
+    /// portion. Under TRC-LAW-6 the calculator sums the chain, so it does not add the ancestors'
+    /// sales-tax percentages on top of a combined row. False (the default) = own portion only.
+    /// </summary>
+    public bool IsCombinedRate { get; set; }
+
     // ── Navigation ────────────────────────────────────────────────────────────
     public Jurisdiction Jurisdiction { get; set; } = null!;
     public ScrapeRun ScrapeRun { get; set; } = null!;

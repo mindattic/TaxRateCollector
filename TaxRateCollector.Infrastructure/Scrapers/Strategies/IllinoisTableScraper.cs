@@ -35,8 +35,10 @@ public class IllinoisTableScraper(HttpClient httpClient, ILogger<IllinoisTableSc
                 var rawRate = cells[1].InnerText.Trim();
                 var parsed = RateSanitizer.Parse(rawRate);
 
+                // The per-county table lists the total rate (state 6.25% + local, e.g. Cook
+                // 10.25%), so the row is marked combined (TRC-LAW-6).
                 if (parsed.HasValue)
-                    results.Add(new RawScrapeResult(rawRate, parsed, "General", countyName, 0.9f));
+                    results.Add(new RawScrapeResult(rawRate, parsed, "General", countyName, 0.9f, IsCombined: true));
             }
         }
         catch (Exception ex)

@@ -423,7 +423,8 @@ else if (!isAdmin && HasUnsubscribedContent)
         List<EvidenceFile> Evidence,
         ProductCategory? ProductCategory = null,
         TaxType TaxType = TaxType.SalesTax,
-        SourceConfidence SourceConfidence = SourceConfidence.Official);
+        SourceConfidence SourceConfidence = SourceConfidence.Official,
+        bool IsCombined = false);
 
     private sealed class StagedItem
     {
@@ -440,8 +441,17 @@ else if (!isAdmin && HasUnsubscribedContent)
         int ExciseCount = 0);
     private sealed record CategoryItem(int Id, string Name, string TopLevelType, int? ParentId, bool IsLeaf, int SortOrder);
 
-    private static decimal NodePctSum(JNode node) =>
-        node.Rates.Where(r => r.Basis == RateBasis.Percentage).Sum(r => r.Rate);
+    /// <summary>
+    /// The cumulative point-of-sale percentage at a node (TRC-LAW-6): the parent's cumulative
+    /// plus this node's own percentages, unless the node carries a COMBINED rate (state + local
+    /// already in one figure), which then is the whole cumulative on its own.
+    /// </summary>
+    private static decimal NodeCumulative(decimal parentCumulative, IEnumerable<RateRow> rows)
+    {
+        var pct = rows.Where(r => r.Basis == RateBasis.Percentage).ToList();
+        var combined = pct.Where(r => r.IsCombined).ToList();
+        return combined.Count > 0 ? combined.Max(r => r.Rate) : parentCumulative + pct.Sum(r => r.Rate);
+    }
 
     // ── State ──────────────────────────────────────────────────────────────────
     private bool loading = true;
@@ -640,7 +650,7 @@ else if (!isAdmin && HasUnsubscribedContent)
                      && (r.ExpirationDate == null || r.ExpirationDate > today))
             .Select(r => new { r.JurisdictionId, r.Rate, r.Id, r.Name, r.RateBasis, r.Unit,
                 r.SaleContext, r.RemittancePoint, r.MinAbv, r.MaxAbv, r.Conditions,
-                r.StatutoryReference, r.SourceConfidence,
+                r.StatutoryReference, r.SourceConfidence, r.IsCombinedRate,
                 EffectiveDate = r.EffectiveDate != null ? r.EffectiveDate.Value.ToString() : "",
                 ExpirationDate = r.ExpirationDate != null ? r.ExpirationDate.Value.ToString() : "" })
             .ToListAsync();
@@ -664,7 +674,8 @@ else if (!isAdmin && HasUnsubscribedContent)
                         .Select(d => new EvidenceFile(d.Id, d.FileName, d.OriginalFileName,
                             d.EvidenceType, d.SourceUrl, d.RawContent, d.SourceType.ToString(), d.FetchedAt))
                         .ToList(),
-                    SourceConfidence: r.SourceConfidence))
+                    SourceConfidence: r.SourceConfidence,
+                    IsCombined: r.IsCombinedRate))
                 .ToList());
 
         // Excise rate counts per jurisdiction (drives badge without requiring a toggle click)
@@ -677,37 +688,28 @@ else if (!isAdmin && HasUnsubscribedContent)
             .Select(g => new { JId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.JId, x => x.Count);
 
-        // Compute child ranges
+        // Each node's own cumulative rate (TRC-LAW-6; a combined row stands alone).
+        var ownCumById = jurisdictions.ToDictionary(j => j.Id,
+            j => NodeCumulative(type == JurisdictionType.State ? 0m : parentCumulative,
+                                ratesByJurisdiction.GetValueOrDefault(j.Id, [])));
+
+        // Compute child ranges (absolute cumulative rates of the descendants)
         Dictionary<int, (decimal Min, decimal Max)> subRangeMap = [];
         if (type == JurisdictionType.State && subscribedIds.Count > 0)
-            subRangeMap = await ComputeStateSubRangesAsync(db, subscribedIds);
+            subRangeMap = await ComputeStateSubRangesAsync(db, subscribedIds, ownCumById);
         else if (type == JurisdictionType.County && ids.Count > 0)
-            subRangeMap = await ComputeCountySubRangesAsync(db, ids);
+            subRangeMap = await ComputeCountySubRangesAsync(db, ids, ownCumById);
 
         return jurisdictions.Select(j =>
         {
             var nodeRates = ratesByJurisdiction.GetValueOrDefault(j.Id, []);
-            var myRate = nodeRates.Where(r => r.Basis == RateBasis.Percentage).Sum(r => r.Rate);
-            decimal? minCum = null, maxCum = null;
+            var ownCum = ownCumById[j.Id];
+            decimal? minCum, maxCum;
 
-            if (type == JurisdictionType.State)
-            {
-                if (subRangeMap.TryGetValue(j.Id, out var sr))
-                { minCum = myRate + sr.Min; maxCum = myRate + sr.Max; }
-                else
-                { minCum = maxCum = myRate; }
-            }
-            else if (type == JurisdictionType.County)
-            {
-                if (subRangeMap.TryGetValue(j.Id, out var cr))
-                { minCum = parentCumulative + myRate + cr.Min; maxCum = parentCumulative + myRate + cr.Max; }
-                else
-                { minCum = maxCum = parentCumulative + myRate; }
-            }
-            else if (type == JurisdictionType.City)
-            {
-                minCum = maxCum = parentCumulative + myRate;
-            }
+            if (type != JurisdictionType.City && subRangeMap.TryGetValue(j.Id, out var sr))
+            { minCum = sr.Min; maxCum = sr.Max; }
+            else
+            { minCum = maxCum = ownCum; }
 
             return new JNode(j.Id, j.JurisdictionName, j.StateCode, j.FipsCode, type,
                 nodeRates, parentCumulative, minCum, maxCum,
@@ -716,8 +718,10 @@ else if (!isAdmin && HasUnsubscribedContent)
     }
 
     // ── Range computation helpers ──────────────────────────────────────────────
+    // Both helpers return ABSOLUTE cumulative rates (TRC-LAW-6): parent cumulative + the child's
+    // own portion, or the child's combined rate alone when it carries one.
     private async Task<Dictionary<int, (decimal Min, decimal Max)>> ComputeStateSubRangesAsync(
-        AppDbContext db, List<int> stateIds)
+        AppDbContext db, List<int> stateIds, IReadOnlyDictionary<int, decimal> stateCumById)
     {
         var catId = selectedCategoryId;
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -733,7 +737,13 @@ else if (!isAdmin && HasUnsubscribedContent)
                              && r.RateBasis == RateBasis.Percentage && r.AutoApprove
                              && (r.EffectiveDate == null || r.EffectiveDate <= today)
                              && (r.ExpirationDate == null || r.ExpirationDate > today))
-                    .Sum(r => (decimal?)r.Rate) ?? 0m
+                    .Sum(r => (decimal?)r.Rate) ?? 0m,
+                CombinedRate = db.TaxRates
+                    .Where(r => r.JurisdictionId == co.Id && r.IsCurrent && r.TaxCategoryId == catId
+                             && r.RateBasis == RateBasis.Percentage && r.AutoApprove && r.IsCombinedRate
+                             && (r.EffectiveDate == null || r.EffectiveDate <= today)
+                             && (r.ExpirationDate == null || r.ExpirationDate > today))
+                    .Max(r => (decimal?)r.Rate)
             })
             .ToListAsync();
 
@@ -752,35 +762,38 @@ else if (!isAdmin && HasUnsubscribedContent)
                              && r.RateBasis == RateBasis.Percentage && r.AutoApprove
                              && (r.EffectiveDate == null || r.EffectiveDate <= today)
                              && (r.ExpirationDate == null || r.ExpirationDate > today))
-                    .Sum(r => (decimal?)r.Rate) ?? 0m
+                    .Sum(r => (decimal?)r.Rate) ?? 0m,
+                CombinedRate = db.TaxRates
+                    .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent && r.TaxCategoryId == catId
+                             && r.RateBasis == RateBasis.Percentage && r.AutoApprove && r.IsCombinedRate
+                             && (r.EffectiveDate == null || r.EffectiveDate <= today)
+                             && (r.ExpirationDate == null || r.ExpirationDate > today))
+                    .Max(r => (decimal?)r.Rate)
             })
             .ToListAsync();
 
-        var cityByCounty = cities
-            .GroupBy(c => c.CountyId)
-            .ToDictionary(g => g.Key, g => (
-                Min: g.Min(c => c.Rate),
-                Max: g.Max(c => c.Rate)));
+        var citiesByCounty = cities.GroupBy(c => c.CountyId).ToDictionary(g => g.Key, g => g.ToList());
 
         return counties
             .GroupBy(c => c.StateId)
             .ToDictionary(g => g.Key, g =>
             {
+                var stateCum = stateCumById.GetValueOrDefault(g.Key);
                 var all = g.SelectMany(co =>
                 {
-                    var cr = co.Rate;
-                    return cityByCounty.TryGetValue(co.CountyId, out var city)
-                        ? new[] { cr + city.Min, cr + city.Max }
-                        : new[] { cr };
+                    var countyCum = co.CombinedRate ?? stateCum + co.Rate;
+                    return citiesByCounty.TryGetValue(co.CountyId, out var cs)
+                        ? cs.Select(ci => ci.CombinedRate ?? countyCum + ci.Rate).ToArray()
+                        : new[] { countyCum };
                 }).ToList();
                 return all.Count > 0
                     ? (Min: all.Min(), Max: all.Max())
-                    : (Min: 0m, Max: 0m);
+                    : (Min: stateCum, Max: stateCum);
             });
     }
 
     private async Task<Dictionary<int, (decimal Min, decimal Max)>> ComputeCountySubRangesAsync(
-        AppDbContext db, List<int> countyIds)
+        AppDbContext db, List<int> countyIds, IReadOnlyDictionary<int, decimal> countyCumById)
     {
         var catId = selectedCategoryId;
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -796,7 +809,13 @@ else if (!isAdmin && HasUnsubscribedContent)
                              && r.RateBasis == RateBasis.Percentage && r.AutoApprove
                              && (r.EffectiveDate == null || r.EffectiveDate <= today)
                              && (r.ExpirationDate == null || r.ExpirationDate > today))
-                    .Sum(r => (decimal?)r.Rate) ?? 0m
+                    .Sum(r => (decimal?)r.Rate) ?? 0m,
+                CombinedRate = db.TaxRates
+                    .Where(r => r.JurisdictionId == ci.Id && r.IsCurrent && r.TaxCategoryId == catId
+                             && r.RateBasis == RateBasis.Percentage && r.AutoApprove && r.IsCombinedRate
+                             && (r.EffectiveDate == null || r.EffectiveDate <= today)
+                             && (r.ExpirationDate == null || r.ExpirationDate > today))
+                    .Max(r => (decimal?)r.Rate)
             })
             .ToListAsync();
 
@@ -834,8 +853,9 @@ else if (!isAdmin && HasUnsubscribedContent)
             .GroupBy(c => c.CountyId)
             .ToDictionary(g => g.Key, g =>
             {
-                var min = g.Min(c => c.Rate);
-                var max = g.Max(c => c.Rate + (districtMaxByCityId.GetValueOrDefault(c.CityId)));
+                var countyCum = countyCumById.GetValueOrDefault(g.Key);
+                var min = g.Min(c => c.CombinedRate ?? countyCum + c.Rate);
+                var max = g.Max(c => (c.CombinedRate ?? countyCum + c.Rate) + (districtMaxByCityId.GetValueOrDefault(c.CityId)));
                 return (Min: min, Max: max);
             });
     }
@@ -861,7 +881,7 @@ else if (!isAdmin && HasUnsubscribedContent)
             var stateNode = states.FirstOrDefault(s => s.Id == stateId);
             await using var db = await DbFactory.CreateDbContextAsync();
             children[stateId] = await BuildNodes(db, JurisdictionType.County, parentId: stateId,
-                parentCumulative: stateNode is null ? 0m : NodePctSum(stateNode));
+                parentCumulative: stateNode is null ? 0m : NodeCumulative(0m, stateNode.Rates));
         }
         await EnsureExciseLoadedAsync(stateId);
     }
@@ -872,7 +892,7 @@ else if (!isAdmin && HasUnsubscribedContent)
         if (!children.ContainsKey(countyId))
         {
             var countyNode = children.Values.SelectMany(l => l).FirstOrDefault(n => n.Id == countyId);
-            var parentCum = (countyNode?.ParentCumulative ?? 0m) + (countyNode is null ? 0m : NodePctSum(countyNode));
+            var parentCum = countyNode is null ? 0m : NodeCumulative(countyNode.ParentCumulative, countyNode.Rates);
             await using var db = await DbFactory.CreateDbContextAsync();
             children[countyId] = await BuildNodes(db, JurisdictionType.City, parentId: countyId,
                 parentCumulative: parentCum);
@@ -1847,6 +1867,8 @@ else if (!isAdmin && HasUnsubscribedContent)
                 // Same rows the calculator applies: approved sales-tax percentages only. Pending-review
                 // rows and excise percentages (ProductCategory set) are not part of the master rate.
                 Rate = (decimal?)db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent && r.AutoApprove && r.ProductCategory == null && r.RateBasis == RateBasis.Percentage).Sum(r => (decimal?)r.Rate),
+                // A combined row (state + local in one figure) already includes every ancestor (TRC-LAW-6).
+                CombinedRowRate = db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent && r.AutoApprove && r.ProductCategory == null && r.RateBasis == RateBasis.Percentage && r.IsCombinedRate).Max(r => (decimal?)r.Rate),
                 EffectiveDate = db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent).Select(r => r.EffectiveDate != null ? r.EffectiveDate.Value.ToString() : "").FirstOrDefault() ?? "",
                 AnyRateId = (int?)db.TaxRates.Where(r => r.JurisdictionId == j.Id && r.IsCurrent).Select(r => r.Id).FirstOrDefault()
             })
@@ -1860,16 +1882,22 @@ else if (!isAdmin && HasUnsubscribedContent)
         var evidencedSet = evidencedRateIds.ToHashSet();
 
         var rateById = jurisdictions.ToDictionary(j => j.Id, j => j.Rate);
+        var combinedRowById = jurisdictions.ToDictionary(j => j.Id, j => j.CombinedRowRate);
         var parentById = jurisdictions.ToDictionary(j => j.Id, j => j.ParentId);
 
+        // Walk up the chain summing each tier; a tier with a combined row contributes that
+        // figure and stops the walk (its ancestors are already inside it).
         decimal? CombinedFor(int id)
         {
-            var total = rateById.GetValueOrDefault(id) ?? 0;
-            var cur = id;
-            while (parentById.TryGetValue(cur, out var pid) && pid.HasValue)
+            decimal total = 0;
+            var seen = new HashSet<int>();
+            int? cur = id;
+            while (cur.HasValue && seen.Add(cur.Value))
             {
-                total += rateById.GetValueOrDefault(pid.Value) ?? 0;
-                cur = pid.Value;
+                if (combinedRowById.GetValueOrDefault(cur.Value) is { } combinedRow)
+                    return total + combinedRow;
+                total += rateById.GetValueOrDefault(cur.Value) ?? 0;
+                cur = parentById.TryGetValue(cur.Value, out var pid) ? pid : null;
             }
             return total;
         }

@@ -937,6 +937,9 @@ namespace TaxRateCollector.Infrastructure.Migrations
                         .HasPrecision(18, 6)
                         .HasColumnType("decimal(18,6)");
 
+                    b.Property<bool>("IsCombinedRate")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsCompound")
                         .HasColumnType("bit");
 
