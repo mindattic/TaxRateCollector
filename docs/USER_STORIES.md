@@ -116,4 +116,5 @@ updated: 2026-10-03
 | TRC-T39 | 2026-11-02 | fix | closed | Fix the open items the 2026-11-02 bughunt left for decision (combined-rate scrapers vs TRC-LAW-6 chain sum) | — |
 | TRC-T40 | 2026-11-03 | fix | closed | Apply the pending EF migrations (20261103044155_SoftRejectPayPalSelectionAndWiNames, 20261103052018_MarkCombinedStrategyRates) to the live database | — |
 | TRC-T41 | 2026-11-10 | chore | closed | Crash recovery: commit the command-catalog sync (.agent/commands/*.md) and regenerated docs/USER_STORIES.md left uncommitted by the session crash | — |
-| TRC-T42 | 2026-11-10 | chore | open | Crash recovery: commit the command-catalog sync (.agent/commands/*.md) and regenerated docs/USER_STORIES.md left uncommitted by the session crash | — |
+| TRC-T42 | 2026-11-10 | chore | closed | Crash recovery: commit the command-catalog sync (.agent/commands/*.md) and regenerated docs/USER_STORIES.md left uncommitted by the session crash | — |
+| TRC-T43 | 2026-11-10 | chore | open | Crash recovery / fleet sync: commit the regenerated docs/USER_STORIES.md left uncommitted after other tickets closed elsewhere | — |
