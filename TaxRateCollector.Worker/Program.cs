@@ -18,7 +18,7 @@ builder.Services.AddSerilog();
 var connStr = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
-builder.Services.AddDbContextFactory<AppDbContext>(opts => opts.UseSqlServer(connStr));
+builder.Services.AddDbContextFactory<AppDbContext>(opts => opts.UseSqlServer(connStr, sql => sql.EnableRetryOnFailure()));
 
 // LAMP (TRC-T29): same Vault settings and named keys as the site.
 MindAttic.Vault.Credentials.KeyImporter.ImportAppScopedFor(AppSettings.AppId);

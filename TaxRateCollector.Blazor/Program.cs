@@ -64,7 +64,7 @@ builder.Services.AddCascadingAuthenticationState();
 var connStr = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
-builder.Services.AddDbContextFactory<AppDbContext>(opts => opts.UseSqlServer(connStr));
+builder.Services.AddDbContextFactory<AppDbContext>(opts => opts.UseSqlServer(connStr, sql => sql.EnableRetryOnFailure()));
 // Scoped registration required by ASP.NET Core Identity stores
 builder.Services.AddScoped<AppDbContext>(sp =>
     sp.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext());

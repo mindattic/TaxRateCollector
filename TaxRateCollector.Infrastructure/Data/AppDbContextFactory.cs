@@ -12,7 +12,7 @@ public class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
             ?? @"Server=(localdb)\MSSQLLocalDB;Database=TaxRateCollector;Trusted_Connection=True;";
 
         var opts = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlServer(connStr)
+            .UseSqlServer(connStr, sql => sql.EnableRetryOnFailure())
             .Options;
         return new AppDbContext(opts);
     }
