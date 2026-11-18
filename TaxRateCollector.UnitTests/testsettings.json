@@ -1,5 +1,5 @@
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=(localdb)\\MSSQLLocalDB;Database=TaxRateCollector;Trusted_Connection=True;MultipleActiveResultSets=True;"
+    "DefaultConnection": "Server=tcp:sql-mindattic-f65744.database.windows.net,1433;Database=TaxRateCollector;Authentication=Active Directory Default;Encrypt=True;Connect Timeout=60;MultipleActiveResultSets=True;"
   }
 }

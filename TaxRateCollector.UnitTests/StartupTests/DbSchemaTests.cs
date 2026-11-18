@@ -3,7 +3,8 @@ using Microsoft.Data.SqlClient;
 namespace TaxRateCollector.UnitTests.StartupTests;
 
 /// <summary>
-/// Raw SQL Server schema checks against LocalDB.
+/// Raw SQL Server schema checks against the development database (Azure SQL, testsettings.json).
+/// Read-only: every statement is a SELECT.
 /// Catches migration gaps, missing columns, and missing indexes.
 /// Run with: dotnet test --filter Category=Integration
 /// </summary>

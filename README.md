@@ -2,7 +2,7 @@
 
 Blazor Server app that keeps a US sales and excise tax rate database where every rate carries the official .gov source document it came from, SHA-256 hashed and timestamped.
 
-[![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com/) [![Blazor Server](https://img.shields.io/badge/Blazor-Server-512BD4)](https://learn.microsoft.com/aspnet/core/blazor/) [![EF Core 10](https://img.shields.io/badge/EF%20Core-10-512BD4)](https://learn.microsoft.com/ef/core/) [![SQL Server](https://img.shields.io/badge/SQL%20Server-LocalDB%20and%20Azure%20SQL-CC2927)](https://learn.microsoft.com/sql/) [![Status](https://img.shields.io/badge/status-active%20development-yellow)](docs/BIBLE.md)
+[![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com/) [![Blazor Server](https://img.shields.io/badge/Blazor-Server-512BD4)](https://learn.microsoft.com/aspnet/core/blazor/) [![EF Core 10](https://img.shields.io/badge/EF%20Core-10-512BD4)](https://learn.microsoft.com/ef/core/) [![SQL Server](https://img.shields.io/badge/SQL%20Server-Azure%20SQL-CC2927)](https://learn.microsoft.com/sql/) [![Status](https://img.shields.io/badge/status-active%20development-yellow)](docs/BIBLE.md)
 
 ```text
    official .gov source (PDF / CSV / XLSX / HTML / API)
@@ -57,7 +57,7 @@ Most tax-rate APIs hand you a number. TaxRateCollector keeps the number together
 Prerequisites:
 
 - .NET 10 SDK.
-- SQL Server LocalDB (`sqllocaldb create MSSQLLocalDB`) for local development.
+- The Azure CLI, signed in (`az login`) with an account that can open the `TaxRateCollector` database on `sql-mindattic-f65744.database.windows.net`. Development uses that database; no local SQL Server is needed.
 - Optional: an Anthropic key resolvable through the shared MindAttic credential store (`MindAttic.Vault`) for AI rate-law extraction. Without one, `StubRateLawExtractor` is used and nothing throws.
 
 ```powershell
@@ -91,7 +91,7 @@ For a fully seeded database without the long import, restore the local `.bacpac`
 | It is | It is not |
 |---|---|
 | A Blazor Server app plus a background Worker that maintain an evidence-backed master table of US sales and excise tax rates | A live public tax-calculation REST or GraphQL API; there is no such endpoint yet ([TRC-US-G1](docs/USER_STORIES.md), backlog) |
-| Backed by SQL Server (LocalDB in dev, Azure SQL in prod) via EF Core 10 | A SQLite app; SQL Server is the only datastore ([TRC-LAW-8](docs/BIBLE.md#TRC-LAW-8)) |
+| Backed by SQL Server (Azure SQL in dev and prod) via EF Core 10 | A SQLite app; SQL Server is the only datastore ([TRC-LAW-8](docs/BIBLE.md#TRC-LAW-8)) |
 | A soft-delete system: rates retire (`IsCurrent=false`), jurisdictions deactivate (`IsActive=false`) | A hard-delete system ([TRC-LAW-2](docs/BIBLE.md#TRC-LAW-2)) |
 | Provider-agnostic for LLM calls, via `MindAttic.Legion` | Locked to any one LLM vendor SDK ([TRC-LAW-3](docs/BIBLE.md#TRC-LAW-3)) |
 
@@ -109,7 +109,7 @@ For a fully seeded database without the long import, restore the local `.bacpac`
 | TaxRateCollector |   | TaxRateCollector      |   | TaxRateCollector     |
 | .Worker          |   | .Infrastructure       |   | .UnitTests           |
 | (front door:     |   | EF Core 10, scrapers, |   | NUnit 4, InMemory +  |
-|  background)     |   | seeders, services     |   | LocalDB integration  |
+|  background)     |   | seeders, services     |   | Azure SQL integration|
 +--------+---------+   +----------+------------+   +----------------------+
          |                        |
          |             +----------v-----------+
@@ -118,7 +118,7 @@ For a fully seeded database without the long import, restore the local `.bacpac`
                        +----------------------+
                                   |
                           +-------v--------+
-                          |  SQL Server    |  LocalDB (dev) / Azure SQL (prod)
+                          |  SQL Server    |  Azure SQL (dev and prod)
                           +----------------+
 ```
 
@@ -131,7 +131,7 @@ The Blazor host and the Worker are two front doors over one engine: both registe
 | Target framework | `net10.0` (all five projects) |
 | UI | ASP.NET Core 10, Blazor Server (`InteractiveServer` render mode) |
 | ORM | EF Core 10 (`Microsoft.EntityFrameworkCore.SqlServer`) |
-| Database | SQL Server LocalDB (dev) or Azure SQL (prod); no SQLite path |
+| Database | Azure SQL (dev and prod); no SQLite path |
 | PDF extraction | `UglyToad.PdfPig` 1.7.0-custom-5 |
 | XLSX export | `ClosedXML` 0.105.0 |
 | HTML scraping | `HtmlAgilityPack` 1.12.4 |
@@ -140,7 +140,7 @@ The Blazor host and the Worker are two front doors over one engine: both registe
 | Auth | ASP.NET Core Identity (`IdentityUser`, `IdentityRole`, cookie auth) |
 | LLM extraction | `MindAttic.Legion` 25.0.0 (`LegionClient`), never a raw vendor SDK |
 | Credentials | `MindAttic.Vault` 4.0.0 |
-| Testing | NUnit 4.3.2, `Microsoft.EntityFrameworkCore.InMemory`, LocalDB integration, `Microsoft.Data.SqlClient` |
+| Testing | NUnit 4.3.2, `Microsoft.EntityFrameworkCore.InMemory`, integration tests against the Azure SQL development database, `Microsoft.Data.SqlClient` |
 
 ### Data pipeline
 
@@ -173,7 +173,7 @@ The Setup page runs these steps in order:
 | 5. Assign source URLs | Set `Jurisdiction.SourceUrl` for each state on the Jurisdictions page |
 | 6. Run scrape | `ScrapeOrchestrator` dispatches every active jurisdiction with a source URL to the matching `IScrapeStrategy` or `IStateBulkScraper` |
 
-Census gazetteer files are cached to `%APPDATA%\MindAttic\TaxRateCollector\cache\` after the first download. Per [TRC-US-B3](docs/USER_STORIES.md), full-corpus population (~3,144 counties and 10,000+ cities) is a live-download integration step that the default unit test run does not assert; run it and verify manually, or through the `Category=Integration` tests against LocalDB.
+Census gazetteer files are cached to `%APPDATA%\MindAttic\TaxRateCollector\cache\` after the first download. Per [TRC-US-B3](docs/USER_STORIES.md), full-corpus population (~3,144 counties and 10,000+ cities) is a live-download integration step that the default unit test run does not assert; run it and verify manually, or through the `Category=Integration` tests against the development database.
 
 ## Command line switches
 
@@ -223,9 +223,11 @@ Both `TaxRateCollector.Blazor` and `TaxRateCollector.Worker` read `ConnectionStr
 
 ```json
 "ConnectionStrings": {
-  "DefaultConnection": "Server=(localdb)\\MSSQLLocalDB;Database=TaxRateCollector;Trusted_Connection=True;MultipleActiveResultSets=True;"
+  "DefaultConnection": "Server=tcp:sql-mindattic-f65744.database.windows.net,1433;Database=TaxRateCollector;Authentication=Active Directory Default;Encrypt=True;Connect Timeout=60;MultipleActiveResultSets=True;"
 }
 ```
+
+There is no secret in it: `Active Directory Default` signs in with your own `az login`. The databases are serverless and pause when idle, so the first connection after a pause can take about a minute. `dotnet ef` (`AppDbContextFactory`) and the integration tests (`TaxRateCollector.UnitTests/testsettings.json`) use the same database.
 
 Production resolves the same key from environment variables or Azure Key Vault with no code changes (`UseSqlServer` throughout).
 
@@ -247,16 +249,15 @@ The on-disk migration history in `TaxRateCollector.Infrastructure/Migrations/` r
 
 ### Bacpac backup
 
-`TaxRateCollector.bacpac` at the repo root is a SQL Server data-tier application package: a portable snapshot of schema and data. Restore it with `sqlpackage` (ships with SQL Server, SSMS or the `Microsoft.SqlPackage` dotnet tool):
+`TaxRateCollector.bacpac` at the repo root is a SQL Server data-tier application package: a portable snapshot of schema and data. The development database in Azure is already seeded, so a fresh clone needs no restore. To load the snapshot into another, empty SQL Server database, use `sqlpackage` (the `Microsoft.SqlPackage` dotnet tool):
 
 ```powershell
 sqlpackage /Action:Import `
     /SourceFile:TaxRateCollector.bacpac `
-    /TargetServerName:"(localdb)\MSSQLLocalDB" `
-    /TargetDatabaseName:TaxRateCollector
+    /TargetConnectionString:"<connection string of the empty target database>"
 ```
 
-This is the fastest way to a fully seeded local database without the Setup pipeline's 20 to 40 minute Census and ZIP import. The file is gitignored (`/TaxRateCollector.bacpac`): it exists in a working copy that made one, not in a fresh clone, and is never committed.
+This is the fastest way to a fully seeded database of your own without the Setup pipeline's 20 to 40 minute Census and ZIP import. The file is gitignored (`/TaxRateCollector.bacpac`): it exists in a working copy that made one, not in a fresh clone, and is never committed.
 
 ## Configuration
 
@@ -352,7 +353,7 @@ dotnet run --project TaxRateCollector.Worker
 # Unit tests (no SQL required: EF Core InMemory and pure logic)
 dotnet test TaxRateCollector.UnitTests --filter "Category!=Integration"
 
-# Integration tests (requires LocalDB with migrations applied)
+# Integration tests (read the Azure SQL development database; needs az login)
 dotnet test TaxRateCollector.UnitTests --filter Category=Integration
 ```
 
@@ -369,7 +370,7 @@ az webapp create --name taxratecollector `
     --plan asp-taxratecollector --runtime "DOTNETCORE:10.0"
 ```
 
-Store the SQL connection string in Azure Key Vault and reference it via `ConnectionStrings:DefaultConnection`. The app uses `UseSqlServer` throughout, so no code changes are needed to run against Azure SQL instead of LocalDB.
+Store the SQL connection string in Azure Key Vault and reference it via `ConnectionStrings:DefaultConnection`. The app uses `UseSqlServer` throughout, so no code changes are needed to run against a different SQL Server.
 
 ## Limitations
 

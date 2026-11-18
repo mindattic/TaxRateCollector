@@ -4,7 +4,9 @@ using TaxRateCollector.Infrastructure.Data;
 namespace TaxRateCollector.UnitTests.StartupTests;
 
 /// <summary>
-/// Verifies the EF Core migration state is consistent against SQL Server LocalDB.
+/// Verifies the EF Core migration state is consistent against the development database (Azure SQL,
+/// testsettings.json). Read-only: it lists pending and applied migrations and reads
+/// INFORMATION_SCHEMA; it never applies a migration or creates or drops anything.
 /// Run with: dotnet test --filter Category=Integration
 /// </summary>
 [TestFixture]

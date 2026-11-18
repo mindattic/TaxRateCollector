@@ -7,7 +7,8 @@ namespace TaxRateCollector.UnitTests.SetupTests;
 
 /// <summary>
 /// Integration tests that verify seed data is correctly populated in SQL Server.
-/// Requires a running SQL Server LocalDB with an up-to-date schema.
+/// Runs against the development database (Azure SQL, testsettings.json) and only reads it: the two
+/// seeder tests are skipped when their table is empty, the one case in which a seeder would write.
 /// Run with: dotnet test --filter Category=Integration
 /// </summary>
 [TestFixture]
@@ -146,6 +147,7 @@ public class DatabasePopulationIntegrationTests
         await using var db = new AppDbContext(opts);
 
         var before = await db.TaxCategories.CountAsync();
+        Assume.That(before, Is.GreaterThan(0), "TaxCategories is empty: the seeder would write to the shared database");
         await TaxCategorySeeder.SeedAsync(db);
         var after = await db.TaxCategories.CountAsync();
 
@@ -164,6 +166,7 @@ public class DatabasePopulationIntegrationTests
         await using var db = new AppDbContext(opts);
 
         var before = await db.StateTaxProfiles.CountAsync();
+        Assume.That(before, Is.GreaterThan(0), "StateTaxProfiles is empty: the seeder would write to the shared database");
         await StateTaxProfileSeeder.SeedAsync(db);
         var after = await db.StateTaxProfiles.CountAsync();
 

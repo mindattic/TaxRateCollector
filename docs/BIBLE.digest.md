@@ -7,7 +7,7 @@ code: TRC
 layer: digest
 status: living
 generatedFrom: TRC-bible
-updated: 2026-11-02
+updated: 2026-11-18
 ---
 
 # TaxRateCollector - Bible Digest (generated; do not hand-edit)
@@ -23,7 +23,7 @@ TaxRateCollector is a Blazor Server application that maintains a provably accura
 
 - **NOT a live tax-calc API for third parties.** There is currently no public REST/GraphQL endpoint — consumers use the UI and file exports. A REST/GraphQL endpoint is a backlog item ([TRC-US-G1](docs/USER_STORIES.md)), not a shipped feature.
 - **NOT a "best guess" rate oracle.** A rate without attached, hash-verified evidence is not considered validated for export. "Our API said so" is explicitly rejected as a compliance answer. See [Law 1](#TRC-LAW-1).
-- **NOT a SQLite app.** The system runs on SQL Server (LocalDB in dev, SQL Server / Azure SQL in prod) via EF Core 10. There is no SQLite path in the application (the unit-test project uses the SQLite in-memory provider only as a relational test double). See [Law 8](#TRC-LAW-8).
+- **NOT a SQLite app.** The system runs on SQL Server (Azure SQL in dev and prod) via EF Core 10. There is no SQLite path in the application (the unit-test project uses the SQLite in-memory provider only as a relational test double). See [Law 8](#TRC-LAW-8).
 - **NOT a hard-delete system.** Rate history is retired (`IsCurrent=false`), never destroyed; jurisdictions are deactivated (`IsActive=false`), not deleted. See [Law 2](#TRC-LAW-2) and [HOUSE-LAW-2].
 - **NOT vendor-locked to one LLM.** AI rate extraction routes through MindAttic.Legion, not a hard-coded vendor SDK. See [Law 3](#TRC-LAW-3).
 - **NOT a flat-percentage tax engine.** It models excise structures (per-unit, per-volume, per-proof-gallon, per-weight, percentage-of-wholesale), brackets, caps, compound tax-on-tax, ABV gating, and origin/destination sourcing. See [§4.2](#TRC-§4).
@@ -61,7 +61,7 @@ A point-of-sale rate is the sum of every applicable tier (State + County + City 
 Startup seeders and Setup-pipeline importers check before inserting and may be re-run without duplicating data. *(verified by `SeedAsync_IsIdempotent`, `Hierarchy_SeederDoesNotSeedIfCountryExists`.)*
 
 ### TRC-LAW-8 — SQL Server is the only datastore {#TRC-LAW-8}
-The system targets SQL Server (LocalDB dev / Azure SQL prod) via EF Core 10 (`UseSqlServer`, `AppDbContextFactory`). The hierarchy's filtered indexes and the `sqlpackage` `.bacpac` export on the Setup page assume SQL Server. There is no SQLite path in the application.
+The system targets SQL Server (Azure SQL in dev and prod) via EF Core 10 (`UseSqlServer`, `AppDbContextFactory`). The hierarchy's filtered indexes and the `sqlpackage` `.bacpac` export on the Setup page assume SQL Server. There is no SQLite path in the application.
 
 ## 9. Glossary {#TRC-§9}
 

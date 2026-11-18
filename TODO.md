@@ -136,5 +136,5 @@ Mark items `[x]` when complete. Tackle in priority order within each section.
 
 - Target corpus: ~14,000 US jurisdictions (Country + 51 states + ~3,144 counties + ~10,000 cities)
 - Corporate consumers need FIPS-keyed, evidence-backed, auditable rate history
-- Architecture: Blazor Server + EF Core 10 + SQL Server LocalDB (dev) / Azure SQL (prod) + ClosedXML exports
+- Architecture: Blazor Server + EF Core 10 + Azure SQL (dev and prod) + ClosedXML exports
 - Each tax rate row must have attached evidence to be considered "validated" for export

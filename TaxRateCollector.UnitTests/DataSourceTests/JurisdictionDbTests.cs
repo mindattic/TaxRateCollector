@@ -3,9 +3,9 @@ using Microsoft.Data.SqlClient;
 namespace TaxRateCollector.UnitTests.DataSourceTests;
 
 /// <summary>
-/// Integration tests that query the live SQL Server LocalDB and verify
+/// Integration tests that query the development database (Azure SQL, testsettings.json) and verify
 /// expected seed data actually exists — not mocked, real rows.
-/// Run with: dotnet test --filter Category=Integration
+/// Read-only: every statement is a SELECT. Run with: dotnet test --filter Category=Integration
 /// </summary>
 [TestFixture]
 [Category("Integration")]
