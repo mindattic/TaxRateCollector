@@ -479,6 +479,9 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
 
+// Liveness for the App Service deploy check (TRC-T47): answers once startup has migrated and seeded; no database call.
+app.MapGet("/healthz", () => Results.Text("ok"));
+
 // ── Evidence file serving ─────────────────────────────────────────────────────
 app.MapGet("/evidence/{filename}", async (string filename, HttpContext ctx) =>
 {
