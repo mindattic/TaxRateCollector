@@ -673,8 +673,9 @@
                 "by downloading one or a few government source files. Implements <code>IStateBulkScraper</code>. " +
                 "Contrasts with the per-jurisdiction <code>IScrapeStrategy</code> pattern (CSV / HTML / Excel / PDF) " +
                 "which requires a separate source URL per jurisdiction. Current bulk scrapers: " +
-                "<strong>WI</strong> (sales tax schedule), <strong>IL</strong> (IDOR excise + Cook County + Chicago), " +
-                "<strong>MN</strong> (beer, wine, spirits excise + Minneapolis downtown liquor). " +
+                "<strong>WI</strong> (sales tax schedule plus alcohol excise), <strong>IL</strong> (IDOR excise + Cook County + Chicago), " +
+                "<strong>MN</strong> (beer, wine, spirits excise + Minneapolis downtown liquor), and alcohol excise scrapers for " +
+                "<strong>ID, IN, IA, MI, MT, ND, OH, OR, SD</strong>. " +
                 "Each scraper declares its SST category name so rates are automatically scoped to the correct " +
                 "<code>TaxCategoryId</code> when saved."),
 
