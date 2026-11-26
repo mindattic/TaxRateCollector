@@ -1852,6 +1852,9 @@ else if (!isAdmin && HasUnsubscribedContent)
 
     private async Task<List<ExportRow>> BuildExportData()
     {
+        // The tree shows guests sample data and subscribers only their own states; the export must
+        // not hand out what the tree withholds.
+        if (!isSubscribed) throw new InvalidOperationException("Subscribe to export rates");
         await using var db = await DbFactory.CreateDbContextAsync();
 
         var jurisdictions = await db.Jurisdictions
@@ -1903,7 +1906,8 @@ else if (!isAdmin && HasUnsubscribedContent)
         }
 
         return jurisdictions
-            .Where(j => j.JurisdictionType != JurisdictionType.Country)
+            .Where(j => j.JurisdictionType != JurisdictionType.Country
+                     && (isAdmin || subscribedStateCodes.Contains(j.StateCode)))
             .OrderBy(j => j.StateCode).ThenBy(j => j.JurisdictionType).ThenBy(j => j.JurisdictionName)
             .Select(j => new ExportRow(
                 j.JurisdictionType.ToString(),
