@@ -31,8 +31,8 @@ public class IllinoisTableScraper(HttpClient httpClient, ILogger<IllinoisTableSc
                 var cells = row.SelectNodes("td");
                 if (cells is null || cells.Count < 2) continue;
 
-                var countyName = cells[0].InnerText.Trim();
-                var rawRate = cells[1].InnerText.Trim();
+                var countyName = HtmlEntity.DeEntitize(cells[0].InnerText).Trim();
+                var rawRate = HtmlEntity.DeEntitize(cells[1].InnerText).Trim();
                 var parsed = RateSanitizer.Parse(rawRate);
 
                 // The per-county table lists the total rate (state 6.25% + local, e.g. Cook
