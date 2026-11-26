@@ -598,7 +598,7 @@
             new("StateCategoryRule",
                 "A state × SST category rule row. Stores whether a specific product/service category is Taxable, Exempt, ReducedRate, " +
                 "or SpecialRule in a given state, plus the override rate if applicable (e.g., 0.04 for Tennessee's 4% food rate). " +
-                "Nullable TaxCategoryId until the SST taxonomy is imported. Combined with the Jurisdiction hierarchy, these rows " +
+                "Combined with the Jurisdiction hierarchy, these rows " +
                 "drive the rate calculations."),
 
             new("TaxCategoryRule",
@@ -609,7 +609,7 @@
             new("TaxCategory",
                 "A node in the SST product/service taxonomy tree. Populated from SSUTA Appendix C. " +
                 "Two top-level types: <em>Goods</em> and <em>Services</em>. Leaf nodes (IsLeaf = true) are directly assignable " +
-                "to a TaxRate or transaction. The table is empty until the Appendix C PDF is parsed and imported."),
+                "to a TaxRate or transaction. The table is seeded automatically at startup (TaxCategorySeeder) when it is empty."),
 
             new("TaxRate",
                 "A scraped rate record for one jurisdiction at one point in time, optionally scoped to a TaxCategory. " +
