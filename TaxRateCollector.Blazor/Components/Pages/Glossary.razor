@@ -695,7 +695,7 @@
 
             new("Scrape",
                 "Phase 1 of the data pipeline. For each jurisdiction with a configured SourceUrl, routes the request to the " +
-                "appropriate IScrapeStrategy (CSV, HTML table, Excel, PDF, API) and writes the parsed rates as new TaxRate rows. " +
+                "first IScrapeStrategy that can handle it (California CSV, Illinois table, Texas Excel) and writes the parsed rates as new TaxRate rows. " +
                 "Detects changes against the previous run via the diff engine."),
 
             new("LocalAuthorityType",
@@ -712,10 +712,10 @@
                 "This keeps a full history of rate changes without storing duplicate rows for stable jurisdictions."),
 
             new("IScrapeStrategy",
-                "The interface implemented by each format-specific scraper: <code>CsvScraper</code>, <code>HtmlTableScraper</code>, " +
-                "<code>ExcelScraper</code>, <code>PdfScraper</code>, and <code>ApiScraper</code>. " +
-                "The <code>RecursiveRateScraper</code> selects the appropriate strategy based on the MIME type or file extension " +
-                "of the source document. Strategies return a normalized list of rate rows that feed the diff engine."),
+                "The interface implemented by each per-jurisdiction scraper: <code>CaliforniaCsvScraper</code>, " +
+                "<code>IllinoisTableScraper</code>, and <code>TexasExcelScraper</code>. " +
+                "The <code>ScrapeOrchestrator</code> picks the first strategy whose <code>CanHandle</code> accepts the jurisdiction. " +
+                "Strategies return a normalized list of rate rows that feed the diff engine."),
 
             new("ClaudeRateLawExtractor",
                 "The AI extraction service that processes unstructured source documents (PDFs, HTML pages, Excel files) using Claude. " +
