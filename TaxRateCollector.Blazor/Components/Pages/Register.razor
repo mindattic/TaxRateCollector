@@ -1,7 +1,6 @@
 @page "/register"
 @using Microsoft.AspNetCore.Identity
 @inject UserManager<IdentityUser> UserMgr
-@inject SignInManager<IdentityUser> SignIn
 @inject NavigationManager Nav
 @rendermode InteractiveServer
 
@@ -94,8 +93,7 @@
 
         if (result.Succeeded)
         {
-            await SignIn.SignInAsync(user, isPersistent: false);
-            Nav.NavigateTo("/subscribe", forceLoad: true);
+            Nav.NavigateTo("/login?returnUrl=%2Fsubscribe", forceLoad: true);
         }
         else
         {
