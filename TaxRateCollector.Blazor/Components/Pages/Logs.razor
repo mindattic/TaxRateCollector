@@ -24,10 +24,10 @@
                     disabled="@busy"
                     aria-busy="@busy.ToString().ToLower()">
                 <option value="">@(busy ? "Clearing…" : "Clear logs ▾")</option>
-                <option value="hour">Last hour</option>
-                <option value="day">Last 24 hours</option>
-                <option value="week">Last 7 days</option>
-                <option value="month">Last 4 weeks</option>
+                <option value="hour">Older than 1 hour</option>
+                <option value="day">Older than 24 hours</option>
+                <option value="week">Older than 7 days</option>
+                <option value="month">Older than 4 weeks</option>
                 <option value="all">All time</option>
             </select>
         </div>
@@ -252,10 +252,10 @@ else
 
             var label = range switch
             {
-                "hour"  => "the last hour",
-                "day"   => "the last 24 hours",
-                "week"  => "the last 7 days",
-                "month" => "the last 4 weeks",
+                "hour"  => "more than an hour ago",
+                "day"   => "more than 24 hours ago",
+                "week"  => "more than 7 days ago",
+                "month" => "more than 4 weeks ago",
                 "all"   => "all time",
                 _       => range
             };
