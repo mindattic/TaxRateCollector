@@ -80,7 +80,11 @@ public class ScrapeOrchestrator(
         CancellationToken ct)
     {
         // Index bulk scrapers by state code for O(1) lookup
-        var bulkByState = bulkScrapers.ToDictionary(s => s.StateCode.ToUpperInvariant());
+        // A state can register several scrapers (WI: alcohol + sales tax), so group rather than
+        // ToDictionary, which throws on the duplicate key and aborts every full scrape (TRC-T71).
+        var bulkByState = bulkScrapers
+            .GroupBy(s => s.StateCode.ToUpperInvariant())
+            .ToDictionary(g => g.Key, g => g.ToList());
         // Track which states have been bulk-scraped this run (avoid re-fetching)
         var bulkDoneStates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -102,7 +106,8 @@ public class ScrapeOrchestrator(
                         && !bulkDoneStates.Contains(stateCode)
                         && jurisdiction.JurisdictionType == JurisdictionType.State)
                     {
-                        await RunBulkScraperAsync(db, run, bulk, stateCode, ct);
+                        foreach (var scraper in bulk)
+                            await RunBulkScraperAsync(db, run, scraper, stateCode, ct);
                         bulkDoneStates.Add(stateCode);
                         scraped++;
                     }
