@@ -131,7 +131,7 @@ public class ScrapeOrchestrator(
                         }
                     }
                 }
-                catch (OperationCanceledException) { throw; }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Scrape failed for {Name}", jurisdiction.JurisdictionName);
@@ -159,7 +159,7 @@ public class ScrapeOrchestrator(
 
             return diff.Changes.Count;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             await db.SaveChangesAsync(CancellationToken.None);
             run.Status     = ScrapeStatus.Paused;
