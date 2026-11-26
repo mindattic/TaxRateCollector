@@ -69,6 +69,12 @@ public sealed class RecursiveRateScraper(
                 {
                     errors.Add($"[{jurisdiction.JurisdictionType}] {jurisdiction.JurisdictionName}: {ex.Message}");
                     logger.LogWarning(ex, "Rate scrape failed for jurisdiction {Id}", jurisdiction.Id);
+
+                    // Drop this jurisdiction's unsaved rows; left tracked they are retried (and fail again)
+                    // by every later SaveChanges on this shared context, failing the whole run.
+                    foreach (var entry in db.ChangeTracker.Entries().ToList())
+                        if (entry.State == EntityState.Added && entry.Entity is not ScrapeRun)
+                            entry.State = EntityState.Detached;
                 }
 
                 scrapeRun.ProcessedCount = jurisdictionsProcessed;
