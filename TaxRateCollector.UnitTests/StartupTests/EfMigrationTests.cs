@@ -13,6 +13,9 @@ namespace TaxRateCollector.UnitTests.StartupTests;
 [Category("Integration")]
 public class EfMigrationTests
 {
+    [OneTimeSetUp]
+    public void RequireDb() => TestDbConnection.OpenOrIgnore().Dispose();
+
     private AppDbContext CreateDbContext()
     {
         var opts = new DbContextOptionsBuilder<AppDbContext>()

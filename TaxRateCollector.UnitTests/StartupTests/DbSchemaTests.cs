@@ -17,8 +17,7 @@ public class DbSchemaTests
     [OneTimeSetUp]
     public void OpenDb()
     {
-        conn = new SqlConnection(TestDbConnection.ConnectionString);
-        conn.Open();
+        conn = TestDbConnection.OpenOrIgnore();
     }
 
     [OneTimeTearDown]

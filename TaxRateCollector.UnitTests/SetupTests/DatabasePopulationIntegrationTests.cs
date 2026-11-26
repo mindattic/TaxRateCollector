@@ -20,8 +20,7 @@ public class DatabasePopulationIntegrationTests
     [OneTimeSetUp]
     public void OpenDb()
     {
-        conn = new SqlConnection(TestDbConnection.ConnectionString);
-        conn.Open();
+        conn = TestDbConnection.OpenOrIgnore();
     }
 
     [OneTimeTearDown]
