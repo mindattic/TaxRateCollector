@@ -284,13 +284,22 @@ else
         return $"{j.StateCode} › {j.JurisdictionName}";
     }
 
-    private async Task Approve(ReviewRow row)
+    private async Task<bool> Approve(ReviewRow row)
     {
         busy = true;
         StateHasChanged();
         try
         {
             await using var db = await DbFactory.CreateDbContextAsync();
+
+            // Look the pending row up first: retiring the live rates and then finding nothing to
+            // promote would leave the jurisdiction with no current rate at all.
+            var rate = await db.TaxRates.FindAsync(row.Id);
+            if (rate is null)
+            {
+                statusMessage = $"✗ '{row.Name}' no longer exists — reload the page";
+                return false;
+            }
 
             // Retire any existing live rate with the same name in this jurisdiction
             var existing = await db.TaxRates
@@ -300,23 +309,26 @@ else
             foreach (var old in existing)
                 old.IsCurrent = false;
 
-            var rate = await db.TaxRates.FindAsync(row.Id);
-            if (rate is not null)
-            {
-                rate.AutoApprove = true;
-                rate.IsCurrent   = true;
-            }
+            rate.AutoApprove = true;
+            rate.IsCurrent   = true;
             await db.SaveChangesAsync();
 
             row.Dismissed = true;
             row.DismissedLabel = "✓ Approved";
             pendingCount--;
             statusMessage = $"✓ '{row.Name}' approved";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // An unhandled exception in an event handler ends the whole Blazor circuit.
+            statusMessage = $"✗ Could not approve '{row.Name}': {ex.Message}";
+            return false;
         }
         finally { busy = false; StateHasChanged(); }
     }
 
-    private async Task Reject(ReviewRow row)
+    private async Task<bool> Reject(ReviewRow row)
     {
         busy = true;
         StateHasChanged();
@@ -338,6 +350,12 @@ else
             row.DismissedLabel = "✕ Rejected";
             pendingCount--;
             statusMessage = $"✕ '{row.Name}' rejected";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"✗ Could not reject '{row.Name}': {ex.Message}";
+            return false;
         }
         finally { busy = false; StateHasChanged(); }
     }
@@ -351,8 +369,8 @@ else
             var group = groups?.FirstOrDefault(g => g.StateCode == stateCode);
             if (group is null) return;
 
-            foreach (var row in group.Rates.Where(r => !r.Dismissed))
-                await Approve(row);
+            foreach (var row in group.Rates.Where(r => !r.Dismissed).ToList())
+                if (!await Approve(row)) return;   // keep the failure message, stop the batch
 
             statusMessage = $"✓ All rates for {stateCode} approved";
         }
