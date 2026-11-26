@@ -73,15 +73,6 @@
             <span class="tab-label">Glossary</span>
         </NavLink>
 
-        <AuthorizeView>
-            <Authorized>
-                <NavLink class="tab" href="logs">
-                    <span class="tab-icon" aria-hidden="true">◎</span>
-                    <span class="tab-label">Logs</span>
-                </NavLink>
-            </Authorized>
-        </AuthorizeView>
-
         <AuthorizeView Roles="Administrator">
             <Authorized>
                 <NavLink class="tab tab-admin" href="review">
@@ -93,6 +84,10 @@
                             <span class="tab-badge" aria-label="@reviewCount items pending review">@reviewCount</span>
                         }
                     </span>
+                </NavLink>
+                <NavLink class="tab tab-admin" href="logs">
+                    <span class="tab-icon" aria-hidden="true">◎</span>
+                    <span class="tab-label">Logs</span>
                 </NavLink>
                 <NavLink class="tab tab-admin" href="setup">
                     <span class="tab-icon" aria-hidden="true">⚒</span>

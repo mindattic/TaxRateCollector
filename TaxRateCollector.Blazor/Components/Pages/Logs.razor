@@ -1,5 +1,5 @@
 @page "/logs"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Administrator")]
 @using Microsoft.EntityFrameworkCore
 @using TaxRateCollector.Core.Entities
 @using TaxRateCollector.Infrastructure.Data
