@@ -499,6 +499,7 @@ app.MapGet("/evidence/{filename}", async (string filename, HttpContext ctx) =>
         ".csv"            => "text/csv",
         ".html" or ".htm" => "text/html",
         ".json"           => "application/json",
+        ".zip"            => "application/zip",
         ".xlsx"           => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         _                 => "application/octet-stream"
     };
@@ -507,7 +508,7 @@ app.MapGet("/evidence/{filename}", async (string filename, HttpContext ctx) =>
     if (mime == "text/html")
         ctx.Response.Headers.ContentSecurityPolicy = "sandbox";
     // Only force download for binary spreadsheets; everything else renders inline
-    return ext == ".xlsx"
+    return ext is ".xlsx" or ".zip"
         ? Results.File(path, mime, filename)
         : Results.File(path, mime);
 }).RequireAuthorization();

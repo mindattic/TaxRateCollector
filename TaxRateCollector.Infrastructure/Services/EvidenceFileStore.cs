@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -8,8 +9,14 @@ using TaxRateCollector.Core.Interfaces;
 namespace TaxRateCollector.Infrastructure.Services;
 
 public sealed class EvidenceFileStore(
-    ILogger<EvidenceFileStore> logger) : IEvidenceFileStore
+    ILogger<EvidenceFileStore> logger,
+    SettingsService? settings = null,
+    IHttpClientFactory? httpFactory = null) : IEvidenceFileStore
 {
+    private const int MaxAssets = 100;
+    private const long MaxAssetBytes = 5 * 1024 * 1024;
+    private const long MaxTotalAssetBytes = 25 * 1024 * 1024;
+
     public async Task<StoredEvidenceFile> SaveAsync(
         string sourceUrl,
         byte[] content,
@@ -23,7 +30,12 @@ public sealed class EvidenceFileStore(
         string? slug = null;
         byte[] toWrite;
 
-        if (IsHtml(mimeType))
+        if (IsHtml(mimeType) && settings?.Current.FullPageCapture == true)
+        {
+            (toWrite, slug) = await BundleFullPageAsync(sourceUrl, content, ct);
+            (evidenceType, extension) = ("zip", ".zip");
+        }
+        else if (IsHtml(mimeType))
         {
             (toWrite, slug) = StripHtmlBytes(sourceUrl, content);
         }
@@ -55,6 +67,95 @@ public sealed class EvidenceFileStore(
 
         var size = new FileInfo(fullPath).Length;
         return new StoredEvidenceFile(fileName, evidenceType, size, fullHash);
+    }
+
+    /// <summary>
+    /// Zips the page as fetched (index.html) with its linked stylesheets, scripts and images under assets/,
+    /// rewriting those references to the bundled copies. Assets that fail to download stay as absolute links.
+    /// </summary>
+    private async Task<(byte[] Bytes, string? Slug)> BundleFullPageAsync(string sourceUrl, byte[] htmlBytes, CancellationToken ct)
+    {
+        var doc = new HtmlDocument();
+        doc.LoadHtml(Encoding.UTF8.GetString(htmlBytes));
+
+        var titleNode = doc.DocumentNode.SelectSingleNode("//title");
+        var title = System.Net.WebUtility.HtmlDecode(titleNode?.InnerText.Trim() ?? "");
+        var slug = string.IsNullOrEmpty(title) ? null : Slugify(title);
+
+        var assets = new List<(string Name, byte[] Bytes)>();
+        var seen = new Dictionary<string, string>();
+        long total = 0;
+
+        if (Uri.TryCreate(sourceUrl, UriKind.Absolute, out var baseUri) && httpFactory is not null)
+        {
+            var http = httpFactory.CreateClient();
+            var refs = doc.DocumentNode.SelectNodes("//link[@href][translate(@rel,'STYLEHT','styleht')='stylesheet']|//script[@src]|//img[@src]")
+                       ?? Enumerable.Empty<HtmlNode>();
+            foreach (var node in refs)
+            {
+                var attr = node.Name == "link" ? "href" : "src";
+                var raw = node.GetAttributeValue(attr, "");
+                if (!Uri.TryCreate(baseUri, raw, out var abs) || abs.Scheme is not ("http" or "https")) continue;
+
+                var key = abs.GetLeftPart(UriPartial.Query);
+                if (!seen.TryGetValue(key, out var name))
+                {
+                    if (assets.Count >= MaxAssets || total >= MaxTotalAssetBytes) continue;
+                    var bytes = await TryDownloadAsync(http, abs, ct);
+                    if (bytes is null) continue;
+                    total += bytes.Length;
+                    var ext = Path.GetExtension(abs.AbsolutePath);
+                    if (ext.Length > 8 || ext.Any(c => !char.IsLetterOrDigit(c) && c != '.')) ext = "";
+                    name = $"assets/{assets.Count:000}{ext}";
+                    assets.Add((name, bytes));
+                    seen[key] = name;
+                }
+                node.SetAttributeValue(attr, name);
+                node.Attributes.Remove("integrity");
+                node.Attributes.Remove("srcset");
+            }
+        }
+
+        using var ms = new MemoryStream();
+        using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            void Add(string entryName, byte[] data)
+            {
+                var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
+                entry.LastWriteTime = new DateTimeOffset(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
+                using var s = entry.Open();
+                s.Write(data);
+            }
+            Add("index.html", Encoding.UTF8.GetBytes(doc.DocumentNode.OuterHtml));
+            Add("source.txt", Encoding.UTF8.GetBytes($"Source: {sourceUrl}\n"));
+            foreach (var (name, bytes) in assets) Add(name, bytes);
+        }
+        logger.LogDebug("Full-page capture of {Url}: {Count} assets, {Bytes} bytes", sourceUrl, assets.Count, total);
+        return (ms.ToArray(), slug);
+    }
+
+    private async Task<byte[]?> TryDownloadAsync(HttpClient http, Uri url, CancellationToken ct)
+    {
+        try
+        {
+            using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (!resp.IsSuccessStatusCode || resp.Content.Headers.ContentLength > MaxAssetBytes) return null;
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var buf = new MemoryStream();
+            var chunk = new byte[81920];
+            int n;
+            while ((n = await stream.ReadAsync(chunk, ct)) > 0)
+            {
+                buf.Write(chunk, 0, n);
+                if (buf.Length > MaxAssetBytes) return null;
+            }
+            return buf.ToArray();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogDebug("Asset skipped {Url}: {Message}", url, ex.Message);
+            return null;
+        }
     }
 
     private static (byte[] Bytes, string? Slug) StripHtmlBytes(string sourceUrl, byte[] htmlBytes)
