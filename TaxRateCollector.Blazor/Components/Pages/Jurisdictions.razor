@@ -1244,7 +1244,7 @@ else if (!isAdmin && HasUnsubscribedContent)
         rateFormNodeId = node.Id;
         rateFormRowId = row.Id;
         rateFormName = row.Name;
-        rateFormRate = (row.Basis == RateBasis.Percentage ? row.Rate * 100 : row.Rate).ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
+        rateFormRate = (row.Basis == RateBasis.Percentage ? row.Rate * 100 : row.Rate).ToString("0.0000############", System.Globalization.CultureInfo.InvariantCulture);
         rateFormBasis = row.Basis;
         rateFormUnit = row.Unit;
         rateFormSaleContext = row.SaleContext;
