@@ -61,7 +61,7 @@ public sealed class ClaudeRateLawExtractor(
                 (apiKey, callCt) => CallClaudeAsync(prompt, apiKey, opts, callCt), ct);
             return ParseResponse(responseText, jurisdiction.JurisdictionName);
         }
-        catch (OperationCanceledException) { throw; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             logger.LogError(ex, "Claude extraction failed for {Name}", jurisdiction.JurisdictionName);
