@@ -7,10 +7,9 @@ namespace TaxRateCollector.Infrastructure.Services;
 
 public class ScrapeSchedulerService(
     IServiceScopeFactory scopeFactory,
+    SettingsService settings,
     ILogger<ScrapeSchedulerService> logger) : BackgroundService
 {
-    private readonly TimeSpan interval = TimeSpan.FromHours(24);
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Small delay so the app fully starts before first scrape
@@ -33,7 +32,7 @@ public class ScrapeSchedulerService(
                 logger.LogError(ex, "Scheduled scrape cycle failed");
             }
 
-            await Task.Delay(interval, stoppingToken);
+            await Task.Delay(TimeSpan.FromDays(Math.Max(1, settings.Current.DefaultUpdateFrequencyDays)), stoppingToken);
         }
     }
 }
