@@ -728,8 +728,8 @@
                 "IScrapeStrategy. A null SourceUrl means the jurisdiction has not yet been discovered and will be skipped during scraping."),
 
             new("Subscriber",
-                "A paying user of the TaxRateCollector SaaS product. Subscribers select states and are billed by county count at " +
-                "~$0.01/county/month. Access to rate data is restricted to the counties within their subscribed states. " +
+                "A paying user of the TaxRateCollector SaaS product. Subscribers select states (and optionally product categories) and are billed per selected state and per selected " +
+                "category each month, at the prices set in Setup (the default is $0.01 per state). Access to rate data is restricted to their subscribed states. " +
                 "Stored in the <strong>Subscribers</strong> and <strong>SubscribedStates</strong> tables; billing is handled via PayPal."),
         ]),
     ];
