@@ -595,11 +595,16 @@ else
                 UseShellExecute = false, CreateNoWindow = true
             };
             proc.Start();
+            // Drain both pipes while it runs: an undrained redirected stream blocks the child once its buffer fills.
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            var stderrTask = proc.StandardError.ReadToEndAsync();
             await proc.WaitForExitAsync();
+            await stdoutTask;
+            var stderr = await stderrTask;
             sw.Stop();
             backupMsg = proc.ExitCode == 0
                 ? $"✓ Saved to {backupPath} ({sw.Elapsed.TotalSeconds:F1}s)"
-                : $"✗ sqlpackage exited {proc.ExitCode}: {(await proc.StandardError.ReadToEndAsync()).Split('\n').FirstOrDefault()?.Trim()}";
+                : $"✗ sqlpackage exited {proc.ExitCode}: {stderr.Split('\n').FirstOrDefault()?.Trim()}";
         }
         catch (Exception ex) { backupMsg = $"✗ {ex.Message}"; }
         finally { backupBusy = false; StateHasChanged(); }
