@@ -263,7 +263,7 @@ This is the fastest way to a fully seeded database of your own without the Setup
 
 Settings live in `%APPDATA%\MindAttic\TaxRateCollector\settings.json`, read and written by `SettingsService`.
 
-Key settings: `theme`, `font`, `font_size`, `default_update_frequency_days` (90), `evidence_auto_fetch`, `wayback_machine_fallback` (the setting exists; the Wayback capture path is not built yet, see `TRC-US-C3`), all Census and SST source URLs, and `AutoApprove` (whether scraped rates skip the `NeedsReview` gate).
+Key settings: `theme`, `font`, `font_size`, `default_update_frequency_days` (90), `evidence_auto_fetch` (when set, up to five PDFs linked from an HTML source page are fetched and attached as supplementary evidence), `wayback_machine_fallback` (the setting exists; the Wayback capture path is not built yet, see `TRC-US-C3`), all Census and SST source URLs, and `AutoApprove` (whether scraped rates skip the `NeedsReview` gate).
 
 Evidence files land in `%APPDATA%\MindAttic\TaxRateCollector\evidence\` (`EvidenceFileStore`) and are served back to the browser via `GET /evidence/{filename}`, which is path-traversal guarded and requires authorization.
 

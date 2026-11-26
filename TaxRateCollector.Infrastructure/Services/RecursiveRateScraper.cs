@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using HtmlAgilityPack;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using TaxRateCollector.Core.Entities;
@@ -21,8 +22,11 @@ public sealed class RecursiveRateScraper(
     IRateLawExtractor extractor,
     IEvidenceFileStore evidenceStore,
     HttpClient http,
-    ILogger<RecursiveRateScraper> logger) : IRecursiveRateScraper
+    ILogger<RecursiveRateScraper> logger,
+    SettingsService? settings = null) : IRecursiveRateScraper
 {
+    private const int MaxAutoFetchPdfs = 5;
+
     public async Task<RateScrapeReport> ScrapeAsync(
         int rootJurisdictionId,
         RateScrapeOptions options,
@@ -181,7 +185,7 @@ public sealed class RecursiveRateScraper(
         // are fetched and attached as supplementary corroborating evidence.
         var primaryUrl = discovery.SourceUsed;
         var allUrls = jurisdiction.SourceUrls();
-        var supplementaryUrls = allUrls.Where(u => !string.Equals(u, primaryUrl, StringComparison.OrdinalIgnoreCase));
+        var supplementaryUrls = allUrls.Where(u => !string.Equals(u, primaryUrl, StringComparison.OrdinalIgnoreCase)).ToList();
 
         var (rawBytes, mimeType) = await FetchBytesAsync(primaryUrl, ct);
         if (rawBytes.Length == 0) return (0, 0, 0);
@@ -213,6 +217,13 @@ public sealed class RecursiveRateScraper(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Evidence save failed for {Url}", primaryUrl);
+        }
+
+        if (settings?.Current.EvidenceAutoFetch == true && mimeType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var pdfUrl in FindLinkedPdfs(primaryUrl, rawBytes))
+                if (!supplementaryUrls.Contains(pdfUrl, StringComparer.OrdinalIgnoreCase))
+                    supplementaryUrls.Add(pdfUrl);
         }
 
         var contentHash = primaryStored?.ContentHash ?? ComputeHash(rawBytes);
@@ -371,6 +382,26 @@ public sealed class RecursiveRateScraper(
         }
 
         return (true, 1 + supplements.Count);
+    }
+
+    private static List<string> FindLinkedPdfs(string pageUrl, byte[] htmlBytes)
+    {
+        var result = new List<string>();
+        if (!Uri.TryCreate(pageUrl, UriKind.Absolute, out var baseUri)) return result;
+
+        var doc = new HtmlDocument();
+        doc.LoadHtml(Encoding.UTF8.GetString(htmlBytes));
+        foreach (var a in doc.DocumentNode.SelectNodes("//a[@href]") ?? Enumerable.Empty<HtmlNode>())
+        {
+            if (!Uri.TryCreate(baseUri, System.Net.WebUtility.HtmlDecode(a.GetAttributeValue("href", "")), out var abs)
+                || abs.Scheme is not ("http" or "https")
+                || !abs.AbsolutePath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) continue;
+
+            var url = abs.GetLeftPart(UriPartial.Query);
+            if (!result.Contains(url, StringComparer.OrdinalIgnoreCase)) result.Add(url);
+            if (result.Count >= MaxAutoFetchPdfs) break;
+        }
+        return result;
     }
 
     // ── HTTP fetch (bytes, preserves binary) ──────────────────────────────────
