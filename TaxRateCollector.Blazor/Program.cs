@@ -124,6 +124,10 @@ builder.Services.AddScoped<IScrapeOrchestrator, ScrapeOrchestrator>();
 builder.Services.AddScoped<IEvidenceFileStore, EvidenceFileStore>();
 builder.Services.AddSingleton<ScrapeJobCoordinator>();
 builder.Services.AddHostedService<ScrapeWorkerService>();
+// TRC-T98: ScrapeSchedulerService was written (TRC-T63) but never registered, so the
+// default_update_frequency_days re-scrape cycle never ran. Blazor owns IScrapeOrchestrator;
+// Worker doesn't register it, so the service can only run here.
+builder.Services.AddHostedService<ScrapeSchedulerService>();
 builder.Services.AddScoped<ITaxCalculator, TaxCalculator>();
 builder.Services.AddScoped<AlertService>();
 builder.Services.AddScoped<IPayPalService, PayPalService>();
