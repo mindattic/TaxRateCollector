@@ -506,7 +506,11 @@ else
 
             if (billing.Status == BillingStatus.Completed)
             {
-                ShowCompleted(billing);
+                // The capture may have been recorded as Completed on an earlier visit
+                // but the activation that follows it never ran (e.g. a DB failure
+                // between the two saves). CaptureAndActivateAsync is idempotent from
+                // this state, so retry it rather than assuming activation succeeded.
+                await CaptureAndActivateAsync(db, billing);
                 return;
             }
             if (billing.Status != BillingStatus.Pending)
@@ -549,11 +553,17 @@ else
 
     private async Task CaptureAndActivateAsync(AppDbContext db, BillingRecord billing)
     {
-        var captured = await PayPal.CaptureOrderAsync(billing.PayPalOrderId);
-        billing.Status = captured ? BillingStatus.Completed : BillingStatus.Failed;
-        await db.SaveChangesAsync();
+        // Already captured on an earlier call (a prior activation attempt failed
+        // after this was saved): don't charge again, just finish activating — the
+        // activation below is idempotent, so retrying it here is safe.
+        if (billing.Status != BillingStatus.Completed)
+        {
+            var captured = await PayPal.CaptureOrderAsync(billing.PayPalOrderId);
+            billing.Status = captured ? BillingStatus.Completed : BillingStatus.Failed;
+            await db.SaveChangesAsync();
 
-        if (!captured) { error = "Payment capture failed. Please try again."; return; }
+            if (!captured) { error = "Payment capture failed. Please try again."; return; }
+        }
 
         // Activate exactly what this payment bought (stored on the billing record).
         var paidStates = ParseStates(billing.SelectedStateCodes);
